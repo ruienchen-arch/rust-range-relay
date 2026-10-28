@@ -1770,6 +1770,9 @@ Object.assign(EN, {
   var state = 'menu'; // menu | playing | paused | over
   var P = { x: 0, y: 0, z: 22, vy: 0, hp: 100, maxHp: 100, armor: 0, yaw: 0, pitch: 0, ground: true };
   var W = { cd: 0, reload: 0, reloadMax: 1, rsnd: 0 };
+  var coop = false;   // true while a 2-player co-op run is going (see the CO-OP section near the end)
+  var CO = { role: '', ghosts: {}, dead: {}, pend: [], gb: [], nid: 0, down: false, downT: 0, gDownT: 0, hk: 0, gk: 0, gs: 0, sb: [0, 0, 0, 0], snd: 0, ui: 0, head: false, applying: false, seed: '', sv: null, G: { x: 0, y: 0, z: 0, isG: true } };
+  var BT = P;   // who enemy bolts are aimed at
   var enemies = [], bolts = [], parts = [], tracers = [], pickups = [];
   var wave = 0, toSpawn = 0, spawned = 0, spawnTimer = 0, waveDelay = 0, score = 0, best = 0;
   var CHARS = [
@@ -2138,7 +2141,7 @@ Object.assign(EN, {
   function fireBolt(x, y, z, speed, dmg, ang, mat, size) {
     var b = new THREE.Mesh(new THREE.SphereGeometry(size || 0.15, 8, 8), mat || hazardBasic);
     b.position.set(x, y, z); scene.add(b);
-    var vx = P.x - x, vy = P.y + 1.2 - y, vz = P.z - z, vl = Math.hypot(vx, vy, vz) || 1;
+    var vx = BT.x - x, vy = BT.y + 1.2 - y, vz = BT.z - z, vl = Math.hypot(vx, vy, vz) || 1;
     if (ang) { var ca = Math.cos(ang), sa = Math.sin(ang), tx = vx * ca - vz * sa; vz = vx * sa + vz * ca; vx = tx; }
     bolts.push({ m: b, vx: vx / vl * speed, vy: vy / vl * speed, vz: vz / vl * speed, life: 5, dmg: dmg * atkMul() });
   }
@@ -2155,6 +2158,7 @@ Object.assign(EN, {
       }
     }
     if (siege && !byPlayer && fortDist(x, z) < r + 1.5) fortDamage(dmg * 2);
+    if (coop && !coopG() && !byPlayer && DU.seen && DU.opHp > 0) { var gd = Math.hypot(DU.rt.x - x, DU.rt.y + 1 - y, DU.rt.z - z); if (gd < r) coopHurtG(Math.round(dmg * (1 - gd / r))); }
     var pd = Math.hypot(P.x - x, P.y + 1 - y, P.z - z);
     if (pd < r) damage(Math.round(dmg * (1 - pd / r) * (byPlayer ? 0.6 : 1)));
   }
@@ -2220,6 +2224,7 @@ Object.assign(EN, {
   }
   function killEnemy(e, headshot) {
     if (e.dead) return;
+    if (e.ghost) { e.dead = true; CO.dead[e.gid] = gtime; coopDropGhost(e, true); tone(220, 50, 0.25, 'sawtooth', 0.12); return; }
     e.dead = true;
     var p = e.g.position.clone(); p.y += 1.2;
     burst(p, e.type === 'boss' ? 40 : 14, partMatO, 6);
@@ -2227,8 +2232,9 @@ Object.assign(EN, {
     scene.remove(e.g);
     var ix = enemies.indexOf(e);
     if (ix >= 0) enemies.splice(ix, 1);
-    score += Math.round((e.T.score + (headshot ? 50 : 0)) * DF.score);
-    coins += Math.round((e.T.coin + (headshot ? 5 : 0)) * DF.coin);
+    var _pts = Math.round((e.T.score + (headshot ? 50 : 0)) * DF.score), _cn = Math.round((e.T.coin + (headshot ? 5 : 0)) * DF.coin);
+    if (coop && e.cr === 'g') { CO.gs += _pts; CO.gk++; dSend({ t: 'Ck', c: _cn }); } else { score += _pts; coins += _cn; CO.hk++; }
+    
     if (PK.w >= 0) perkKill(PK.w, e, headshot);
     if (mode === 'rush') timeLeft = Math.min(180, timeLeft + 1);
     tone(220, 50, 0.25, 'sawtooth', 0.12);
@@ -2671,7 +2677,7 @@ Object.assign(EN, {
           seen.push(e);
           var dealt = (ud.head ? d.head : d.dmg) * CH.dmg * st.dmg, crit = st.crit > 0 && Math.random() < st.crit;
           if (crit) { dealt *= 2.2; burst(hit.point, 5, partMatY, 5); tone(1200, 900, 0.05, 'square', 0.05); }
-          e.hp -= dealt;
+          CO.head = !!ud.head; e.hp -= dealt; e.cr = 'h';
           e.flash = 0.08;
           end = hit.point.clone();
           if (perkHit(cur, e, d, !!ud.head, hit.point, dealt, st, !blastDone)) blastDone = true;
@@ -2685,10 +2691,10 @@ Object.assign(EN, {
         burst(end, 3, partMatG, 3);
       }
       if (n < d.trace) addTracer(mp, end, pkc || undefined);
-      if (duel && n < d.trace) DU.tr(mp, end);
+      if ((duel || coop) && n < d.trace) DU.tr(mp, end);
     }
     PK.w = -1;
-    if (duel) DU.flush(cur);
+    if (duel || coop) DU.flush(cur);
     if (killed) mark(true);
     else if (hitAny) { mark(false); tone(900, 700, 0.05, 'square', 0.06); }
     return true;
@@ -2754,9 +2760,9 @@ Object.assign(EN, {
 
   /* ---------- waves ---------- */
   function nextWave() {
-    if (duel) return;
+    if (duel || coopG()) return;
     wave++;
-    toSpawn = Math.max(1, Math.round((mode === 'boss' ? 2 + wave : siege ? 22 + wave * 12 : 4 + wave * 2) * DF.cnt));
+    toSpawn = Math.max(1, Math.round((mode === 'boss' ? 2 + wave : siege ? 22 + wave * 12 : 4 + wave * 2) * DF.cnt * (coop ? 2 : 1)));
     spawned = 0; spawnTimer = 1.5;
     if (siege) makeAnchors();
     P.hp = Math.min(P.maxHp, P.hp + 25 * DF.heal);
@@ -2801,6 +2807,7 @@ Object.assign(EN, {
   var menuMode = 'menu';
   function showMenu(mode) {
     menuMode = mode;
+    if (coop && mode === 'over') { coopOverCard(); return; }
     if (mode === 'duel') { if (DU.redo) DU.redo(); return; }
     var c = $('card'), html = '';
     if (mode === 'settings') { showSettings(); return; }
@@ -3071,7 +3078,13 @@ Object.assign(EN, {
     });
     if (fk) { var nf = c.querySelector('[data-k="' + fk + '"][data-v="' + fv + '"]'); if (nf) nf.focus(); }
     $('menu').hidden = false;
-    $('goBtn').addEventListener('click', function () { if (mode === 'duel') DU.panel(); else begin('lobby'); });
+    $('goBtn').addEventListener('click', function () { if (mode === 'duel') { DU.coopWanted = false; DU.panel(); } else begin('lobby'); });
+    if (mode !== 'duel' && $('setBtn')) {
+      var cb = document.createElement('button'); cb.className = 'ghost'; cb.id = 'coopBtn'; cb.type = 'button';
+      cb.textContent = zt('联机合作（和朋友一起打怪）', 'Co-op with a friend');
+      $('goBtn').parentNode.insertBefore(cb, $('setBtn'));
+      cb.addEventListener('click', function () { DU.coopWanted = true; DU.err = ''; DU.panel(); });
+    }
     $('setBtn').addEventListener('click', function () { showSettings('menu'); });
   }
   function toLobby() {
@@ -3116,6 +3129,7 @@ Object.assign(EN, {
   function pause() {
     if (state !== 'playing') return;
     if (duel) { DU.pauseMenu(); return; }
+    if (coop) { coopPauseMenu(); return; }
     state = 'paused';
     releaseInput();
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
@@ -3123,6 +3137,7 @@ Object.assign(EN, {
   }
 
   function gameOver(reason) {
+    if (coop && !coopG() && DU.connected) dSend({ t: 'Cx', r: reason || '' });
     lastReason = reason ? { s: reason } : (mode === 'rush' ? { s: '倒在突袭中' } : mode === 'boss' ? { s: '第 {0} 关失败', a: wave } : '');
     state = 'over';
     releaseInput();
@@ -3246,8 +3261,8 @@ Object.assign(EN, {
   function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
 
   function update(dt) {
-    if (duel) DU.tick(dt);
-    var FZ = duel && DU.phase !== 'fight';   // frozen: waiting, countdown, between rounds
+    if (duel) DU.tick(dt); else if (coop) coopTick(dt);
+    var FZ = (duel && DU.phase !== 'fight') || (coop && CO.down);   // frozen: waiting, countdown, between rounds
     gtime += dt;
     if (adrenT > 0) adrenT -= dt;
     // look with arrow keys
@@ -3349,15 +3364,15 @@ Object.assign(EN, {
 
     // waves
     var maxAlive = mode === 'rush' ? 8 + wave : mode === 'boss' ? 4 + Math.floor(wave / 2) : siege ? Math.min(70, 26 + wave * 4) : 6 + Math.floor(wave / 2);
-    maxAlive = Math.max(3, Math.round(maxAlive * DF.alive));
+    maxAlive = Math.max(3, Math.round(maxAlive * DF.alive * (coop ? 2 : 1)));
     spawnTimer -= dt;
     if (mode === 'rush') {
       rushT += dt; timeLeft -= dt; wave = 1 + Math.floor(rushT / 20);
-      if (timeLeft <= 0) { timeLeft = 0; gameOver('时间到'); return; }
+      if (timeLeft <= 0 && !coopG()) { timeLeft = 0; gameOver('时间到'); return; }
     }
-    if (!duel && spawned < toSpawn && enemies.length < maxAlive && spawnTimer <= 0) { spawnEnemy(); spawnTimer = (mode === 'rush' ? Math.max(0.35, 0.8 - wave * 0.05) : siege ? 0.15 : 0.9) * DF.spawn; }
-    if (!duel && spawned >= toSpawn && enemies.length === 0) {
-      if (waveDelay <= 0) { waveDelay = siege ? 20 : 3; banner(siege ? t('本波结束 · 休息 20 秒，去商店购物') : t('清场'), siege ? 2600 : 1500); score += wave * 50; }
+    if (!duel && !coopG() && spawned < toSpawn && enemies.length < maxAlive && spawnTimer <= 0) { spawnEnemy(); spawnTimer = (mode === 'rush' ? Math.max(0.35, 0.8 - wave * 0.05) : siege ? 0.15 : 0.9) * DF.spawn / (coop ? 2 : 1); }
+    if (!duel && !coopG() && spawned >= toSpawn && enemies.length === 0) {
+      if (waveDelay <= 0) { waveDelay = siege ? 20 : 3; banner(siege ? t('本波结束 · 休息 20 秒，去商店购物') : t('清场'), siege ? 2600 : 1500); score += wave * 50; if (coop) CO.gs += wave * 50; }
       waveDelay -= dt;
       if (waveDelay <= 0) { waveDelay = 0; nextWave(); }
     }
@@ -3386,6 +3401,7 @@ Object.assign(EN, {
     // enemies
     for (var i = 0; i < enemies.length; i++) {
       var e = enemies[i], pos = e.g.position, ty = e.type;
+      if (e.ghost) { coopGhostStep(e, dt); continue; }
       if (e.sp0 === undefined) e.sp0 = e.speed * DF.spd;
       e.speed = e.sp0 * (e.slow > 0 ? 0.55 : 1);
       if (e.slow > 0) e.slow -= dt;
@@ -3394,7 +3410,8 @@ Object.assign(EN, {
         if (e.bt <= 0) { e.bt = 0.12; burst(new THREE.Vector3(pos.x, pos.y + 1.2, pos.z), 1, partMatO, 2.5); }
         if (e.hp <= 0) { PK.w = e.burnW === undefined ? -1 : e.burnW; killEnemy(e, false); PK.w = -1; i--; continue; }
       }
-      var dx = P.x - pos.x, dz = P.z - pos.z, dd = Math.hypot(dx, dz) || 1;
+      var TP = coop ? coopTarget(pos) : P; BT = TP;
+      var dx = TP.x - pos.x, dz = TP.z - pos.z, dd = Math.hypot(dx, dz) || 1;
       e.g.rotation.y = Math.atan2(dx, dz);
       updateBar(e, dd);
       e.t += dt;
@@ -3423,8 +3440,8 @@ Object.assign(EN, {
             explode(pos.x, 1, pos.z, 4, 26 * atkMul(), false);
             continue;
           }
-        } else if (dd < (ty === 'tank' ? 2.2 : 1.5) && e.melee <= 0 && Math.abs(P.y) < 1.2) {
-          e.melee = ty === 'tank' ? 1.2 : 0.8; damage((ty === 'tank' ? 18 : 8) * atkMul());
+        } else if (dd < (ty === 'tank' ? 2.2 : 1.5) && e.melee <= 0 && Math.abs(TP.y) < 1.2) {
+          e.melee = ty === 'tank' ? 1.2 : 0.8; dmgTP(TP, (ty === 'tank' ? 18 : 8) * atkMul());
         }
       } else {
         if (siege && ty === 'boss') { e.melee -= dt; if (e.melee <= 0 && fortDist(pos.x, pos.z) < e.r + 3.0) { e.melee = 1.5; fortDamage(18 * atkMul()); } }
@@ -3455,7 +3472,7 @@ Object.assign(EN, {
           e.pathT = 0.12 + Math.random() * 0.08;
           if (NAV.dirty) navBuild();
           var ncl = navClass(e);
-          e.los = navLos(ncl, pos.x, pos.z, P.x, P.z);
+          e.los = navLos(ncl, pos.x, pos.z, TP.x, TP.z);
           e.pdir = e.los ? null : navSteer(e, pos);
         }
         if (!e.los && e.pdir) {
@@ -3531,6 +3548,7 @@ Object.assign(EN, {
       var hitBox = insideBox(p.x, p.y, p.z);
       var gone = bl.life <= 0 || Math.abs(p.x) > A || Math.abs(p.z) > A || p.y < 0 || hitBox;
       if (!gone && Math.hypot(p.x - P.x, p.z - P.z) < 0.6 && p.y > P.y && p.y < P.y + 1.8) { damage(bl.dmg || 10); gone = true; }
+      if (!gone && coop && !coopG() && DU.seen && DU.opHp > 0 && Math.hypot(p.x - DU.rt.x, p.z - DU.rt.z) < 0.6 && p.y > DU.rt.y && p.y < DU.rt.y + 1.8) { coopHurtG(bl.dmg || 10); gone = true; }
       if (gone) { scene.remove(bl.m); bolts.splice(k, 1); }
     }
 
@@ -3601,6 +3619,7 @@ Object.assign(EN, {
   }
 
   function damage(n) {
+    if (coop && CO.down) return;
     if (state !== 'playing') return;
     if (siege) return;   // 守城战：敌人不会伤害主角，只会攻击城墙
     n *= CH.armor * DF.dmg;
@@ -3608,7 +3627,7 @@ Object.assign(EN, {
     P.hp -= n;
     hurtFlash();
     tone(140, 60, 0.2, 'sawtooth', 0.12);
-    if (P.hp <= 0) { P.hp = 0; gameOver(); }
+    if (P.hp <= 0) { P.hp = 0; if (coop) coopDown(); else gameOver(); }
   }
 
   /* ---------- grenades ---------- */
@@ -4072,6 +4091,7 @@ Object.assign(EN, {
     var m;
     try { m = JSON.parse(ev.data); } catch (e) { return; }
     if (!m || typeof m.t !== 'string') return;
+    if (m.t.charAt(0) === 'C') { coopMsg(m); return; }
     switch (m.t) {
       case 'h':
         DU.opChar = (m.c >= 0 && CHARS[m.c | 0]) ? (m.c | 0) : 0;
@@ -4199,6 +4219,7 @@ Object.assign(EN, {
     duEndCard();
   }
   function duLeft(msg) {
+    if (coop) { coopLeftCard(msg); return; }
     if (duel && DU.phase !== 'idle') {
       DU.phase = 'end'; DU.alive = false; releaseInput();
       if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
@@ -4215,6 +4236,7 @@ Object.assign(EN, {
     DU.ready = false; DU.opReady = false; DU.again = false; DU.opAgain = false; DU.code = '';
   }
   DU.leave = function (notify) {
+    if (coop || DU.coopWanted) coopCleanup();
     if (notify && DU.connected) dSend({ t: 'q' });
     duCloseConn();
     if (DU.rem) { scene.remove(DU.rem); DU.rem = null; }
@@ -4319,6 +4341,7 @@ Object.assign(EN, {
   function duReadSrv() { var el = $('duSrv'); if (el) DU.serverIn = el.value; return DU.serverIn !== undefined ? DU.serverIn : (dDefaultServer() || dSavedServer()); }
 
   function duHome() {
+    if (DU.coopWanted) { coopHome(); return; }
     DU.ui = 'home';
     var h = duHead('ROOM DUEL · 1v1', '房间单挑 · 1 对 1', zt('创建或加入房间', 'Create or join a room'));
     h += '<p>' + zt('通过中转服务器联机：房主创建房间得到一个房间号，朋友输入房间号即可加入，不用复制长代码，任何网络都能用。单挑地图已缩小。', 'Plays through a relay server: the host creates a room and gets a short room number, the friend types it in. No long codes, works on any network. The duel arena is small.') + '</p>';
@@ -4380,6 +4403,7 @@ Object.assign(EN, {
     });
   }
   function duReadyPanel() {
+    if (DU.coopWanted) { coopReadyPanel(); return; }
     DU.ui = 'ready';
     var ch = CHARS[DU.opChar];
     var h = duHead('CONNECTED', '已连接', zt('房间已就绪', 'Room is ready'));
@@ -4413,8 +4437,272 @@ Object.assign(EN, {
   };
   DU.panel = function () { DU.err = ''; duHome(); };
   canvas.addEventListener('mousedown', function () {
-    if (duel && state === 'playing' && !isTouch && !document.pointerLockElement && $('menu').hidden) requestLock();
+    if ((duel || coop) && state === 'playing' && !isTouch && !document.pointerLockElement && $('menu').hidden) requestLock();
   });
+
+
+  /* ---------- CO-OP: two players against the monsters ----------
+     The host runs the whole simulation (spawns, AI, waves, fortress). The guest only draws the monsters as "ghosts"
+     from 15 Hz snapshots and reports the damage its own shots/grenades deal; the host applies it. Each player has own
+     weapons, coins and score. Monster counts are doubled. A downed player is revived after 12 s; both down = game over. */
+  function coopG() { return coop && CO.role === 'guest'; }
+  CO.types = Object.keys(ETYPES);
+  function coopReset() {
+    Object.keys(CO.ghosts).forEach(function (k) { scene.remove(CO.ghosts[k].g); });
+    CO.gb.forEach(function (m) { scene.remove(m); });
+    CO.ghosts = {}; CO.dead = {}; CO.pend = []; CO.gb = []; CO.nid = 0; CO.down = false; CO.downT = 0; CO.gDownT = 0;
+    CO.hk = 0; CO.gk = 0; CO.gs = 0; CO.sb = [0, 0, 0, 0]; CO.snd = 0; CO.ui = 0; CO.head = false;
+  }
+  function coopCleanup() {
+    coop = false; coopReset(); roomSeed = ''; DU.coopWanted = false; CO.role = '';
+    var b = $('coopBoard'); if (b) b.hidden = true;
+    if (CO.sv) { mode = CO.sv.mode; mapId = CO.sv.mapId; diff = CO.sv.diff; DF = DIFFS[diff]; CO.sv = null; }
+  }
+  function coopHome() {
+    DU.ui = 'home'; CO.sv = null;
+    var h = duHead('CO-OP', '联机合作', zt('创建或加入房间', 'Create or join a room'));
+    h += '<p>' + zt('和朋友一起打怪：房主先在大厅选好玩法、地图和难度，再创建房间，把 4 位房间号发给朋友。怪物数量翻倍，还有得分榜。', 'Fight the monsters together: the host picks mode, map and difficulty in the lobby, creates a room and sends the 4-digit number to a friend. Monster counts are doubled and there is a scoreboard.') + '</p>';
+    if (DU.err) h += '<div class="dstat err">' + duEsc(DU.err) + '</div>';
+    h += duServerBox();
+    h += '<div class="drow"><button class="go" id="duCreate" type="button">' + zt('创建房间', 'Create') + '</button><button class="go alt" id="duJoin" type="button">' + zt('加入房间', 'Join') + '</button></div>';
+    h += '<button class="ghost" id="duBack" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
+    duCard(h, coopHome);
+    $('duCreate').addEventListener('click', duHostFlow);
+    $('duJoin').addEventListener('click', function () { duReadSrv(); DU.err = ''; DU.role = 'guest'; duJoinPanel(); });
+    $('duBack').addEventListener('click', function () { duCloseConn(); DU.err = ''; DU.coopWanted = false; showLobby(); });
+  }
+  function coopReadyPanel() {
+    DU.ui = 'ready'; CO.role = DU.role;
+    if (!CO.sv) CO.sv = { mode: mode, mapId: mapId, diff: diff };
+    var host = DU.role === 'host', ch = CHARS[DU.opChar];
+    var h = duHead('CO-OP', '联机合作', zt('房间已就绪', 'Room is ready'));
+    h += '<p>' + zt('队友：', 'Teammate: ') + t(ch.name) + ' · ' + t(ch.role) + '<br>';
+    if (host) h += zt('玩法：', 'Mode: ') + t(MODES[mode].name) + ' · ' + zt('地图：', 'Map: ') + t(MAPDEF[mapId].name) + ' · ' + zt('难度：', 'Difficulty: ') + t(DIFFS[diff].name) + '<br>' + zt('怪物数量翻倍。想换玩法就先返回大厅重选。', 'Monster counts are doubled. To change the mode, go back to the lobby first.');
+    else h += zt('等待房主选好玩法并开始……', 'Waiting for the host to start…');
+    h += '</p>';
+    if (host) h += '<button class="go" id="coStart" type="button">' + zt('开始合作', 'Start co-op') + '</button>';
+    h += '<button class="ghost" id="duQuit" type="button">' + zt('离开房间', 'Leave room') + '</button>';
+    duCard(h, coopReadyPanel);
+    if (host) $('coStart').addEventListener('click', coopStart);
+    $('duQuit').addEventListener('click', function () { DU.leave(true); });
+  }
+  function coopStart() {
+    if (!DU.connected) return;
+    CO.seed = 'c' + Math.floor(Math.random() * 1e9);
+    dSend({ t: 'Cs', mode: mode, map: mapId, df: diff, seed: CO.seed });
+    coopBegin();
+  }
+  function coopBegin() {
+    coopReset(); coop = true; duel = false; CO.role = DU.role; roomSeed = CO.seed; DF = DIFFS[diff];
+    if (DU.rem) scene.remove(DU.rem);
+    DU.rem = duMakeRemote(CHARS[DU.opChar].color); DU.rem.visible = false; DU.seen = false; DU.snap = true; DU.opHp = 100; DU.snd = 0;
+    scene.add(DU.rem);
+    coopBoardEl().hidden = false; coopBoardUpdate();
+    begin('lobby');
+    if (CO.role === 'guest') P.x += 2;
+    $('menu').hidden = true;
+  }
+  function coopMsg(m) {
+    switch (m.t) {
+      case 'Cs':
+        if (CO.role !== 'guest' || !MODES[m.mode] || m.mode === 'duel' || !MAPDEF[m.map]) return;
+        mode = m.mode; mapId = m.map; diff = DIFFS[m.df] ? m.df : 'normal'; DF = DIFFS[diff]; CO.seed = String(m.seed || '');
+        coopBegin(); break;
+      case 'Ce': if (coopG() && state === 'playing') coopApplySnap(m); break;
+      case 'Ch': if (coop && !coopG()) coopApplyHits(m.a); break;
+      case 'Cd': if (coopG()) damage(Math.min(250, Math.max(0, +m.n || 0))); break;
+      case 'Ck': if (coopG()) coins += Math.max(0, Math.min(500, +m.c || 0)); break;
+      case 'Cr': if (coop && CO.down) coopRevive(); break;
+      case 'Cx': if (coopG() && state === 'playing') gameOver(typeof m.r === 'string' && m.r ? m.r : undefined); break;
+    }
+  }
+  function coopTarget(pos) {
+    var gOk = DU.seen && DU.opHp > 0 && DU.connected;
+    if (!gOk) return P;
+    var G = CO.G;
+    if (CO.down || Math.hypot(DU.rt.x - pos.x, DU.rt.z - pos.z) < Math.hypot(P.x - pos.x, P.z - pos.z)) { G.x = DU.rt.x; G.y = DU.rt.y; G.z = DU.rt.z; return G; }
+    return P;
+  }
+  function coopHurtG(n) { dSend({ t: 'Cd', n: Math.round(n * 10) / 10 }); }
+  function dmgTP(tp, n) { if (tp && tp.isG) coopHurtG(n); else damage(n); }
+  function coopDown() {
+    if (CO.down) return;
+    CO.down = true; CO.downT = 0; releaseInput();
+    banner(zt('你倒下了，等队友救援（约 12 秒）', 'You are down. Hold on for a revive (about 12 s)'), 3200);
+  }
+  function coopRevive() { CO.down = false; CO.downT = 0; P.hp = Math.max(1, Math.ceil(P.maxHp * 0.5)); banner(zt('已复活', 'Revived'), 1500); }
+
+  /* host side */
+  function coopSendSnap() {
+    var en = [], bl = [], i, e, p;
+    for (i = 0; i < enemies.length && en.length < 170; i++) {
+      e = enemies[i]; if (e.dead) continue;
+      if (!e.id) e.id = ++CO.nid;
+      p = e.g.position;
+      en.push([e.id, CO.types.indexOf(e.type), dR2(p.x), dR2(p.y), dR2(p.z), Math.round(e.g.rotation.y * 100) / 100, Math.round(e.hp * 10) / 10, Math.round(e.maxHp)]);
+    }
+    for (i = 0; i < bolts.length && bl.length < 40; i++) { p = bolts[i].m.position; bl.push([dR2(p.x), dR2(p.y), dR2(p.z)]); }
+    var o = { t: 'Ce', w: wave, tl: Math.round(timeLeft * 10) / 10, ts: toSpawn, sp: spawned, wd: Math.round(waveDelay * 10) / 10, sb: [score, CO.hk, CO.gs, CO.gk], fh: Math.round(fort.hp), fm: fort.max, en: en, bl: bl };
+    while (en.length > 10 && JSON.stringify(o).length > 15000) en.length = Math.floor(en.length * 0.85);   // the relay drops messages over 16 KB
+    dSend(o, true);
+  }
+  function coopApplyHits(a) {
+    if (!a || !a.length || a.length > 80) return;
+    a.forEach(function (q) {
+      var id = q[0], d = Math.min(600, +q[1] || 0), hd = !!q[2];
+      if (!(d > 0)) return;
+      for (var i = 0; i < enemies.length; i++) {
+        var e = enemies[i];
+        if (e.id === id && !e.dead) { e.hp -= d; e.flash = 0.08; e.cr = 'g'; if (e.hp <= 0) killEnemy(e, hd); break; }
+      }
+    });
+  }
+
+  /* guest side */
+  function coopHook(g, hp0) {   // every hp change on a ghost (bullets, blasts, perks...) is reported to the host
+    var hv = hp0;
+    Object.defineProperty(g, 'hp', { configurable: true, enumerable: true,
+      get: function () { return hv; },
+      set: function (v) { if (!CO.applying && v < hv) CO.pend.push([g.gid, hv - v, CO.head ? 1 : 0]); hv = v; } });
+  }
+  function coopDropGhost(g, fx) {
+    var ix = enemies.indexOf(g); if (ix >= 0) enemies.splice(ix, 1);
+    if (fx) { var p = g.g.position.clone(); p.y += 1.2; burst(p, g.type === 'boss' ? 40 : 14, partMatO, 6); }
+    scene.remove(g.g); delete CO.ghosts[g.gid];
+  }
+  function coopWaveStart() {
+    if (!CO.down) P.hp = Math.min(P.maxHp, P.hp + 25 * DF.heal);
+    addAmmo(0.5);
+    if (siege && wave > 1) coins += Math.round((60 + wave * 15) * DF.coin);
+    banner(mode === 'boss' ? tf('首领来袭 · 第 {0} 关', wave) : tf('第 {0} 波', wave), 2000);
+  }
+  function coopApplySnap(m) {
+    if (!m.en) return;
+    var seen = {}, i, q, g, id, ty;
+    for (i = 0; i < m.en.length; i++) {
+      q = m.en[i]; id = q[0];
+      if (CO.dead[id] && gtime - CO.dead[id] < 1.5) continue;   // we already killed it locally, the host will catch up
+      seen[id] = 1;
+      g = CO.ghosts[id];
+      if (!g) {
+        ty = CO.types[q[1]]; if (!ty) continue;
+        g = makeEnemy(ty); g.ghost = true; g.gid = id; coopHook(g, q[6]);
+        g.g.position.set(q[2], q[3], q[4]); g.g.rotation.y = q[5];
+        scene.add(g.g); enemies.push(g); CO.ghosts[id] = g;
+      }
+      g.tx = q[2]; g.ty = q[3]; g.tz = q[4]; g.tyaw = q[5]; g.maxHp = q[7] || g.maxHp;
+      CO.applying = true; g.hp = q[6]; CO.applying = false;
+    }
+    Object.keys(CO.ghosts).forEach(function (k) { if (!seen[k]) coopDropGhost(CO.ghosts[k], true); });
+    var n = m.bl ? m.bl.length : 0;
+    while (CO.gb.length < n) { var mm = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), hazardBasic); scene.add(mm); CO.gb.push(mm); }
+    for (i = 0; i < CO.gb.length; i++) { if (i < n) { CO.gb[i].visible = true; CO.gb[i].position.set(m.bl[i][0], m.bl[i][1], m.bl[i][2]); } else CO.gb[i].visible = false; }
+    if (mode !== 'rush' && m.w > wave) { wave = m.w; coopWaveStart(); }
+    timeLeft = m.tl; toSpawn = m.ts; spawned = m.sp; waveDelay = m.wd;
+    if (m.sb && m.sb.length === 4) { CO.sb = m.sb; score = m.sb[2]; }
+    if (siege) { fort.hp = m.fh; if (m.fm) fort.max = m.fm; }
+  }
+  function coopGhostStep(e, dt) {
+    var pos = e.g.position, k = Math.min(1, dt * 12);
+    pos.x += (e.tx - pos.x) * k; pos.y += (e.ty - pos.y) * k; pos.z += (e.tz - pos.z) * k;
+    var da = Math.atan2(Math.sin(e.tyaw - e.g.rotation.y), Math.cos(e.tyaw - e.g.rotation.y)); e.g.rotation.y += da * k;
+    e.t += dt; if (e.spin) e.spin.rotation.y += dt * 35;
+    updateBar(e, Math.hypot(P.x - pos.x, P.z - pos.z));
+    if (e.flash > 0) { e.flash -= dt; e.bodyMat.emissive.setHex(0xffffff); e.headMat.emissive.setHex(0xffffff); }
+    else { e.bodyMat.emissive.setHex(0); e.headMat.emissive.setHex(0); }
+  }
+
+  /* both sides, every frame */
+  function coopTick(dt) {
+    if (!DU.connected) return;
+    var host = !coopG();
+    DU.snd -= dt;
+    if (DU.snd <= 0) { DU.snd = 0.05; dSend({ t: 's', x: dR2(P.x), y: dR2(P.y), z: dR2(P.z), yaw: Math.round(P.yaw * 1000) / 1000, hp: Math.round(P.hp), mx: P.maxHp, ar: Math.round(P.armor) }, true); }
+    var R = DU.rem;
+    if (R) {
+      var k = Math.min(1, dt * 16), dx = DU.rt.x - R.position.x, dy = DU.rt.y - R.position.y, dz = DU.rt.z - R.position.z;
+      if (DU.snap || dx * dx + dz * dz > 25) { R.position.set(DU.rt.x, DU.rt.y, DU.rt.z); if (DU.seen) DU.snap = false; }
+      else { R.position.x += dx * k; R.position.y += dy * k; R.position.z += dz * k; }
+      var ta = DU.rt.yaw + Math.PI, da = Math.atan2(Math.sin(ta - R.rotation.y), Math.cos(ta - R.rotation.y));
+      R.rotation.y += da * k;
+      R.visible = DU.seen && DU.opHp > 0;
+      var hpR = Math.ceil(DU.opHp);
+      if (hpR !== DU.lblHp) { DU.lblHp = hpR; duDrawLabel(hpR); }
+    }
+    CO.ui -= dt; if (CO.ui <= 0) { CO.ui = 0.25; coopBoardUpdate(); }
+    if (host) {
+      CO.snd -= dt; if (CO.snd <= 0) { CO.snd = 0.066; coopSendSnap(); }
+      var gDown = DU.seen && DU.opHp <= 0;
+      if (gDown) { CO.gDownT += dt; if (!CO.down && CO.gDownT > 12) { dSend({ t: 'Cr' }); CO.gDownT = 0; DU.opHp = 50; } } else CO.gDownT = 0;
+      if (CO.down) { CO.downT += dt; if (gDown) { gameOver(); return; } if (CO.downT > 12) coopRevive(); }
+    } else if (CO.pend.length) {
+      var by = {}, a = [];
+      CO.pend.forEach(function (q) { if (by[q[0]]) { by[q[0]][1] += q[1]; by[q[0]][2] = by[q[0]][2] || q[2]; } else { by[q[0]] = [q[0], q[1], q[2]]; a.push(by[q[0]]); } });
+      a.forEach(function (q) { q[1] = Math.round(q[1] * 10) / 10; });
+      CO.pend = []; CO.head = false;
+      dSend({ t: 'Ch', a: a.slice(0, 60) });
+    }
+  }
+
+  /* scoreboard */
+  function coopBoardEl() {
+    var b = $('coopBoard');
+    if (!b) {
+      b = document.createElement('div'); b.id = 'coopBoard'; b.hidden = true;
+      b.style.cssText = 'position:fixed;left:12px;top:34%;z-index:3;min-width:150px;padding:8px 12px;background:rgba(10,9,8,.6);border:1px solid rgba(236,230,214,.22);color:#ece6d6;font:13px/1.7 -apple-system,BlinkMacSystemFont,sans-serif;pointer-events:none;';
+      document.body.appendChild(b);
+    }
+    return b;
+  }
+  function coopSB() {
+    var me = coopG() ? [score, CO.sb[3]] : [score, CO.hk], fr = coopG() ? [CO.sb[0], CO.sb[1]] : [CO.gs, CO.gk];
+    var rows = [{ n: zt('你', 'You'), s: me[0], k: me[1], me: true }, { n: zt('朋友', 'Friend'), s: fr[0], k: fr[1] }];
+    rows.sort(function (a, b) { return b.s - a.s; });
+    return rows;
+  }
+  function coopBoardUpdate() {
+    var b = coopBoardEl(); if (b.hidden) return;
+    var h = '<div style="font-weight:700;letter-spacing:.12em;margin-bottom:2px">' + zt('得分榜', 'SCOREBOARD') + '</div>';
+    coopSB().forEach(function (r, i) {
+      h += '<div' + (r.me ? ' style="color:#ffb36b"' : '') + '>' + (i === 0 && r.s > 0 ? '★ ' : '') + r.n + ' <b>' + Math.round(r.s) + '</b> · ' + zt('击杀 ', 'Kills ') + r.k + '</div>';
+    });
+    b.innerHTML = h;
+  }
+
+  /* cards */
+  function coopOverCard() {
+    coopBoardEl().hidden = true;
+    var rows = coopSB(), host = !coopG();
+    var h = duHead('CO-OP OVER', '合作结束', lastReason ? tf(lastReason.s, lastReason.a) : tf('第 {0} 波倒下', wave));
+    h += '<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:15px"><tr style="color:var(--muted);text-align:left"><th>#</th><th>' + zt('玩家', 'Player') + '</th><th>' + zt('得分', 'Score') + '</th><th>' + zt('击杀', 'Kills') + '</th></tr>';
+    rows.forEach(function (r, i) {
+      h += '<tr' + (r.me ? ' style="color:#ffb36b"' : '') + '><td>' + (i + 1) + '</td><td>' + (i === 0 && r.s > 0 ? '★ ' : '') + r.n + '</td><td><b>' + Math.round(r.s) + '</b></td><td>' + r.k + '</td></tr>';
+    });
+    h += '</table>';
+    if (host) h += '<button class="go" id="coAgain" type="button">' + zt('再来一局', 'Play again') + '</button>';
+    else h += '<p>' + zt('等房主重新开始……', 'Waiting for the host to restart…') + '</p>';
+    h += '<button class="ghost" id="duQuit" type="button">' + zt('离开房间', 'Leave room') + '</button>';
+    duCard(h, coopOverCard);
+    if (host) $('coAgain').addEventListener('click', function () { $('menu').hidden = true; coopStart(); });
+    $('duQuit').addEventListener('click', function () { DU.leave(true); });
+  }
+  function coopPauseMenu() {
+    releaseInput();
+    var h = duHead('PAUSED', '已暂停', zt('联机合作', 'Co-op'));
+    h += '<p>' + zt('联机不会暂停，队友和怪物都在继续。', 'Online play does not pause; your teammate and the monsters keep going.') + '</p>';
+    h += '<button class="go" id="duResume" type="button">' + zt('继续', 'Resume') + '</button><button class="ghost" id="duQuit" type="button">' + zt('离开房间', 'Leave room') + '</button>';
+    duCard(h, coopPauseMenu);
+    $('duResume').addEventListener('click', function () { $('menu').hidden = true; requestLock(); });
+    $('duQuit').addEventListener('click', function () { DU.leave(true); });
+  }
+  function coopLeftCard(msg) {
+    state = 'over'; releaseInput(); coopBoardEl().hidden = true;
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    var h = duHead('CO-OP', '联机合作', zt('队友离开了', 'Your teammate left'));
+    h += '<p>' + duEsc(msg || '') + '</p><button class="go" id="duQuit" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
+    duCard(h, function () { coopLeftCard(msg); });
+    $('duQuit').addEventListener('click', function () { DU.leave(false); });
+  }
 
   /* ---------- loop ---------- */
   var last = performance.now();
