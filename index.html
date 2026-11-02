@@ -1330,10 +1330,10 @@ Object.assign(EN, {
 
   MAPDEF.duel = {
     name: '单挑竞技场', desc: '专为 1 对 1 缩小的 36 × 36 米场地：中央矮墙、两侧立柱墙、四角掩体和货箱，出生点前方各有沙袋。联机房间模式专用地图。',
-    hidden: true, fog: 0x17140f, size: 18, spawn: [0, 14, 0], ground: 'asphalt', rep: 9,
+    hidden: true, fog: 0x17140f, size: 18, spawn: [-12, 14, 0], duelSp: [[-12, 14, 0], [12, -14, Math.PI]], ground: 'asphalt', rep: 9,
     gen: function () {
       // everything is point-symmetric about the centre, so both spawns are fair
-      paint(0, 14, 8, 0.3, 0xc9a227); paint(0, -14, 8, 0.3, 0x4fb0ff);
+      paint(-12, 14, 6, 0.3, 0xc9a227); paint(12, -14, 6, 0.3, 0x4fb0ff);
       solid(0, 0, 8, 1.2, 0, 1.4, 0x4a463f, 0xc9682a);                        // low centre wall, can be shot over
       solid(-9, 0, 1.4, 5, 0, 2.8, 0x4a463f, 0xc9682a); solid(9, 0, 1.4, 5, 0, 2.8, 0x4a463f, 0xc9682a);
       [[-5.5, -6], [5.5, 6], [5.5, -6], [-5.5, 6]].forEach(function (q) { solid(q[0], q[1], 3.4, 1.2, 0, 2.2, 0x55503f, 0xc9682a); });
@@ -1341,6 +1341,37 @@ Object.assign(EN, {
       crate(-12, -10, 1.6); crate(12, 10, 1.6); crate(-13, 10, 1.2); crate(13, -10, 1.2);
       barrel(-2.6, -11.5, 0x7a3b2a); barrel(2.6, 11.5, 0x7a3b2a); barrel(-3.8, 11.5, 0x35527a); barrel(3.8, -11.5, 0x35527a);
       [[-16, -16], [16, -16], [-16, 16], [16, 16]].forEach(function (q) { lamp(q[0], q[1]); });
+    }
+  };
+
+  // More duel arenas. All are point-symmetric about the centre (so both spawns are fair) and the spawns sit in opposite
+  // corners behind tall cover, so nobody starts with the other player in the crosshair. duelSp = [host, guest] = [x, z, yaw].
+  MAPDEF.duel2 = {
+    name: '集装箱货场', desc: '1 对 1 货场，风车形的高集装箱墙把视线切开，中间有一块矮掩体。',
+    hidden: true, fog: 0x14171a, size: 18, spawn: [-14, 14, 0], duelSp: [[-14, 14, 0], [14, -14, Math.PI]], ground: 'asphalt', rep: 9,
+    picks: [['health', -14, 0, 0], ['health', 14, 0, 0], ['ammo', 0, 14, 0], ['ammo', 0, -14, 0]],
+    gen: function () {
+      paint(-14, 14, 5, 0.3, 0xc9a227); paint(14, -14, 5, 0.3, 0x4fb0ff);
+      solid(-8, -8, 10, 2.4, 0, 2.8, 0x3d4a52, 0xc9682a); solid(8, 8, 10, 2.4, 0, 2.8, 0x3d4a52, 0xc9682a);
+      solid(8, -8, 2.4, 10, 0, 2.8, 0x52443d, 0xc9682a); solid(-8, 8, 2.4, 10, 0, 2.8, 0x52443d, 0xc9682a);
+      solid(0, 0, 4, 4, 0, 1.3, 0x4a463f, 0xc9682a);
+      crate(-14, -3, 1.6); crate(14, 3, 1.6); crate(-3, -14, 1.4); crate(3, 14, 1.4);
+      barrel(-14, -8, 0x7a3b2a); barrel(14, 8, 0x7a3b2a); barrel(-8, -14, 0x35527a); barrel(8, 14, 0x35527a);
+      lamp(-17, -17); lamp(17, 17);
+    }
+  };
+  MAPDEF.duel3 = {
+    name: '十字巷', desc: '1 对 1 十字路口，中央是高墙，四条短墙围出绕行的巷道。',
+    hidden: true, fog: 0x1a1612, size: 18, spawn: [-13, 13, 0], duelSp: [[-13, 13, 0], [13, -13, Math.PI]], ground: 'asphalt', rep: 9,
+    picks: [['health', -15, 0, 0], ['health', 15, 0, 0], ['ammo', 0, -15, 0], ['ammo', 0, 15, 0]],
+    gen: function () {
+      paint(-13, 13, 5, 0.3, 0xc9a227); paint(13, -13, 5, 0.3, 0x4fb0ff);
+      solid(0, 0, 4, 4, 0, 2.8, 0x4a463f, 0xc9682a);
+      solid(0, -9, 1.4, 6, 0, 2.2, 0x55503f, 0xc9682a); solid(0, 9, 1.4, 6, 0, 2.2, 0x55503f, 0xc9682a);
+      solid(-9, 0, 6, 1.4, 0, 2.2, 0x55503f, 0xc9682a); solid(9, 0, 6, 1.4, 0, 2.2, 0x55503f, 0xc9682a);
+      crate(-13, -5, 1.6); crate(13, 5, 1.6); crate(-5, 13, 1.6); crate(5, -13, 1.6);
+      barrel(-6, -6, 0x7a3b2a); barrel(6, 6, 0x7a3b2a); barrel(-6, 6, 0x35527a); barrel(6, -6, 0x35527a);
+      lamp(-17, -17); lamp(17, 17);
     }
   };
 
@@ -1567,61 +1598,136 @@ Object.assign(EN, {
     function mk(geo, mat, x, y, z, rx) { var m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.renderOrder = 10; if (rx) m.rotation.x = rx; g.add(m); return m; }
     function bx(w, h, d, mat, x, y, z, rx) { return mk(new THREE.BoxGeometry(w, h, d), mat, x, y, z, rx); }
     function cy(r, len, mat, x, y, z) { var m = mk(new THREE.CylinderGeometry(r, r, len, 12), mat, x, y, z); m.rotation.x = Math.PI / 2; return m; }
-    var mz = -0.9, base = [0.2, -0.22, -0.5], magM = null, foreM = null;
+    var mz = -0.9, base = [0.2, -0.22, -0.5], magM = null, foreM = null, ironsX = [];
+    // prof(): a side-view silhouette (points are [z, y], optional holes) extruded sideways by w. Gives real receiver / stock / grip shapes.
+    function prof(pts, w, mat, x, y, z, par, holes) {
+      var sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]);
+      for (var pi = 1; pi < pts.length; pi++) sh.lineTo(pts[pi][0], pts[pi][1]);
+      (holes || []).forEach(function (hp) { var ph = new THREE.Path(); ph.moveTo(hp[0][0], hp[0][1]); for (var hi = 1; hi < hp.length; hi++) ph.lineTo(hp[hi][0], hp[hi][1]); sh.holes.push(ph); });
+      var geo = new THREE.ExtrudeGeometry(sh, { depth: w, bevelEnabled: false });
+      geo.rotateY(-Math.PI / 2); geo.translate(w / 2, 0, 0);
+      var m = new THREE.Mesh(geo, mat); m.position.set(x || 0, y || 0, z || 0); m.renderOrder = 10; (par || g).add(m); return m;
+    }
+    function cyp(r, len, mat, x, y, z, par) { var m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 14), mat); m.position.set(x, y, z); m.rotation.x = Math.PI / 2; m.renderOrder = 10; (par || g).add(m); return m; }
+    function bxp(w, h, d, mat, x, y, z, par) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.renderOrder = 10; (par || g).add(m); return m; }
+    var i;
     if (id === 'pistol') {
       base = [0.2, -0.2, -0.42]; mz = -0.27;
-      bx(0.05, 0.065, 0.24, GM, 0, 0.03, -0.1); bx(0.042, 0.035, 0.22, GP, 0, -0.02, -0.09);
-      cy(0.011, 0.05, GL, 0, 0.03, -0.24); magM = bx(0.04, 0.12, 0.06, GP, 0, -0.1, 0.02, 0.2);
-      bx(0.01, 0.02, 0.01, gunAcc, 0, 0.07, -0.2); bx(0.02, 0.015, 0.01, gunAcc, 0, 0.07, 0.01);
+      prof([[-0.25, 0.012], [-0.25, 0.056], [-0.228, 0.07], [0.058, 0.07], [0.058, 0.012]], 0.044, GM, 0, 0, 0);                                    // slide
+      bx(0.004, 0.026, 0.07, GP, -0.0225, 0.045, -0.07);                                                                                         // ejection port
+      for (i = 0; i < 5; i++) bx(0.004, 0.044, 0.006, GP, -0.0225, 0.04, 0.0 + i * 0.012);                                                       // rear serrations
+      prof([[-0.215, 0.012], [0.058, 0.012], [0.09, -0.185], [0.012, -0.185], [0.0, -0.075], [-0.075, -0.075], [-0.095, -0.03], [-0.2, -0.03]], 0.04, GP, 0, 0, 0, null,
+        [[[-0.075, -0.04], [-0.015, -0.04], [-0.015, -0.066], [-0.065, -0.066]]]);                                                               // frame + trigger guard + raked grip
+      bx(0.01, 0.03, 0.008, GL, 0, -0.05, -0.035, 0.35);                                                                                         // trigger
+      cy(0.0105, 0.03, GL, 0, 0.032, -0.262);                                                                                                    // barrel tip
+      magM = bx(0.04, 0.12, 0.06, GP, 0, -0.1, 0.02, 0.2);
+      bx(0.01, 0.022, 0.01, gunAcc, 0, 0.081, -0.235); bx(0.024, 0.016, 0.01, gunAcc, 0, 0.078, 0.045);
       bx(0.075, 0.1, 0.1, GH, 0, -0.1, 0.04);
     } else if (id === 'rifle') {
-      mz = -0.95;
-      bx(0.07, 0.09, 0.42, GM, 0, 0, -0.05); bx(0.066, 0.07, 0.3, GP, 0, -0.005, -0.42);
-      cy(0.013, 0.34, GL, 0, 0.01, -0.78); cy(0.02, 0.06, GM, 0, 0.01, -0.93);
-      bx(0.058, 0.1, 0.26, GP, 0, -0.01, 0.3); magM = bx(0.05, 0.17, 0.08, GP, 0, -0.14, -0.1, -0.15);
-      bx(0.045, 0.11, 0.06, GP, 0, -0.1, 0.13, 0.2); bx(0.04, 0.02, 0.4, GL, 0, 0.055, -0.1);
-      bx(0.012, 0.05, 0.012, gunAcc, 0, 0.08, -0.72); bx(0.03, 0.03, 0.012, gunAcc, 0, 0.075, 0.08);
+      // AK-47: stamped receiver with dust cover, wooden handguards / grip / stock, gas block, front sight hood, curved banana magazine
+      mz = -0.94;
+      var WA = gmat(0x8a4b22, 0.05, 0.6);
+      prof([[-0.21, -0.052], [-0.21, 0.04], [-0.15, 0.052], [0.14, 0.066], [0.23, 0.056], [0.25, 0.02], [0.25, -0.052]], 0.064, GM, 0, 0, 0);       // receiver + dust cover
+      bx(0.066, 0.075, 0.05, GM, 0, 0.002, -0.235);                                                                                              // front trunnion
+      bx(0.004, 0.03, 0.11, GP, -0.033, 0.012, 0.03); bx(0.004, 0.012, 0.3, GL, -0.033, -0.035, 0.03);                                         // ejection port, lower rib
+      bx(0.066, 0.07, 0.31, WA, 0, -0.01, -0.38); bx(0.054, 0.043, 0.28, WA, 0, 0.047, -0.38);                                                   // lower + upper wooden handguards
+      bx(0.068, 0.004, 0.28, GP, 0, 0.025, -0.38);                                                                                               // seam between them
+      for (i = 0; i < 5; i++) bx(0.004, 0.056, 0.005, GP, -0.034, -0.012, -0.27 - i * 0.05);                                                   // handguard grooves
+      bx(0.074, 0.112, 0.014, GM, 0, 0.012, -0.54);                                                                                              // handguard retainer
+      cy(0.0125, 0.4, GL, 0, 0.01, -0.73);                                                                                                       // barrel
+      bx(0.036, 0.04, 0.07, GM, 0, 0.04, -0.585); cy(0.02, 0.07, GM, 0, 0.01, -0.585);                                                           // gas block + tube end
+      bx(0.036, 0.04, 0.05, GM, 0, 0.038, -0.8);                                                                                                 // front sight base
+      cy(0.0185, 0.07, GM, 0, 0.01, -0.91);                                                                                                      // muzzle nut
+      cy(0.0055, 0.12, GL, 0, -0.03, -0.6);                                                                                                      // cleaning rod tip
+      ironsX.push(bx(0.008, 0.05, 0.008, GM, 0, 0.083, -0.8), bx(0.005, 0.045, 0.012, GM, -0.02, 0.07, -0.8), bx(0.005, 0.045, 0.012, GM, 0.02, 0.07, -0.8),   // front sight post + hood
+        bx(0.05, 0.02, 0.07, GM, 0, 0.077, -0.2), bx(0.012, 0.016, 0.01, GM, -0.014, 0.094, -0.18), bx(0.012, 0.016, 0.01, GM, 0.014, 0.094, -0.18));          // rear sight
+      prof([[0.065, -0.045], [0.135, -0.045], [0.178, -0.215], [0.118, -0.222]], 0.042, WA, 0, 0, 0);                                            // pistol grip
+      bx(0.012, 0.008, 0.09, GM, 0, -0.098, 0.01); bx(0.012, 0.05, 0.008, GM, 0, -0.074, -0.035); bx(0.008, 0.03, 0.008, GP, 0, -0.07, 0.01, 0.3); // trigger guard + trigger
+      prof([[0.23, 0.052], [0.34, 0.04], [0.46, 0.026], [0.47, -0.125], [0.36, -0.088], [0.23, -0.05]], 0.044, WA, 0, 0, 0); bx(0.048, 0.15, 0.01, GM, 0, -0.05, 0.475);   // stock + butt plate
+      var mg = new THREE.Group(); mg.position.set(0, -0.17, -0.1); g.add(mg);
+      prof([[0.037, 0.12], [0.033, 0.02], [0.012, -0.07], [-0.028, -0.14], [-0.108, -0.14], [-0.062, -0.07], [-0.042, 0.02], [-0.037, 0.12]], 0.044, GP, 0, 0, 0, mg);   // banana magazine
+      for (i = 0; i < 3; i++) bxp(0.046, 0.006, 0.07, GM, 0, 0.07 - i * 0.07, -0.01 - i * 0.025, mg);                                         // mag ribs
+      magM = mg;
       bx(0.08, 0.09, 0.12, GH, 0, -0.09, -0.4); bx(0.075, 0.1, 0.1, GH, 0, -0.1, 0.14);
     } else if (id === 'smg') {
       base = [0.2, -0.2, -0.45]; mz = -0.64;
-      bx(0.07, 0.09, 0.32, GM, 0, 0, -0.02); cy(0.024, 0.22, GP, 0, 0.005, -0.28); cy(0.01, 0.1, GL, 0, 0.005, -0.54);
-      magM = bx(0.04, 0.2, 0.07, GP, 0, -0.15, 0); bx(0.045, 0.11, 0.06, GP, 0, -0.1, 0.12, 0.2);
-      bx(0.012, 0.012, 0.22, GL, 0, 0.01, 0.28); bx(0.05, 0.07, 0.02, GP, 0, 0.01, 0.4);
+      prof([[-0.17, -0.045], [-0.185, 0.04], [-0.12, 0.052], [0.17, 0.052], [0.17, -0.045]], 0.068, GM, 0, 0, 0);                                  // receiver
+      cy(0.029, 0.24, GM, 0, 0.005, -0.3);                                                                                                       // barrel shroud
+      for (i = 0; i < 5; i++) bx(0.004, 0.016, 0.022, GP, -0.027, 0.012, -0.2 - i * 0.04);                                                       // shroud vents
+      cy(0.012, 0.1, GL, 0, 0.005, -0.58); cy(0.017, 0.04, GM, 0, 0.005, -0.62);                                                                 // barrel + flash hider
+      bx(0.03, 0.012, 0.3, GL, 0, 0.058, -0.02); bx(0.012, 0.02, 0.05, GL, -0.034, 0.03, -0.02);                                                // top rail, cocking handle
+      bx(0.004, 0.026, 0.08, GP, -0.035, 0.012, 0.05);                                                                                           // ejection port
+      prof([[0.08, -0.04], [0.14, -0.04], [0.165, -0.15], [0.105, -0.15]], 0.042, GP, 0, 0, 0);                                                  // pistol grip
+      magM = bx(0.04, 0.2, 0.07, GP, 0, -0.15, 0);
+      bx(0.01, 0.01, 0.24, GL, -0.022, 0.012, 0.28); bx(0.01, 0.01, 0.24, GL, 0.022, 0.012, 0.28); bx(0.056, 0.075, 0.02, GP, 0, 0.012, 0.4);       // folding wire stock
       bx(0.012, 0.04, 0.012, gunAcc, 0, 0.065, -0.5); bx(0.03, 0.025, 0.012, gunAcc, 0, 0.06, 0.05);
       bx(0.08, 0.09, 0.1, GH, 0, -0.09, -0.26); bx(0.075, 0.1, 0.1, GH, 0, -0.1, 0.12);
     } else if (id === 'revolver') {
       base = [0.2, -0.2, -0.42]; mz = -0.46;
-      bx(0.05, 0.08, 0.18, GM, 0, 0, -0.02); magM = cy(0.042, 0.09, GL, 0, 0.01, -0.07);
-      cy(0.014, 0.26, GL, 0, 0.025, -0.27); bx(0.03, 0.02, 0.28, GM, 0, 0.06, -0.2);
-      bx(0.045, 0.13, 0.07, GW, 0, -0.1, 0.07, 0.3); bx(0.012, 0.025, 0.012, gunAcc, 0, 0.08, -0.4);
+      prof([[-0.1, -0.045], [-0.1, 0.055], [-0.02, 0.066], [0.075, 0.05], [0.105, -0.015], [0.08, -0.045]], 0.046, GM, 0, 0, 0);                  // frame
+      var cg = new THREE.Group(); cg.position.set(0, 0.01, -0.07); g.add(cg);                                                                    // swing-out cylinder
+      cyp(0.042, 0.09, GL, 0, 0, 0, cg);
+      for (i = 0; i < 6; i++) { var ca = i * Math.PI / 3; cyp(0.009, 0.094, GP, Math.sin(ca) * 0.027, Math.cos(ca) * 0.027, 0, cg); }          // chamber holes
+      magM = cg;
+      cy(0.014, 0.26, GL, 0, 0.025, -0.27); cy(0.018, 0.22, GM, 0, -0.012, -0.29); bx(0.03, 0.02, 0.28, GM, 0, 0.06, -0.2);                      // barrel, ejector shroud, top rib
+      prof([[0.07, 0.05], [0.1, 0.075], [0.118, 0.05], [0.09, 0.04]], 0.012, GL, 0, 0, 0);                                                       // hammer
+      prof([[0.04, -0.03], [0.11, -0.03], [0.143, -0.2], [0.073, -0.2]], 0.046, GW, 0, 0, 0);                                                    // wood grip
+      bx(0.01, 0.028, 0.008, GL, 0, -0.06, 0.02, 0.3); bx(0.012, 0.008, 0.1, GM, 0, -0.08, -0.01);                                               // trigger + guard
+      bx(0.012, 0.025, 0.012, gunAcc, 0, 0.08, -0.4);
       bx(0.075, 0.1, 0.1, GH, 0, -0.1, 0.08);
     } else if (id === 'shotgun') {
       mz = -0.98;
-      bx(0.07, 0.09, 0.3, GM, 0, 0, 0); cy(0.021, 0.62, GL, 0, 0.035, -0.5); cy(0.02, 0.5, GM, 0, -0.02, -0.45);
-      foreM = bx(0.075, 0.06, 0.2, GW, 0, -0.02, -0.4); bx(0.07, 0.11, 0.36, GW, 0, -0.01, 0.32);
+      prof([[-0.15, -0.05], [-0.15, 0.045], [-0.05, 0.056], [0.15, 0.05], [0.15, -0.05]], 0.07, GM, 0, 0, 0);                                      // receiver
+      bx(0.072, 0.012, 0.1, GP, 0, -0.052, 0.03); bx(0.004, 0.026, 0.08, GP, -0.036, 0.015, 0.02);                                               // loading port, ejection port
+      cy(0.021, 0.8, GL, 0, 0.035, -0.58); cy(0.02, 0.5, GM, 0, -0.02, -0.45); cy(0.024, 0.02, GM, 0, -0.02, -0.7);                              // barrel, magazine tube, end cap
+      for (i = 0; i < 4; i++) bx(0.016, 0.008, 0.012, GM, 0, 0.058, -0.3 - i * 0.12);                                                           // rib posts
+      foreM = prof([[-0.1, -0.03], [-0.1, 0.03], [0.1, 0.03], [0.1, -0.03]], 0.078, GW, 0, -0.02, -0.4);                                         // pump fore-end
+      for (i = 0; i < 5; i++) bx(0.08, 0.004, 0.006, GP, 0, -0.012, -0.46 + i * 0.02);                                                           // pump grooves (static, on the receiver side)
+      prof([[0.15, 0.045], [0.34, 0.034], [0.5, 0.004], [0.5, -0.13], [0.34, -0.09], [0.15, -0.05]], 0.05, GW, 0, 0, 0);                         // wood stock
+      bx(0.05, 0.14, 0.012, GP, 0, -0.04, 0.505);
       bx(0.012, 0.04, 0.012, gunAcc, 0, 0.075, -0.97); bx(0.045, 0.11, 0.06, GP, 0, -0.1, 0.14, 0.2);
       bx(0.08, 0.09, 0.12, GH, 0, -0.08, -0.4); bx(0.075, 0.1, 0.1, GH, 0, -0.1, 0.14);
     } else if (id === 'sniper') {
       base = [0.2, -0.24, -0.5]; mz = -1.1;
-      bx(0.065, 0.09, 0.42, GM, 0, 0, 0); cy(0.014, 0.7, GL, 0, 0.015, -0.62); cy(0.022, 0.08, GM, 0, 0.015, -1.08);
-      cy(0.034, 0.3, GP, 0, 0.12, -0.05); cy(0.04, 0.02, gunAcc, 0, 0.12, -0.2); cy(0.04, 0.02, gunAcc, 0, 0.12, 0.1);
-      bx(0.02, 0.04, 0.03, GM, 0, 0.085, -0.12); bx(0.02, 0.04, 0.03, GM, 0, 0.085, 0.02);
-      bx(0.058, 0.12, 0.34, GW, 0, -0.01, 0.36); bx(0.05, 0.04, 0.14, GP, 0, 0.06, 0.3);
-      magM = bx(0.05, 0.1, 0.08, GP, 0, -0.1, -0.02); bx(0.1, 0.02, 0.02, GL, 0.06, 0.03, 0.05);
-      bx(0.01, 0.12, 0.01, GM, -0.03, -0.07, -0.5, 0.2); bx(0.01, 0.12, 0.01, GM, 0.03, -0.07, -0.5, 0.2);
+      prof([[-0.21, -0.045], [-0.21, 0.045], [-0.1, 0.05], [0.21, 0.05], [0.21, -0.045]], 0.062, GM, 0, 0, 0);                                    // receiver
+      bx(0.004, 0.02, 0.12, GP, -0.032, 0.02, 0.06); bx(0.034, 0.012, 0.08, GL, 0, 0.056, 0.1);                                                  // ejection port, bolt shroud
+      cy(0.014, 0.82, GL, 0, 0.015, -0.65); cy(0.022, 0.08, GM, 0, 0.015, -1.06); for (i = 0; i < 3; i++) bx(0.046, 0.006, 0.01, GP, 0, 0.015, -1.03 - i * 0.02);   // heavy barrel + muzzle brake
+      cy(0.034, 0.3, GP, 0, 0.12, -0.05); cy(0.04, 0.02, gunAcc, 0, 0.12, -0.2); cy(0.04, 0.02, gunAcc, 0, 0.12, 0.1);                           // scope
+      bx(0.02, 0.04, 0.03, GM, 0, 0.085, -0.12); bx(0.02, 0.04, 0.03, GM, 0, 0.085, 0.02);                                                      // scope rings
+      bx(0.07, 0.05, 0.3, GW, 0, -0.04, -0.32);                                                                                                  // fore-end
+      prof([[0.15, 0.04], [0.3, 0.032], [0.47, 0.008], [0.5, -0.15], [0.4, -0.125], [0.3, -0.1], [0.22, -0.2], [0.14, -0.2], [0.14, -0.05]], 0.054, GW, 0, 0, 0);   // thumbhole stock
+      bx(0.05, 0.04, 0.14, GP, 0, 0.062, 0.3);                                                                                                   // cheek riser
+      magM = bx(0.05, 0.1, 0.08, GP, 0, -0.1, -0.02); bx(0.1, 0.02, 0.02, GL, 0.06, 0.03, 0.05);                                                 // magazine + bolt handle
+      bx(0.01, 0.12, 0.01, GM, -0.03, -0.07, -0.5, 0.2); bx(0.01, 0.12, 0.01, GM, 0.03, -0.07, -0.5, 0.2);                                       // bipod
       bx(0.08, 0.09, 0.12, GH, 0, -0.07, -0.3); bx(0.075, 0.1, 0.1, GH, 0, -0.1, 0.16);
     } else if (id === 'rpg') {
       base = [0.24, -0.26, -0.5]; mz = -0.98;
-      cy(0.052, 1.0, GP, 0, 0.02, -0.4); cy(0.07, 0.14, GM, 0, 0.02, 0.14); cy(0.06, 0.06, GM, 0, 0.02, -0.92);
-      bx(0.05, 0.05, 0.3, GW, 0, 0.085, -0.3); bx(0.012, 0.05, 0.012, gunAcc, 0, 0.12, -0.42); bx(0.03, 0.03, 0.012, gunAcc, 0, 0.115, -0.12);
-      magM = cy(0.04, 0.3, gunAcc, 0, 0.02, -0.98); bx(0.045, 0.11, 0.06, GP, 0, -0.1, -0.02, 0.2); bx(0.045, 0.1, 0.06, GP, 0, -0.1, -0.5, 0.1);
+      cy(0.052, 0.9, GP, 0, 0.02, -0.45); cy(0.056, 0.03, GM, 0, 0.02, -0.15); cy(0.056, 0.03, GM, 0, 0.02, -0.62);                               // launch tube + bands
+      var vt = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.052, 0.18, 18), GM); vt.rotation.x = Math.PI / 2; vt.position.set(0, 0.02, 0.07); vt.renderOrder = 10; g.add(vt);   // rear venturi
+      var bl = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.07, 0.1, 18), GM); bl.rotation.x = Math.PI / 2; bl.position.set(0, 0.02, -0.92); bl.renderOrder = 10; g.add(bl);     // front bell
+      cy(0.022, 0.22, GL, 0, 0.1, -0.3); bx(0.02, 0.045, 0.05, GM, 0, 0.07, -0.3);                                                               // optic + mount
+      bx(0.012, 0.05, 0.012, gunAcc, 0, 0.12, -0.42); bx(0.03, 0.03, 0.012, gunAcc, 0, 0.115, -0.12);
+      var wg = new THREE.Group(); wg.position.set(0, 0.02, -0.98); g.add(wg);                                                                    // rocket warhead
+      cyp(0.04, 0.2, gunAcc, 0, 0, 0.05, wg);
+      var cn = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.16, 16), GL); cn.rotation.x = -Math.PI / 2; cn.position.set(0, 0, -0.13); cn.renderOrder = 10; wg.add(cn);
+      magM = wg;
+      bx(0.045, 0.11, 0.06, GP, 0, -0.1, -0.02, 0.2); bx(0.045, 0.1, 0.06, GP, 0, -0.1, -0.5, 0.1); bx(0.02, 0.03, 0.05, GL, 0, -0.04, -0.02);   // grips + trigger group
       bx(0.08, 0.09, 0.1, GH, 0, -0.09, -0.5); bx(0.075, 0.1, 0.1, GH, 0, -0.1, -0.02);
     } else {
       base = [0.2, -0.24, -0.52]; mz = -1.02;
-      bx(0.09, 0.11, 0.46, GM, 0, 0, -0.05); cy(0.032, 0.4, GP, 0, 0.01, -0.5); cy(0.013, 0.2, GL, 0, 0.01, -0.88); cy(0.02, 0.05, GM, 0, 0.01, -1.0);
-      magM = bx(0.14, 0.13, 0.14, GM, 0, -0.13, -0.02); bx(0.03, 0.05, 0.22, GL, 0, 0.09, -0.1); bx(0.02, 0.03, 0.18, gunAcc, 0, 0.12, -0.1);
-      bx(0.06, 0.11, 0.28, GP, 0, -0.01, 0.34); bx(0.045, 0.11, 0.06, GP, 0, -0.1, 0.15, 0.2);
-      bx(0.012, 0.14, 0.012, GM, -0.04, -0.08, -0.62, 0.25); bx(0.012, 0.14, 0.012, GM, 0.04, -0.08, -0.62, 0.25);
+      prof([[-0.28, -0.055], [-0.28, 0.055], [-0.16, 0.062], [0.17, 0.062], [0.18, -0.055]], 0.09, GM, 0, 0, 0);                                   // heavy receiver
+      cy(0.034, 0.4, GM, 0, 0.01, -0.5); for (i = 0; i < 5; i++) bx(0.004, 0.016, 0.028, GP, -0.034, 0.012, -0.34 - i * 0.07);                   // barrel shroud + vents
+      cy(0.013, 0.2, GL, 0, 0.01, -0.88); cy(0.02, 0.05, GM, 0, 0.01, -1.0);                                                                      // barrel + flash hider
+      bx(0.03, 0.05, 0.22, GL, 0, 0.09, -0.1); bx(0.02, 0.03, 0.18, gunAcc, 0, 0.12, -0.1);                                                      // carry handle
+      bx(0.092, 0.012, 0.16, GL, 0, 0.066, -0.14);                                                                                               // feed tray cover
+      var ab = new THREE.Group(); ab.position.set(0, -0.13, -0.02); g.add(ab);                                                                    // ammo box + belt
+      bxp(0.14, 0.13, 0.14, GM, 0, 0, 0, ab); bxp(0.144, 0.012, 0.144, GL, 0, 0.06, 0, ab);
+      var brass = gmat(0xb08a2e, 0.8, 0.35);
+      for (i = 0; i < 4; i++) { var bu = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.05, 8), brass); bu.rotation.z = Math.PI / 2; bu.position.set(0, 0.085 + i * 0.016, 0.02); bu.renderOrder = 10; ab.add(bu); }
+      magM = ab;
+      prof([[0.18, 0.05], [0.4, 0.035], [0.5, -0.0], [0.5, -0.14], [0.4, -0.13], [0.3, -0.07], [0.18, -0.055]], 0.06, GP, 0, 0, 0);                  // stock
+      bx(0.045, 0.11, 0.06, GP, 0, -0.1, 0.15, 0.2);
+      bx(0.012, 0.14, 0.012, GM, -0.04, -0.08, -0.62, 0.25); bx(0.012, 0.14, 0.012, GM, 0.04, -0.08, -0.62, 0.25);                               // bipod
       bx(0.09, 0.09, 0.12, GH, 0, -0.09, -0.4); bx(0.075, 0.1, 0.1, GH, 0, -0.1, 0.16);
     }
     var muzzle = new THREE.Object3D();
@@ -1642,7 +1748,7 @@ Object.assign(EN, {
     }
     // optional scope on top of the receiver. Everything is hollow / open so you can look straight through it while aiming:
     // magnified scopes are open tubes (view down the bore), the red dot is a thin frame with a glowing dot in the middle.
-    var irons = g.children.filter(function (c) { return c.material === gunAcc && c.position.y > 0.05; });
+    var irons = g.children.filter(function (c) { return c.material === gunAcc && c.position.y > 0.05; }).concat(ironsX);
     var scg = new THREE.Group(), topY = { pistol: 0.12, rifle: 0.14, smg: 0.12, revolver: 0.13, shotgun: 0.12, lmg: 0.2 }[id] || 0.14;
     scg.position.set(0, topY, -0.1);
     var tubeMat = new THREE.MeshStandardMaterial({ color: 0x8a9096, roughness: 0.35, metalness: 0.7, fog: false, depthTest: false });
@@ -4006,6 +4112,9 @@ Object.assign(EN, {
     ui: 'home', err: '', code: '', joinIn: '', reply: ''
   };
   var DUEL_PICKS = [['health', -13, -3, 0], ['health', 13, 3, 0], ['ammo', -13, 3, 0], ['ammo', 13, -3, 0]];
+  var DU_MAPS = [['duel', '单挑竞技场', 'Duel Arena'], ['duel2', '集装箱货场', 'Container Yard'], ['duel3', '十字巷', 'Crossroads']];
+  DU.map = DU.map || 'duel';
+  function duMapName(id) { for (var i = 0; i < DU_MAPS.length; i++) if (DU_MAPS[i][0] === id) return zt(DU_MAPS[i][1], DU_MAPS[i][2]); return id; }
 
   /* --- relay server connection (WebSocket): the server only pairs two players by room code and forwards their messages --- */
   function dSavedServer() { try { return localStorage.getItem('rustrange-server') || ''; } catch (e) { return ''; } }
@@ -4076,7 +4185,7 @@ Object.assign(EN, {
   }
   function dOpen() {
     DU.connected = true;
-    dSend({ t: 'h', c: charId, tg: DU.target });
+    dSend({ t: 'h', c: charId, tg: DU.target, mp: DU.map });
     duReadyPanel();
   }
   function dClosed() {
@@ -4096,6 +4205,7 @@ Object.assign(EN, {
       case 'h':
         DU.opChar = (m.c >= 0 && CHARS[m.c | 0]) ? (m.c | 0) : 0;
         if (DU.role === 'guest' && (m.tg === 3 || m.tg === 5 || m.tg === 7)) DU.target = m.tg;
+        if (DU.role === 'guest' && typeof m.mp === 'string' && MAPDEF[m.mp] && MAPDEF[m.mp].duelSp) DU.map = m.mp;
         if (DU.ui === 'ready' && !duel) duReadyPanel();
         break;
       case 's':
@@ -4167,14 +4277,15 @@ Object.assign(EN, {
   /* --- match flow --- */
   function duSpawn() {
     var host = DU.role === 'host';
-    P.x = 0; P.z = host ? 14 : -14; P.y = 0; P.vy = 0; P.yaw = host ? 0 : Math.PI; P.pitch = 0;
+    var sp = (MAPDEF[mapId] && MAPDEF[mapId].duelSp) || [[0, 14, 0], [0, -14, Math.PI]], q = sp[host ? 0 : 1];
+    P.x = q[0]; P.z = q[1]; P.y = 0; P.vy = 0; P.yaw = q[2]; P.pitch = 0;
     P.hp = CH.hp; P.maxHp = CH.hp; P.armor = 0;
   }
   function duSetup() {
     for (var i = 0; i < WDEF.length; i++) owned[i] = WDEF[i].id !== 'rpg';
     cur = 1; drawT = 1; grenades = 0; coins = 0;
     updateSlots();
-    setPickups(DUEL_PICKS);
+    setPickups(MAPDEF[mapId].picks || DUEL_PICKS);
     duSpawn();
     if (DU.rem) scene.remove(DU.rem);
     DU.rem = duMakeRemote(CHARS[DU.opChar].color);
@@ -4192,7 +4303,7 @@ Object.assign(EN, {
   }
   function duBegin() {
     if (!DU.connected) return;
-    duel = true; DF = DIFFS.normal; mode = 'duel'; mapId = 'duel';
+    duel = true; DF = DIFFS.normal; mode = 'duel'; mapId = (MAPDEF[DU.map] && MAPDEF[DU.map].duelSp) ? DU.map : 'duel';
     DU.me = 0; DU.op = 0; DU.ready = true; DU.opDead = false; DU.again = false; DU.opAgain = false;
     DU.seen = false; DU.alive = true; DU.snd = 0; DU.acc = 0; DU.trs = [];
     begin('duel');
@@ -4348,6 +4459,7 @@ Object.assign(EN, {
     if (DU.err) h += '<div class="dstat err">' + duEsc(DU.err) + '</div>';
     h += '<div class="dstep"><b>' + zt('先到几分获胜（房主设置）', 'FIRST TO (HOST SETS)') + '</b><div class="seg" id="duTg">' +
       [3, 5, 7].map(function (n) { return '<button type="button" data-n="' + n + '" aria-pressed="' + (DU.target === n) + '">' + n + '</button>'; }).join('') + '</div></div>';
+    h += '<div class="dstep"><b>' + zt('地图（房主选择）', 'MAP (HOST SETS)') + '</b><div class="seg" id="duMp">' + DU_MAPS.map(function (q) { return '<button type="button" data-m="' + q[0] + '" aria-pressed="' + (DU.map === q[0]) + '">' + zt(q[1], q[2]) + '</button>'; }).join('') + '</div></div>';
     h += duServerBox();
     h += '<div class="drow"><button class="go" id="duCreate" type="button">' + zt('创建房间', 'Create') + '</button><button class="go alt" id="duJoin" type="button">' + zt('加入房间', 'Join') + '</button></div>';
     h += '<button class="ghost" id="duBack" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
@@ -4360,6 +4472,12 @@ Object.assign(EN, {
     });
     $('duCreate').addEventListener('click', duHostFlow);
     $('duJoin').addEventListener('click', function () { duReadSrv(); DU.err = ''; DU.role = 'guest'; duJoinPanel(); });
+    Array.prototype.forEach.call($('duMp').querySelectorAll('button'), function (b) {
+      b.addEventListener('click', function () {
+        DU.map = b.getAttribute('data-m');
+        Array.prototype.forEach.call($('duMp').querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      });
+    });
     $('duBack').addEventListener('click', function () { duCloseConn(); DU.err = ''; showLobby(); });
   }
   function duHostFlow() {
@@ -4407,7 +4525,7 @@ Object.assign(EN, {
     DU.ui = 'ready';
     var ch = CHARS[DU.opChar];
     var h = duHead('CONNECTED', '已连接', zt('房间已就绪', 'Room is ready'));
-    h += '<p>' + zt('对手角色：', 'Opponent: ') + t(ch.name) + ' · ' + t(ch.role) + '<br>' + zt('先到 ', 'First to ') + DU.target + zt(' 分获胜 · 地图：单挑竞技场（36 × 36 米）', ' wins · Map: Duel Arena (36 × 36 m)') + (DU.opReady ? '<br><b style="color:var(--ok)">' + zt('对手已准备好', 'Opponent is ready') + '</b>' : '') + '</p>';
+    h += '<p>' + zt('对手角色：', 'Opponent: ') + t(ch.name) + ' · ' + t(ch.role) + '<br>' + zt('先到 ', 'First to ') + DU.target + zt(' 分获胜 · 地图：', ' wins · Map: ') + duMapName(DU.map) + (DU.opReady ? '<br><b style="color:var(--ok)">' + zt('对手已准备好', 'Opponent is ready') + '</b>' : '') + '</p>';
     h += '<button class="go" id="duReady" type="button">' + zt('准备开战', 'Ready') + '</button><button class="ghost" id="duQuit" type="button">' + zt('离开房间', 'Leave room') + '</button>';
     duCard(h, duReadyPanel);
     $('duReady').addEventListener('click', duBegin);
