@@ -1329,49 +1329,84 @@ Object.assign(EN, {
 
 
   MAPDEF.duel = {
-    name: '单挑竞技场', desc: '专为 1 对 1 缩小的 36 × 36 米场地：中央矮墙、两侧立柱墙、四角掩体和货箱，出生点前方各有沙袋。联机房间模式专用地图。',
-    hidden: true, fog: 0x17140f, size: 18, spawn: [-12, 14, 0], duelSp: [[-12, 14, 0], [12, -14, Math.PI]], ground: 'asphalt', rep: 9,
+    name: '单挑竞技场', desc: '1 对 1 的 52 × 52 米城市广场：中央马路和矮墙、报废汽车、立柱墙、水泥隔离墩、高台狙击位，四周有树和路灯。联机房间模式专用地图。',
+    hidden: true, fog: 0x17140f, size: 26, spawn: [-21, 21, 0], duelSp: [[-21, 21, 0], [21, -21, Math.PI]], ground: 'asphalt', rep: 13,
+    picks: [['health', -20, 1, 0], ['health', 20, -1, 0], ['ammo', -4, 18, 0], ['ammo', 4, -18, 0], ['health', 0, 4, 0], ['health', 0, -4, 0]],
     gen: function () {
-      // everything is point-symmetric about the centre, so both spawns are fair
-      paint(-12, 14, 6, 0.3, 0xc9a227); paint(12, -14, 6, 0.3, 0x4fb0ff);
-      solid(0, 0, 8, 1.2, 0, 1.4, 0x4a463f, 0xc9682a);                        // low centre wall, can be shot over
-      solid(-9, 0, 1.4, 5, 0, 2.8, 0x4a463f, 0xc9682a); solid(9, 0, 1.4, 5, 0, 2.8, 0x4a463f, 0xc9682a);
-      [[-5.5, -6], [5.5, 6], [5.5, -6], [-5.5, 6]].forEach(function (q) { solid(q[0], q[1], 3.4, 1.2, 0, 2.2, 0x55503f, 0xc9682a); });
-      sandbags(0, 9, true); sandbags(0, -9, true);
-      crate(-12, -10, 1.6); crate(12, 10, 1.6); crate(-13, 10, 1.2); crate(13, -10, 1.2);
-      barrel(-2.6, -11.5, 0x7a3b2a); barrel(2.6, 11.5, 0x7a3b2a); barrel(-3.8, 11.5, 0x35527a); barrel(3.8, -11.5, 0x35527a);
-      [[-16, -16], [16, -16], [-16, 16], [16, 16]].forEach(function (q) { lamp(q[0], q[1]); });
+      // everything is placed in point-symmetric pairs: f(x, z, +1) and f(-x, -z, -1), so both spawns are fair
+      function pr(f, x, z) { f(x, z, 1); f(-x, -z, -1); }
+      road(0, 0, 52, 7, 0x222221);
+      for (var k = -12; k <= 12; k++) paint(k * 4, 0, 2, 0.22, 0xd9d3b0);                                                                           // dashed centre line
+      pr(function (x, z) { paint(x, z, 6, 0.3, x < 0 ? 0xc9a227 : 0x4fb0ff); }, -21, 21);
+      solid(0, 0, 12, 1.4, 0, 1.4, 0x4a463f, 0xc9682a);                                                                                            // low centre wall, can be shot over
+      pr(function (x, z) { solid(x, z, 1.6, 7, 0, 2.8, 0x4a463f, 0xc9682a); }, -13, 0);                                                           // pillar walls
+      pr(function (x, z) { solid(x, z, 4.4, 1.4, 0, 2.2, 0x55503f, 0xc9682a); }, -8, -9); pr(function (x, z) { solid(x, z, 4.4, 1.4, 0, 2.2, 0x55503f, 0xc9682a); }, -8, 9);
+      pr(function (x, z) { solid(x, z, 1.4, 6, 0, 2.2, 0x4a463f, 0xc9682a); }, -19, -7); pr(function (x, z) { solid(x, z, 6, 1.4, 0, 2.2, 0x4a463f, 0xc9682a); }, -7, -19);
+      pr(function (x, z, sg) { car(x, z, true, sg > 0 ? 0x7a2e2a : 0x2e4a7a); }, -5, -5);                                                         // wrecked cars by the road
+      pr(function (x, z, sg) {                                                                                                                      // raised sniper deck with stairs and a parapet
+        solid(x, z, 6, 6, 0, 1.6, 0x57524a, 0xc9682a); stairs(x + 5.4 * sg, z, sg > 0 ? 'x-' : 'x+', 3, 0, 1.6, 0x6a645a);
+        solid(x, z + 2.4 * sg, 5, 0.5, 1.6, 2.5, 0x4a463f, 0xc9682a);
+      }, -18, -18);
+      pr(function (x, z) { solid(x, z, 3, 0.8, 0, 1, 0x8a8780, 0xc9682a); deco(x, 1.02, z, 3.1, 0.06, 0.9, 0xc9a227); }, -14, 10);                   // concrete barriers
+      pr(function (x, z) { sandbags(x, z, true); }, 0, 13);
+      pr(function (x, z) { crate(x, z, 1.6); }, -14, -12); pr(function (x, z) { crate(x, z, 1.4); }, -23, -14); pr(function (x, z) { crate(x, z, 1.8); }, -17, 15); pr(function (x, z) { crate(x, z, 1.2); }, -22, 11);
+      pr(function (x, z, sg) { barrel(x, z, sg > 0 ? 0x7a3b2a : 0x35527a); }, -3, -17); pr(function (x, z, sg) { barrel(x, z, sg > 0 ? 0x35527a : 0x7a3b2a); }, -17, 3);
+      pr(function (x, z, sg) { barrel(x, z, 0x6a6a30); barrel(x - sg, z - 0.9 * sg, 0x35527a); }, -9, -14);                                                  // barrel pair
+      pr(function (x, z) { tree(x, z, true); }, -24, -24); pr(function (x, z) { tree(x, z, false); }, -24, 24);
+      pr(function (x, z) { bush(x, z); }, -23, 17); pr(function (x, z) { bush(x, z); }, -19, 22); pr(function (x, z) { bush(x, z); }, -11, -23);
+      pr(function (x, z) { lamp(x, z); }, -24, 0); pr(function (x, z) { lamp(x, z); }, 0, -24);
     }
   };
-
-  // More duel arenas. All are point-symmetric about the centre (so both spawns are fair) and the spawns sit in opposite
-  // corners behind tall cover, so nobody starts with the other player in the crosshair. duelSp = [host, guest] = [x, z, yaw].
   MAPDEF.duel2 = {
-    name: '集装箱货场', desc: '1 对 1 货场，风车形的高集装箱墙把视线切开，中间有一块矮掩体。',
-    hidden: true, fog: 0x14171a, size: 18, spawn: [-14, 14, 0], duelSp: [[-14, 14, 0], [14, -14, Math.PI]], ground: 'asphalt', rep: 9,
-    picks: [['health', -14, 0, 0], ['health', 14, 0, 0], ['ammo', 0, 14, 0], ['ammo', 0, -14, 0]],
+    name: '集装箱货场', desc: '1 对 1 的 52 × 52 米货场：风车形的集装箱墙、油罐、值班小屋、龙门吊横梁、托盘和轮胎堆，路线窄遭遇战多。',
+    hidden: true, fog: 0x14171a, size: 26, spawn: [-21, 21, 0], duelSp: [[-21, 21, 0], [21, -21, Math.PI]], ground: 'asphalt', rep: 13,
+    picks: [['health', -17, -4, 0], ['health', 17, 4, 0], ['ammo', -5, 16, 0], ['ammo', 5, -16, 0], ['health', 2, -8, 0], ['health', -2, 8, 0]],
     gen: function () {
-      paint(-14, 14, 5, 0.3, 0xc9a227); paint(14, -14, 5, 0.3, 0x4fb0ff);
-      solid(-8, -8, 10, 2.4, 0, 2.8, 0x3d4a52, 0xc9682a); solid(8, 8, 10, 2.4, 0, 2.8, 0x3d4a52, 0xc9682a);
-      solid(8, -8, 2.4, 10, 0, 2.8, 0x52443d, 0xc9682a); solid(-8, 8, 2.4, 10, 0, 2.8, 0x52443d, 0xc9682a);
-      solid(0, 0, 4, 4, 0, 1.3, 0x4a463f, 0xc9682a);
-      crate(-14, -3, 1.6); crate(14, 3, 1.6); crate(-3, -14, 1.4); crate(3, 14, 1.4);
-      barrel(-14, -8, 0x7a3b2a); barrel(14, 8, 0x7a3b2a); barrel(-8, -14, 0x35527a); barrel(8, 14, 0x35527a);
-      lamp(-17, -17); lamp(17, 17);
+      function pr(f, x, z) { f(x, z, 1); f(-x, -z, -1); }
+      pr(function (x, z) { paint(x, z, 6, 0.3, x < 0 ? 0xc9a227 : 0x4fb0ff); }, -21, 21);
+      for (var k = -5; k <= 5; k++) { paint(k * 4.4, -4.6, 0.3, 1.2, 0xc9a227); paint(k * 4.4, 4.6, 0.3, 1.2, 0xc9a227); }                           // hazard lane marks
+      pr(function (x, z, sg) { container(x, z, true, sg > 0 ? 0x3d5a6a : 0x7a3b2a); }, -12, -12);                                                  // pinwheel of containers
+      pr(function (x, z, sg) { container(x, z, false, sg > 0 ? 0x6a4a2a : 0x3d5a6a); }, 12, -12);
+      solid(0, 0, 6, 6, 0, 1.3, 0x4a463f, 0xc9682a); deco(0, 1.35, 0, 6.2, 0.1, 6.2, 0xc9a227);                                                     // low block in the middle
+      pr(function (x, z, sg) { container(x, z, false, sg > 0 ? 0x2f4a3a : 0x6a2f2a); }, -20, 0); pr(function (x, z, sg) { container(x, z, true, sg > 0 ? 0x6a4a2a : 0x2f4a3a); }, 0, -20);
+      pr(function (x, z) { solid(x, z, 3, 3, 0, 3.4, 0x6a7a80, 0x1a1a18); deco(x, 1.2, z, 3.1, 0.25, 3.1, 0xc9682a); deco(x, 2.4, z, 3.1, 0.25, 3.1, 0xc9682a); }, -8, -2);   // fuel tanks
+      pr(function (x, z) { solid(x, z, 5, 4, 0, 3, 0x6b6a62, 0x1a1a18); deco(x, 3.1, z, 5.4, 0.2, 4.4, 0x3a3935); deco(x, 1.2, z + 2.02, 1, 1.9, 0.05, 0x2a2a26); }, -3, -8);   // guard hut
+      [-4, 4].forEach(function (px) { pr(function (x, z) { solid(x, z, 0.5, 0.5, 0, 4.2, 0x3a3f44); }, px, 16.5); });                               // gantry posts ...
+      pr(function (x, z) { solid(x, z, 9, 0.6, 3.9, 4.4, 0xc9a227, 0x1a1a18); }, 0, 16.5);                                                          // ... and beam you can walk under
+      pr(function (x, z) { deco(x, 0.15, z, 1.6, 0.3, 1.6, 0x7a5a36); crate(x, z, 1.3, 0x6b5a3a); }, -15, -4);                                      // pallet + crate
+      pr(function (x, z) { crate(x, z, 1.8); }, -20, -9); pr(function (x, z) { crate(x, z, 1.6); }, -8, -22); pr(function (x, z) { crate(x, z, 1.5); }, -6, 6);
+      pr(function (x, z) { solid(x, z, 0.9, 0.9, 0, 0.5, 0x151515); solid(x, z, 0.9, 0.9, 0.5, 1.0, 0x1b1b1b); }, -22, -4);                         // tire stacks
+      pr(function (x, z, sg) { barrel(x, z, sg > 0 ? 0x35527a : 0x7a3b2a); barrel(x + sg, z, 0x6a6a30); }, -14, -20);
+      pr(function (x, z) { lamp(x, z); }, -24, -24); pr(function (x, z) { lamp(x, z); }, -24, 24);
     }
   };
   MAPDEF.duel3 = {
-    name: '十字巷', desc: '1 对 1 十字路口，中央是高墙，四条短墙围出绕行的巷道。',
-    hidden: true, fog: 0x1a1612, size: 18, spawn: [-13, 13, 0], duelSp: [[-13, 13, 0], [13, -13, Math.PI]], ground: 'asphalt', rep: 9,
-    picks: [['health', -15, 0, 0], ['health', 15, 0, 0], ['ammo', 0, -15, 0], ['ammo', 0, 15, 0]],
+    name: '十字巷', desc: '1 对 1 的 52 × 52 米十字路口小镇：中央是高大的方块，四条路障围出巷道，有汽车、高台、树木、围栏和货箱堆。',
+    hidden: true, fog: 0x1a1612, size: 26, spawn: [-21, 21, 0], duelSp: [[-21, 21, 0], [21, -21, Math.PI]], ground: 'asphalt', rep: 13,
+    picks: [['health', -21, -2, 0], ['health', 21, 2, 0], ['ammo', -2, -21, 0], ['ammo', 2, 21, 0], ['health', -5, -5, 0], ['health', 5, 5, 0]],
     gen: function () {
-      paint(-13, 13, 5, 0.3, 0xc9a227); paint(13, -13, 5, 0.3, 0x4fb0ff);
-      solid(0, 0, 4, 4, 0, 2.8, 0x4a463f, 0xc9682a);
-      solid(0, -9, 1.4, 6, 0, 2.2, 0x55503f, 0xc9682a); solid(0, 9, 1.4, 6, 0, 2.2, 0x55503f, 0xc9682a);
-      solid(-9, 0, 6, 1.4, 0, 2.2, 0x55503f, 0xc9682a); solid(9, 0, 6, 1.4, 0, 2.2, 0x55503f, 0xc9682a);
-      crate(-13, -5, 1.6); crate(13, 5, 1.6); crate(-5, 13, 1.6); crate(5, -13, 1.6);
-      barrel(-6, -6, 0x7a3b2a); barrel(6, 6, 0x7a3b2a); barrel(-6, 6, 0x35527a); barrel(6, -6, 0x35527a);
-      lamp(-17, -17); lamp(17, 17);
+      function pr(f, x, z) { f(x, z, 1); f(-x, -z, -1); }
+      road(0, 0, 6, 52, 0x242321); road(0, 0, 52, 6, 0x242321);
+      for (var k = -12; k <= 12; k++) { if (Math.abs(k) > 1) { paint(0, k * 2, 0.22, 1, 0xd9d3b0); paint(k * 2, 0, 1, 0.22, 0xd9d3b0); } }          // dashed road lines
+      for (var q = -2; q <= 2; q++) { paint(q * 1.1, 4.6, 0.6, 1.6, 0xd9d3b0); paint(q * 1.1, -4.6, 0.6, 1.6, 0xd9d3b0); paint(4.6, q * 1.1, 1.6, 0.6, 0xd9d3b0); paint(-4.6, q * 1.1, 1.6, 0.6, 0xd9d3b0); }   // crosswalks
+      pr(function (x, z) { paint(x, z, 6, 0.3, x < 0 ? 0xc9a227 : 0x4fb0ff); }, -21, 21);
+      solid(0, 0, 6, 6, 0, 3.2, 0x4a463f, 0xc9682a); deco(0, 3.3, 0, 6.4, 0.2, 6.4, 0xc9682a); deco(0, 2.4, 3.02, 2.2, 1.6, 0.05, 0x20262b);        // tall centre block with roof trim and a shuttered window
+      pr(function (x, z) { solid(x, z, 1.6, 10, 0, 2.4, 0x55503f, 0xc9682a); deco(x, 2.45, z, 1.7, 0.1, 10.2, 0xc9a227); }, 0, -13);               // the four road barricades
+      pr(function (x, z) { solid(x, z, 10, 1.6, 0, 2.4, 0x55503f, 0xc9682a); deco(x, 2.45, z, 10.2, 0.1, 1.7, 0xc9a227); }, -13, 0);
+      pr(function (x, z, sg) { car(x, z, true, sg > 0 ? 0x8a6a2a : 0x4a6a5a); }, -17, -3); pr(function (x, z, sg) { car(x, z, false, sg > 0 ? 0x5a3a6a : 0x7a4a2a); }, -3, -17);
+      pr(function (x, z, sg) {                                                                                                                      // raised sniper deck with stairs and a parapet
+        solid(x, z, 5, 5, 0, 1.6, 0x57524a, 0xc9682a); stairs(x + 4.9 * sg, z, sg > 0 ? 'x-' : 'x+', 3, 0, 1.6, 0x6a645a);
+        solid(x, z + 2.2 * sg, 4.4, 0.5, 1.6, 2.5, 0x4a463f, 0xc9682a);
+      }, -19.5, -19.5);
+      pr(function (x, z) { var sg = x < 0 ? 1 : -1; crate(x, z, 1.8); crate(x - 2.2 * sg, z + 0.5 * sg, 1.4); }, -10, -10); pr(function (x, z) { var sg = x < 0 ? 1 : -1; crate(x, z, 1.8); crate(x + 2.2 * sg, z + 0.5 * sg, 1.4); }, -10, 10);
+      pr(function (x, z) { sandbags(x, z, true); }, -7, 7);
+      pr(function (x, z) { solid(x, z, 1.4, 5, 0, 1.8, 0x4a463f, 0xc9682a); }, -22, -8); pr(function (x, z) { solid(x, z, 5, 1.4, 0, 1.8, 0x4a463f, 0xc9682a); }, -8, -22); pr(function (x, z) { solid(x, z, 5, 1.4, 0, 1.6, 0x55503f, 0xc9682a); }, -8, 14);
+      pr(function (x, z) { solid(x, z, 3, 0.8, 0, 1, 0x8a8780, 0xc9682a); }, -15, 8);                                                               // concrete barrier
+      pr(function (x, z, sg) { fenceRun(x, z, x + 7 * sg, z); }, -12, 24); pr(function (x, z, sg) { fenceRun(x, z, x, z + 8 * sg); }, -24, -12);                       // fences along the edge
+      pr(function (x, z, sg) { barrel(x, z, sg > 0 ? 0x7a3b2a : 0x35527a); }, -20, -12); pr(function (x, z, sg) { barrel(x, z, sg > 0 ? 0x35527a : 0x7a3b2a); }, -12, -22);
+      pr(function (x, z) { tree(x, z, true); }, -24, -20); pr(function (x, z) { tree(x, z, false); }, -24, 15); pr(function (x, z) { tree(x, z, false); }, -15, 24);
+      pr(function (x, z) { bush(x, z); }, -23, 18); pr(function (x, z) { bush(x, z); }, -18, 23); pr(function (x, z) { bush(x, z); }, 8, -9);
+      pr(function (x, z) { lamp(x, z); }, -3.8, -9); pr(function (x, z) { lamp(x, z); }, -9, 3.8);
     }
   };
 
