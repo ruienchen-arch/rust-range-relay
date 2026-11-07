@@ -5,6 +5,7 @@
 //   {op:'create', max:2}  -> 1v1 duel room (2 seats, sends the old 'paired' message)
 //   {op:'create', max:0}  -> co-op room, any number of players (override with env COOP_MAX)
 //   {op:'join', code}     -> join a room by its 4-digit code
+// Accounts: POST /api/register {user,pass,name} | /api/login {user,pass} | /api/me {token} | /api/name {token,name}
 // The creator is always player id 1 (the host). Every message a player sends is forwarded to
 // everybody else in the room with the sender's id added as "i". A message may carry "to": <id>
 // to reach one player only (the game uses it for host <-> guest traffic).
@@ -15,6 +16,9 @@ const path = require('path');
 const crypto = require('crypto');
 
 const PORT = +process.env.PORT || 8080;
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');   // accounts.json lives here
+const MAX_ACCOUNTS = 20000;
+const TOKEN_DAYS = 30;
 const COOP_MAX = +process.env.COOP_MAX || 0;      // 0 = unlimited
 const MAX_MSG = 16 * 1024;                          // the game never sends more than this
 const MAX_FRAME = 256 * 1024;
@@ -22,8 +26,90 @@ const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 const rooms = new Map();
 
+// ---------- accounts (username + password, display name) ----------
+// Stored in DATA_DIR/accounts.json. NOTE: free Render instances have a temporary disk, so the file is
+// wiped on every redeploy/restart. Attach a Render Disk and set DATA_DIR to its mount path to keep accounts.
+const DB_FILE = path.join(DATA_DIR, 'accounts.json');
+let db = { secret: crypto.randomBytes(32).toString('hex'), users: {} };
+try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))); } catch (e) {}
+let saveT = null;
+function saveDb() {
+  if (saveT) return;
+  saveT = setTimeout(() => {
+    saveT = null;
+    try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DB_FILE + '.tmp', JSON.stringify(db)); fs.renameSync(DB_FILE + '.tmp', DB_FILE); }
+    catch (e) { console.error('could not save accounts:', e.message); }
+  }, 300);
+}
+saveDb();   // writes the secret on first start
+function cleanName(n) {
+  return Array.from(String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f<>&"'`\\]/g, '').replace(/\s+/g, ' ').trim()).slice(0, 16).join('');
+}
+function hashPw(pw, salt) { return crypto.scryptSync(pw, salt, 32).toString('hex'); }
+function sign(p) { return crypto.createHmac('sha256', db.secret).update(p).digest('base64url'); }
+function makeToken(user) { const p = Buffer.from(JSON.stringify({ u: user, e: Date.now() + TOKEN_DAYS * 864e5 })).toString('base64url'); return p + '.' + sign(p); }
+function readToken(tok) {
+  if (typeof tok !== 'string') return null;
+  const i = tok.indexOf('.'); if (i < 1) return null;
+  const p = tok.slice(0, i), sig = tok.slice(i + 1), want = sign(p);
+  if (sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null;
+  try { const o = JSON.parse(Buffer.from(p, 'base64url').toString()); if (o.e < Date.now() || !db.users[o.u]) return null; return o.u; } catch (e) { return null; }
+}
+const hits = new Map();   // naive per-IP limit on login/register attempts: 25 per 10 minutes
+function limited(ip) {
+  const now = Date.now(), h = (hits.get(ip) || []).filter(t => now - t < 600000);
+  h.push(now); hits.set(ip, h);
+  return h.length > 25;
+}
+setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (!v.some(t => now - t < 600000)) hits.delete(k); }, 600000).unref();
+
+function api(req, res, url) {
+  const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' }); res.end(JSON.stringify(o)); };
+  if (req.method === 'OPTIONS') return send(204, {});
+  if (req.method !== 'POST') return send(405, { error: 'method' });
+  let body = '', dead = false;
+  req.on('data', (d) => { body += d; if (body.length > 2048 && !dead) { dead = true; send(413, { error: 'too-big' }); req.destroy(); } });
+  req.on('end', () => {
+    if (dead) return;
+    let m; try { m = JSON.parse(body || '{}'); } catch (e) { return send(400, { error: 'bad-json' }); }
+    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const user = String(m.user || '').trim().toLowerCase();
+    if (url === '/api/register') {
+      if (limited(ip)) return send(429, { error: 'rate' });
+      if (!/^[a-z0-9_]{3,20}$/.test(user)) return send(400, { error: 'bad-user' });
+      const pw = String(m.pass || '');
+      if (pw.length < 6 || pw.length > 64) return send(400, { error: 'bad-pass' });
+      if (db.users[user]) return send(409, { error: 'taken' });
+      if (Object.keys(db.users).length >= MAX_ACCOUNTS) return send(503, { error: 'full' });
+      const salt = crypto.randomBytes(16).toString('hex'), name = cleanName(m.name) || user;
+      db.users[user] = { salt, hash: hashPw(pw, salt), name, created: Date.now() };
+      saveDb();
+      return send(200, { token: makeToken(user), user, name });
+    }
+    if (url === '/api/login') {
+      if (limited(ip)) return send(429, { error: 'rate' });
+      const u = db.users[user], pw = String(m.pass || '').slice(0, 64);
+      const salt = u ? u.salt : '00'.repeat(16), h = hashPw(pw, salt);
+      if (!u || h.length !== u.hash.length || !crypto.timingSafeEqual(Buffer.from(h), Buffer.from(u.hash))) return send(401, { error: 'bad-login' });
+      return send(200, { token: makeToken(user), user, name: u.name });
+    }
+    if (url === '/api/me') {
+      const who = readToken(m.token); if (!who) return send(401, { error: 'bad-token' });
+      return send(200, { user: who, name: db.users[who].name });
+    }
+    if (url === '/api/name') {
+      const who = readToken(m.token); if (!who) return send(401, { error: 'bad-token' });
+      const name = cleanName(m.name); if (!name) return send(400, { error: 'bad-name' });
+      db.users[who].name = name; saveDb();
+      return send(200, { user: who, name });
+    }
+    send(404, { error: 'not-found' });
+  });
+}
+
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
+  if (url.indexOf('/api/') === 0) { api(req, res, url); return; }
   if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); return; }
   if (url === '/' || url === '/index.html') {
     fs.readFile(path.join(__dirname, 'index.html'), (err, buf) => {
@@ -117,15 +203,18 @@ function onMessage(c, text) {
       const room = { code, max: duel ? 2 : COOP_MAX, duel, clients: new Map(), nextId: 1 };
       rooms.set(code, room);
       addClient(room, c);
-      c.send(J({ op: 'created', code, id: c.id }));
+      c.name = whoIs(m);
+      c.send(J({ op: 'created', code, id: c.id, name: c.name }));
     } else if (m.op === 'join') {
       const room = rooms.get(String(m.code || '').trim());
       if (!room) { c.send(J({ op: 'error', code: 'no-room' })); return; }
       if (room.max && room.clients.size >= room.max) { c.send(J({ op: 'error', code: 'full' })); return; }
-      const peers = [...room.clients.keys()];
+      const peers = [...room.clients.keys()], names = {};
+      for (const o of room.clients.values()) names[o.id] = o.name || '';
       addClient(room, c);
-      c.send(J({ op: 'welcome', id: c.id, peers }));
-      for (const o of room.clients.values()) if (o !== c) o.send(J({ op: 'peer-joined', id: c.id }));
+      c.name = whoIs(m);
+      c.send(J({ op: 'welcome', id: c.id, peers, names, name: c.name }));
+      for (const o of room.clients.values()) if (o !== c) o.send(J({ op: 'peer-joined', id: c.id, name: c.name }));
       if (room.duel) for (const o of room.clients.values()) o.send(J({ op: 'paired' }));
     }
     return;
@@ -144,6 +233,8 @@ function onMessage(c, text) {
     for (const o of c.room.clients.values()) if (o !== c) o.send(out, live);
   }
 }
+// a verified account name when a valid token came with the message, otherwise the (cleaned) guest name
+function whoIs(m) { const u = readToken(m.token); return u ? db.users[u].name : cleanName(m.name); }
 function addClient(room, c) { c.room = room; c.id = room.nextId++; room.clients.set(c.id, c); }
 
 function onClose(c) {

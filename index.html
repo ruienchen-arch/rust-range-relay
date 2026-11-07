@@ -1912,7 +1912,7 @@ Object.assign(EN, {
   var P = { x: 0, y: 0, z: 22, vy: 0, hp: 100, maxHp: 100, armor: 0, yaw: 0, pitch: 0, ground: true };
   var W = { cd: 0, reload: 0, reloadMax: 1, rsnd: 0 };
   var coop = false;   // true while a co-op run is going (any number of players) (see the CO-OP section near the end)
-  var CO = { role: '', id: 0, peers: {}, list: [], ghosts: {}, dead: {}, pend: [], gb: [], nid: 0, down: false, downT: 0, hk: 0, sb: [], snd: 0, ui: 0, head: false, applying: false, seed: '', sv: null };
+  var CO = { role: '', id: 0, myName: '', peers: {}, list: [], ghosts: {}, dead: {}, pend: [], gb: [], nid: 0, down: false, downT: 0, hk: 0, sb: [], snd: 0, ui: 0, head: false, applying: false, seed: '', sv: null };
   var HOST_ID = 1;           // the relay always gives the room creator id 1
   var CO_EXTRA = 0.5;        // co-op: every extra player adds this fraction of the single-player enemy amount (0.5 = +50%)
   var CO_MAX_ALIVE = 150;    // hard cap on simultaneous enemies in co-op (the snapshot to guests holds at most 170)
@@ -3032,6 +3032,8 @@ Object.assign(EN, {
 
   /* ---------- menu ---------- */
   var menuMode = 'menu';
+  var ACC = { user: '', name: '', token: '' };
+  try { var _ac = JSON.parse(localStorage.getItem('rustrange-acct') || 'null'); if (_ac && _ac.token) { ACC.user = String(_ac.user || ''); ACC.name = String(_ac.name || ''); ACC.token = String(_ac.token); } } catch (e) {}
   function showMenu(mode) {
     menuMode = mode;
     if (coop && mode === 'over') { coopOverCard(); return; }
@@ -3311,6 +3313,11 @@ Object.assign(EN, {
       cb.textContent = zt('联机合作（和朋友一起打怪）', 'Co-op with a friend');
       $('goBtn').parentNode.insertBefore(cb, $('setBtn'));
       cb.addEventListener('click', function () { DU.coopWanted = true; DU.err = ''; DU.panel(); });
+    }
+    if ($('setBtn')) {
+      var ab = document.createElement('button'); ab.className = 'ghost'; ab.id = 'accBtn'; ab.type = 'button'; ab.textContent = accLabel();
+      $('goBtn').parentNode.insertBefore(ab, $('setBtn'));
+      ab.addEventListener('click', accPanel);
     }
     $('setBtn').addEventListener('click', function () { showSettings('menu'); });
   }
@@ -4284,10 +4291,10 @@ Object.assign(EN, {
     try { m = JSON.parse(ev.data); } catch (e) { return; }
     if (!m) return;
     if (typeof m.op === 'string') {   // control messages from the server
-      if (m.op === 'created') { DU.code = String(m.code); CO.id = (m.id | 0) || HOST_ID; duHostPanel(false); }
+      if (m.op === 'created') { DU.code = String(m.code); CO.id = (m.id | 0) || HOST_ID; CO.myName = String(m.name || ''); duHostPanel(false); }
       else if (m.op === 'paired') { if (!DU.connected) dOpen(); }
-      else if (m.op === 'welcome') { if (DU.coopWanted || coop) { CO.id = m.id | 0; (m.peers || []).forEach(function (id) { coopPeerAdd(id | 0); }); if (!DU.connected) dOpen(); } }
-      else if (m.op === 'peer-joined') { if (DU.coopWanted || coop) coopPeerJoined(m.id | 0); }
+      else if (m.op === 'welcome') { if (DU.coopWanted || coop) { CO.id = m.id | 0; CO.myName = String(m.name || ''); (m.peers || []).forEach(function (id) { coopPeerAdd(id | 0, m.names && m.names[id]); }); if (!DU.connected) dOpen(); } }
+      else if (m.op === 'peer-joined') { if (DU.coopWanted || coop) coopPeerJoined(m.id | 0, m.name); }
       else if (m.op === 'error') {
         var em = m.code === 'no-room' ? zt('没有这个房间号，请检查是否输错，或让房主重新创建。', 'No such room. Check the number or ask the host to create a new one.')
           : m.code === 'full' ? zt('这个房间已经满了。', 'That room is already full.') : zt('服务器返回了错误，请重试。', 'The server returned an error, please try again.');
@@ -4578,6 +4585,113 @@ Object.assign(EN, {
   }
   function duReadSrv() { var el = $('duSrv'); if (el) DU.serverIn = el.value; return DU.serverIn !== undefined ? DU.serverIn : (dDefaultServer() || dSavedServer()); }
 
+  /* ---------- account: log in / register on the relay server, plus the display name other players see ---------- */
+  function accGuestName() { try { return localStorage.getItem('rustrange-guestname') || ''; } catch (e) { return ''; } }
+  function accSave() { try { if (ACC.token) localStorage.setItem('rustrange-acct', JSON.stringify(ACC)); else localStorage.removeItem('rustrange-acct'); } catch (e) {} }
+  function accName() { return ACC.token ? ACC.name : accGuestName(); }
+  function accMsg(o) { o.token = ACC.token; o.name = accName(); return o; }   // the server checks the token and uses the account's name
+  function accLabel() { return ACC.token ? '👤 ' + ACC.name : accGuestName() ? '👤 ' + accGuestName() + zt('（游客）', ' (guest)') : zt('登录 / 设置昵称', 'Log in / set your name'); }
+  function accBase() {   // http(s) address of the server that keeps the accounts
+    var v = String(dDefaultServer() || dSavedServer() || '').trim(); if (!v) return '';
+    return dNormServer(v).replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/ws$/, '');
+  }
+  function accCall(path, body, cb) {
+    var base = accBase();
+    if (!base) { cb(0, { error: 'no-server' }); return; }
+    var done = false, tm = setTimeout(function () { if (!done) { done = true; cb(0, { error: 'net' }); } }, 70000);
+    function fin(st, j) { if (done) return; done = true; clearTimeout(tm); cb(st, j); }
+    try {
+      fetch(base + path, { method: 'POST', body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (j) { fin(r.status, j); }); })
+        .catch(function () { fin(0, { error: 'net' }); });
+    } catch (e) { fin(0, { error: 'net' }); }
+  }
+  function accErr(j) {
+    var e = j && j.error;
+    var M = {
+      'no-server': zt('还没有服务器地址。请直接用服务器的网址打开游戏，或先在“联机”页面里填好服务器地址。', 'No server address yet. Open the game from your server URL, or enter the server address on the multiplayer page first.'),
+      net: zt('连不上服务器（免费服务器睡眠后第一次要等约 1 分钟），请稍后再试。', 'Could not reach the server (a sleeping free server needs about a minute). Try again shortly.'),
+      'bad-user': zt('账号要 3 到 20 个字符，只能用字母、数字和下划线。', 'The account name must be 3-20 characters: letters, digits and underscores.'),
+      'bad-pass': zt('密码要 6 到 64 个字符。', 'The password must be 6-64 characters.'),
+      taken: zt('这个账号已经有人用了。', 'That account name is taken.'),
+      'bad-login': zt('账号或密码不对。', 'Wrong account or password.'),
+      rate: zt('尝试次数太多，请过几分钟再试。', 'Too many attempts. Try again in a few minutes.'),
+      'bad-token': zt('登录已过期，请重新登录。', 'Your login expired. Please log in again.'),
+      'bad-name': zt('昵称不能为空。', 'The name cannot be empty.'),
+      full: zt('服务器账号已满。', 'The server cannot take more accounts.')
+    };
+    return M[e] || zt('出错了，请再试一次。', 'Something went wrong. Please try again.');
+  }
+  function accClean(n) { return Array.from(String(n || '').replace(/[\u0000-\u001f\u007f<>&"'`\\]/g, '').replace(/\s+/g, ' ').trim()).slice(0, 16).join(''); }
+  function accPanel() {
+    DU.ui = 'acct';
+    var h, base = accBase();
+    if (ACC.token) {
+      h = duHead('ACCOUNT', '账号', zt('已登录', 'Logged in'));
+      h += '<p>' + zt('账号：', 'Account: ') + '<b>' + duEsc(ACC.user) + '</b><br>' + zt('联机时其他玩家看到的就是下面这个昵称。', 'Other players see this name in multiplayer.') + '</p>';
+      h += '<div class="dstep"><b>' + zt('昵称（最多 16 个字）', 'NAME (16 CHARACTERS MAX)') + '</b><input class="dtext" type="text" id="accName" maxlength="16" spellcheck="false" autocomplete="off" value="' + duEsc(ACC.name) + '"></div>';
+      h += '<div class="dstat" id="duStat"></div>';
+      h += '<div class="drow"><button class="go" id="accSaveName" type="button">' + zt('保存昵称', 'Save name') + '</button><button class="go alt" id="accOut" type="button">' + zt('退出登录', 'Log out') + '</button></div>';
+    } else {
+      h = duHead('ACCOUNT', '账号', zt('登录或注册', 'Log in or register'));
+      h += '<p>' + zt('登录后昵称会存在账号里，换设备也能用。不想注册的话，可以只填一个游客昵称。', 'Your name is kept with your account, on any device. If you would rather not register, just save a guest name.') + '</p>';
+      if (!base) h += '<div class="dstat err">' + accErr({ error: 'no-server' }) + '</div>';
+      h += '<div class="dstep"><b>' + zt('账号', 'ACCOUNT') + '</b><input class="dtext" type="text" id="accUser" maxlength="20" spellcheck="false" autocomplete="username" autocapitalize="none" placeholder="' + zt('字母、数字、下划线', 'letters, digits, _') + '"></div>';
+      h += '<div class="dstep"><b>' + zt('密码', 'PASSWORD') + '</b><input class="dtext" type="password" id="accPass" maxlength="64" autocomplete="current-password" placeholder="' + zt('至少 6 位', 'at least 6 characters') + '"></div>';
+      h += '<div class="dstep"><b>' + zt('昵称（注册时使用，也是游客昵称）', 'NAME (USED ON REGISTER, ALSO YOUR GUEST NAME)') + '</b><input class="dtext" type="text" id="accName" maxlength="16" spellcheck="false" autocomplete="off" value="' + duEsc(accGuestName()) + '"></div>';
+      h += '<div class="dstat" id="duStat"></div>';
+      h += '<div class="drow"><button class="go" id="accLogin" type="button">' + zt('登录', 'Log in') + '</button><button class="go alt" id="accReg" type="button">' + zt('注册', 'Register') + '</button></div>';
+      h += '<button class="ghost" id="accGuest" type="button">' + zt('只保存游客昵称', 'Save guest name only') + '</button>';
+    }
+    h += '<button class="ghost" id="accBack" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
+    duCard(h, accPanel);
+    var busy = false;
+    function lock(on) { busy = on; Array.prototype.forEach.call($('card').querySelectorAll('button'), function (b) { b.disabled = on; }); }
+    function authDone(st, j, okMsg) {
+      lock(false);
+      if (st === 200 && j && j.token) { ACC.user = j.user; ACC.name = j.name; ACC.token = j.token; accSave(); accPanel(); duStat(okMsg, 'ok'); }
+      else duStat(accErr(j), 'err');
+    }
+    $('accBack').addEventListener('click', function () { showLobby(); });
+    if (ACC.token) {
+      $('accSaveName').addEventListener('click', function () {
+        if (busy) return;
+        var nm = accClean($('accName').value); if (!nm) { duStat(accErr({ error: 'bad-name' }), 'err'); return; }
+        lock(true); duStat(zt('保存中……', 'Saving…'));
+        accCall('/api/name', { token: ACC.token, name: nm }, function (st, j) {
+          lock(false);
+          if (st === 200) { ACC.name = j.name; accSave(); $('accName').value = j.name; duStat(zt('昵称已保存 ✓', 'Name saved ✓'), 'ok'); }
+          else { if (st === 401) { ACC.user = ACC.name = ACC.token = ''; accSave(); } duStat(accErr(j), 'err'); }
+        });
+      });
+      $('accOut').addEventListener('click', function () { ACC.user = ACC.name = ACC.token = ''; accSave(); accPanel(); duStat(zt('已退出登录', 'Logged out'), 'ok'); });
+    } else {
+      function creds() { return { user: $('accUser').value.trim(), pass: $('accPass').value }; }
+      $('accLogin').addEventListener('click', function () {
+        if (busy) return; var c = creds();
+        if (!c.user || !c.pass) { duStat(accErr({ error: 'bad-login' }), 'err'); return; }
+        lock(true); duStat(zt('登录中……', 'Logging in…'));
+        accCall('/api/login', c, function (st, j) { authDone(st, j, zt('登录成功 ✓', 'Logged in ✓')); });
+      });
+      $('accReg').addEventListener('click', function () {
+        if (busy) return; var c = creds(); c.name = accClean($('accName').value);
+        lock(true); duStat(zt('注册中……', 'Registering…'));
+        accCall('/api/register', c, function (st, j) { authDone(st, j, zt('注册成功，已登录 ✓', 'Registered and logged in ✓')); });
+      });
+      $('accPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('accLogin').click(); });
+      $('accGuest').addEventListener('click', function () {
+        var nm = accClean($('accName').value);
+        try { if (nm) localStorage.setItem('rustrange-guestname', nm); else localStorage.removeItem('rustrange-guestname'); } catch (e) {}
+        $('accName').value = nm; duStat(nm ? zt('游客昵称已保存 ✓', 'Guest name saved ✓') : zt('已清除游客昵称', 'Guest name cleared'), 'ok');
+      });
+    }
+  }
+  if (ACC.token) accCall('/api/me', { token: ACC.token }, function (st, j) {   // is the saved login still good?
+    if (st === 200) { ACC.user = j.user; ACC.name = j.name; accSave(); }
+    else if (st === 401) { ACC.user = ACC.name = ACC.token = ''; accSave(); }
+    var b = $('accBtn'); if (b) b.textContent = accLabel();
+  });
+
   function duHome() {
     if (DU.coopWanted) { coopHome(); return; }
     DU.ui = 'home';
@@ -4612,7 +4726,7 @@ Object.assign(EN, {
     duCloseConn();
     DU.role = 'host'; DU.err = ''; DU.code = '';
     duHostPanel(true);
-    dConnect(srv, { op: 'create', max: DU.coopWanted ? 0 : 2 }, function (msg) { DU.err = msg; duHome(); });
+    dConnect(srv, accMsg({ op: 'create', max: DU.coopWanted ? 0 : 2 }), function (msg) { DU.err = msg; duHome(); });
   }
   function duHostPanel(pending) {
     DU.ui = 'host';
@@ -4644,7 +4758,7 @@ Object.assign(EN, {
       var srv = duReadSrv();
       $('duGo').disabled = true;
       duStat(zt('正在连接服务器…', 'Connecting to the server…'), '');
-      dConnect(srv, { op: 'join', code: v }, function (msg) { duStat(msg, 'err'); duUnlock(); });
+      dConnect(srv, accMsg({ op: 'join', code: v }), function (msg) { duStat(msg, 'err'); duUnlock(); });
     });
   }
   function duReadyPanel() {
@@ -4695,11 +4809,11 @@ Object.assign(EN, {
   CO.types = Object.keys(ETYPES);
   function coopPlayers() { return 1 + CO.list.length; }
   function coopMul() { return coop ? 1 + CO_EXTRA * Math.max(0, coopPlayers() - 1) : 1; }
-  function coopPeerAdd(id) {
+  function coopPeerAdd(id, name) {
     if (!id || id === CO.id) return null;
     var p = CO.peers[id];
-    if (p) return p;
-    p = CO.peers[id] = { id: id, ch: 0, rem: null, rt: { x: 0, y: 0, z: 14, yaw: 0 }, hp: 100, mx: 100, ar: 0, seen: false, snap: true, downT: 0, gs: 0, gk: 0, lblHp: -1, tg: { x: 0, y: 0, z: 0, isG: true, pid: id } };
+    if (p) { if (name) { p.name = String(name); p.lblHp = -1; } return p; }
+    p = CO.peers[id] = { id: id, name: String(name || ''), ch: 0, rem: null, rt: { x: 0, y: 0, z: 14, yaw: 0 }, hp: 100, mx: 100, ar: 0, seen: false, snap: true, downT: 0, gs: 0, gk: 0, lblHp: -1, tg: { x: 0, y: 0, z: 0, isG: true, pid: id } };
     CO.list.push(p);
     return p;
   }
@@ -4710,23 +4824,25 @@ Object.assign(EN, {
   }
   function coopClearPeers() {
     CO.list.forEach(function (p) { if (p.rem) scene.remove(p.rem); });
-    CO.peers = {}; CO.list = []; CO.id = 0;
+    CO.peers = {}; CO.list = []; CO.id = 0; CO.myName = '';
   }
-  function coopPeerJoined(id) {
-    var p = coopPeerAdd(id); if (!p) return;
+  function coopPeerName(p) { return p.name || (p.id === HOST_ID ? zt('房主', 'Host') : zt('玩家 ', 'Player ') + p.id); }
+  function coopPeerJoined(id, name) {
+    var p = coopPeerAdd(id, name); if (!p) return;
     dSend({ t: 'h', c: charId, to: id });                // tell the newcomer who we are
     if (DU.role !== 'host') { if (DU.ui === 'ready' && !coop) coopReadyPanel(); return; }
     DU.connected = true;
-    if (coop) { if (state === 'playing') dSend({ t: 'Cs', mode: mode, map: mapId, df: diff, seed: CO.seed, to: id }); banner(zt('有新队友加入，怪物变多了', 'A teammate joined: more monsters'), 2200); }
+    if (coop) { if (state === 'playing') dSend({ t: 'Cs', mode: mode, map: mapId, df: diff, seed: CO.seed, to: id }); banner(coopPeerName(p) + zt(' 加入了，怪物变多了', ' joined: more monsters'), 2200); }
     else duReadyPanel();
   }
   function coopPeerLeft(id) {
     if (id === HOST_ID && DU.role === 'guest') { DU.connected = false; duLeft(zt('房主离开了房间', 'The host left the room')); return; }
     var p = CO.peers[id]; if (!p) return;
+    var lname = coopPeerName(p);
     coopPeerDrop(p);
     if (DU.role !== 'host') { if (DU.ui === 'ready' && !coop) coopReadyPanel(); return; }
     if (!CO.list.length) DU.connected = false;
-    if (coop) banner(zt('一位队友离开了', 'A teammate left'), 2200);
+    if (coop) banner(lname + zt(' 离开了', ' left'), 2200);
     else if (DU.connected) duReadyPanel();
     else duHostPanel(false);   // nobody left: back to showing the room number
   }
@@ -4739,8 +4855,10 @@ Object.assign(EN, {
     var cv = sp.userData.cv, c = cv.getContext('2d'), f = Math.max(0, Math.min(1, p.hp / p.mx));
     c.clearRect(0, 0, 256, 64);
     c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(0, 0, 256, 64);
-    c.fillStyle = '#ece6d6'; c.font = '700 22px "PingFang SC","Microsoft YaHei",sans-serif'; c.textBaseline = 'top';
-    c.fillText(t(CHARS[p.ch].name) + ' #' + p.id + (p.hp <= 0 ? ' · ' + zt('倒地，等待救援', 'DOWN') : ''), 10, 6);
+    c.fillStyle = '#ece6d6'; c.textBaseline = 'top';
+    var txt = (p.name || (t(CHARS[p.ch].name) + ' #' + p.id)) + (p.hp <= 0 ? ' · ' + zt('倒地，等待救援', 'DOWN') : ''), fs = 24;
+    do { c.font = '700 ' + fs + 'px "PingFang SC","Microsoft YaHei",sans-serif'; fs -= 2; } while (c.measureText(txt).width > 236 && fs >= 12);
+    c.fillText(txt, 10, 6);
     c.fillStyle = '#222'; c.fillRect(10, 40, 236, 14);
     if (p.hp <= 0) { c.fillStyle = '#e5392b'; c.fillRect(10, 40, 236, 14); }
     else { c.fillStyle = f > 0.55 ? '#8fd14f' : f > 0.25 ? '#ff7a1a' : '#e5392b'; c.fillRect(10, 40, 236 * f, 14); }
@@ -4776,7 +4894,8 @@ Object.assign(EN, {
     if (!CO.sv) CO.sv = { mode: mode, mapId: mapId, diff: diff };
     var host = DU.role === 'host';
     var h = duHead('CO-OP', '联机合作', zt('房间已就绪', 'Room is ready'));
-    h += '<p>' + zt('房间里现在有 ', 'Players in the room: ') + coopPlayers() + zt(' 位玩家（人数不限）', ' (no limit)') + '<br>';
+    h += '<p>' + zt('房间里现在有 ', 'Players in the room: ') + coopPlayers() + zt(' 位玩家（人数不限）', ' (no limit)') + '<br>' +
+      zt('玩家：', 'Players: ') + duEsc([CO.myName || zt('你', 'You')].concat(CO.list.map(coopPeerName)).slice(0, 12).join(zt('、', ', ')) + (coopPlayers() > 12 ? ' …' : '')) + '<br>';
     if (host) h += (DU.code ? zt('房间号：', 'Room number: ') + '<b>' + duEsc(DU.code) + '</b>' + zt('，朋友随时可以加入，开局后也行。', ' — friends can join any time, even after the start.') + '<br>' : '') + zt('玩法：', 'Mode: ') + t(MODES[mode].name) + ' · ' + zt('地图：', 'Map: ') + t(MAPDEF[mapId].name) + ' · ' + zt('难度：', 'Difficulty: ') + t(DIFFS[diff].name) + '<br>' + zt('每多一位玩家，怪物就多一些。想换玩法就先返回大厅重选。', 'Every extra player adds more monsters. To change the mode, go back to the lobby first.');
     else h += zt('等待房主选好玩法并开始……', 'Waiting for the host to start…');
     h += '</p>';
@@ -5007,7 +5126,8 @@ Object.assign(EN, {
     var myId = host ? HOST_ID : CO.id, hasMe = false;
     rows.forEach(function (r) {
       r.me = r.id === myId; if (r.me) hasMe = true;
-      r.n = r.me ? zt('你', 'You') : r.id === HOST_ID ? zt('房主', 'Host') : zt('玩家 ', 'Player ') + r.id;
+      var pp = CO.peers[r.id];
+      r.n = r.me ? (CO.myName ? CO.myName + zt('（你）', ' (you)') : zt('你', 'You')) : pp ? coopPeerName(pp) : r.id === HOST_ID ? zt('房主', 'Host') : zt('玩家 ', 'Player ') + r.id;
     });
     if (!hasMe) rows.push({ id: myId, s: score, k: 0, me: true, n: zt('你', 'You') });
     rows.sort(function (a, b) { return b.s - a.s; });
@@ -5020,7 +5140,7 @@ Object.assign(EN, {
     var h = '<div style="font-weight:700;letter-spacing:.12em;margin-bottom:2px">' + zt('得分榜', 'SCOREBOARD') + ' · ' + rows.length + '</div>';
     shown.forEach(function (r) {
       var i = rows.indexOf(r);
-      h += '<div' + (r.me ? ' style="color:#ffb36b"' : '') + '>' + (i === 0 && r.s > 0 ? '★ ' : '') + (rows.length > 8 ? (i + 1) + '. ' : '') + r.n + ' <b>' + Math.round(r.s) + '</b> · ' + zt('击杀 ', 'Kills ') + r.k + '</div>';
+      h += '<div' + (r.me ? ' style="color:#ffb36b"' : '') + '>' + (i === 0 && r.s > 0 ? '★ ' : '') + (rows.length > 8 ? (i + 1) + '. ' : '') + duEsc(r.n) + ' <b>' + Math.round(r.s) + '</b> · ' + zt('击杀 ', 'Kills ') + r.k + '</div>';
     });
     b.innerHTML = h;
   }
@@ -5032,7 +5152,7 @@ Object.assign(EN, {
     var h = duHead('CO-OP OVER', '合作结束', lastReason ? tf(lastReason.s, lastReason.a) : tf('第 {0} 波倒下', wave));
     h += '<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:15px"><tr style="color:var(--muted);text-align:left"><th>#</th><th>' + zt('玩家', 'Player') + '</th><th>' + zt('得分', 'Score') + '</th><th>' + zt('击杀', 'Kills') + '</th></tr>';
     rows.forEach(function (r, i) {
-      h += '<tr' + (r.me ? ' style="color:#ffb36b"' : '') + '><td>' + (i + 1) + '</td><td>' + (i === 0 && r.s > 0 ? '★ ' : '') + r.n + '</td><td><b>' + Math.round(r.s) + '</b></td><td>' + r.k + '</td></tr>';
+      h += '<tr' + (r.me ? ' style="color:#ffb36b"' : '') + '><td>' + (i + 1) + '</td><td>' + (i === 0 && r.s > 0 ? '★ ' : '') + duEsc(r.n) + '</td><td><b>' + Math.round(r.s) + '</b></td><td>' + r.k + '</td></tr>';
     });
     h += '</table>';
     if (host) h += '<button class="go" id="coAgain" type="button">' + zt('再来一局', 'Play again') + '</button>';
