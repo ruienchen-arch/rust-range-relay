@@ -26,6 +26,64 @@ const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 const rooms = new Map();
 
+// ---------- the permanent shared world ----------
+// Everybody who sends {op:'world'} lands in this one room. The oldest connected player is the "authority": the client that
+// runs the enemies. The server keeps the state of resource nodes (trees, rocks, ore, crates) and hands out a roster of all
+// player positions for the live map. Position and tracer messages only go to players within INTEREST metres (and always
+// to the authority, who needs everybody's position to aim its enemies).
+const WORLD_SIZE = +process.env.WORLD_SIZE || 1500;
+const INTEREST = 420;
+const world = { clients: new Map(), nextId: 1, auth: 0, nodes: new Map() };
+const RESPAWN_MS = { tree: 600000, rock: 600000, ore: 900000, crate: 900000 };
+function worldSeed() {
+  if (!db.world) { db.world = { seed: 'w' + crypto.randomBytes(4).toString('hex') }; saveDb(); }
+  return process.env.WORLD_SEED || db.world.seed;
+}
+function electAuthority() {
+  let best = 0;
+  for (const id of world.clients.keys()) if (!best || id < best) best = id;
+  if (best !== world.auth) { world.auth = best; for (const o of world.clients.values()) o.send(JSON.stringify({ op: 'authority', id: best })); }
+}
+function worldJoin(c, m) {
+  const peers = [...world.clients.keys()], names = {};
+  for (const o of world.clients.values()) names[o.id] = o.name || '';
+  c.world = true; c.room = { code: 'WORLD', duel: false, clients: world.clients }; c.id = world.nextId++; c.x = 0; c.z = 0; c.hasPos = false;
+  c.name = whoIs(m);
+  world.clients.set(c.id, c);
+  const dmg = [];
+  for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
+  if (!world.auth) world.auth = c.id;
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg }));
+  for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
+  electAuthority();
+}
+function worldGather(c, m) {
+  const id = String(m.id || ''), kind = String(m.k || '');
+  if (!/^-?\d+_-?\d+_\d+$/.test(id) || !RESPAWN_MS[kind]) return;
+  const max = Math.min(10, Math.max(1, +m.max | 0));
+  let n = world.nodes.get(id);
+  if (!n) { n = { hp: max, kind, until: 0 }; world.nodes.set(id, n); }
+  if (n.hp <= 0) return;
+  n.hp -= 1;
+  if (n.hp <= 0) n.until = Date.now() + RESPAWN_MS[kind];
+  const out = JSON.stringify({ t: 'Rs', id, hp: n.hp });
+  for (const o of world.clients.values()) if (o !== c) o.send(out);
+}
+setInterval(() => {   // trees and rocks grow back, crates get refilled
+  const now = Date.now();
+  for (const [id, n] of world.nodes) {
+    if (n.hp <= 0 && n.until <= now) { world.nodes.delete(id); const out = JSON.stringify({ t: 'Rs', id, hp: -1 }); for (const o of world.clients.values()) o.send(out); }
+    else if (n.hp > 0 && (n.last || (n.last = now)) + 300000 < now) { world.nodes.delete(id); }   // partly chopped nodes heal after 5 minutes
+  }
+}, 5000).unref();
+setInterval(() => {   // everybody's position, for the live map
+  if (!world.clients.size) return;
+  const p = [];
+  for (const o of world.clients.values()) if (o.hasPos) p.push([o.id, Math.round(o.x), Math.round(o.z)]);
+  const out = JSON.stringify({ op: 'roster', p, n: world.clients.size });
+  for (const o of world.clients.values()) o.send(out, true);
+}, 1500).unref();
+
 // ---------- accounts (username + password, display name) ----------
 // Stored in DATA_DIR/accounts.json. NOTE: free Render instances have a temporary disk, so the file is
 // wiped on every redeploy/restart. Attach a Render Disk and set DATA_DIR to its mount path to keep accounts.
@@ -109,6 +167,7 @@ function api(req, res, url) {
 
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
+  if (url === '/api/world') { res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ players: world.clients.size, size: WORLD_SIZE })); return; }
   if (url.indexOf('/api/') === 0) { api(req, res, url); return; }
   if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); return; }
   if (url === '/' || url === '/index.html') {
@@ -196,6 +255,7 @@ function onMessage(c, text) {
   if (!c.room) {                       // first message: create or join
     let m; try { m = JSON.parse(text); } catch (e) { return; }
     if (!m || typeof m.op !== 'string') return;
+    if (m.op === 'world') { worldJoin(c, m); return; }
     if (m.op === 'create') {
       const code = newCode();
       if (!code) { c.send(J({ op: 'error', code: 'busy' })); return; }
@@ -222,10 +282,20 @@ function onMessage(c, text) {
   if (text.length > MAX_MSG) return;   // oversize: drop
   let m; try { m = JSON.parse(text); } catch (e) { return; }
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
+  if (c.world && m.t === 'Rg') { worldGather(c, m); return; }
   const to = m.to; delete m.to;
   m.i = c.id;
   const out = J(m);
   const live = m.t === 's' || m.t === 'f' || m.t === 'Ce';
+  if (c.world && (m.t === 's' || m.t === 'f') && to === undefined) {   // area of interest
+    if (m.t === 's' && isFinite(m.x) && isFinite(m.z)) { c.x = +m.x; c.z = +m.z; c.hasPos = true; }
+    for (const o of world.clients.values()) {
+      if (o === c) continue;
+      if (o.id !== world.auth && o.hasPos && c.hasPos && Math.hypot(o.x - c.x, o.z - c.z) > INTEREST) continue;
+      o.send(out, true);
+    }
+    return;
+  }
   if (to !== undefined) {
     const o = c.room.clients.get(+to);
     if (o && o !== c) o.send(out, live);
@@ -243,6 +313,7 @@ function onClose(c) {
   const room = c.room; if (!room) return;
   room.clients.delete(c.id);
   for (const o of room.clients.values()) o.send(J({ op: 'peer-left', id: c.id }));
+  if (c.world) { if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
   if (c.id === 1) {                    // the host left: the room is over
     for (const o of room.clients.values()) o.close();
     rooms.delete(room.code);

@@ -766,20 +766,28 @@ Object.assign(EN, {
   // ray against everything that stops bullets; returns distance or Infinity
   function rayWall(ox, oy, oz, dx, dy, dz, maxT) {
     var best = maxT;
-    if (dy < 0) { var tg = -oy / dy; if (tg > 0 && tg < best) best = tg; }
-    for (var i = 0; i < blockers.length; i++) {
-      var b = blockers[i], t0 = 0, t1 = best, ok = true, k;
-      var o = [ox, oy, oz], d = [dx, dy, dz], mn = [b.minX, b.minY, b.minZ], mx = [b.maxX, b.maxY, b.maxZ];
-      for (k = 0; k < 3; k++) {
-        if (Math.abs(d[k]) < 1e-9) { if (o[k] < mn[k] || o[k] > mx[k]) { ok = false; break; } }
-        else {
-          var ta = (mn[k] - o[k]) / d[k], tb = (mx[k] - o[k]) / d[k];
-          if (ta > tb) { var tt = ta; ta = tb; tb = tt; }
-          if (ta > t0) t0 = ta; if (tb < t1) t1 = tb;
-          if (t0 > t1) { ok = false; break; }
+    if (RW.on) {   // the ground is the terrain: walk along the ray until it dips under it
+      if (!(dy > 0.05 && oy > rwH(ox, oz))) {
+        var tp = 0, st = 2, pt = 0;
+        for (tp = st; tp <= best; tp += st) {
+          if (oy + dy * tp < rwH(ox + dx * tp, oz + dz * tp)) { var lo = pt, hi = tp, mid, q; for (q = 0; q < 5; q++) { mid = (lo + hi) / 2; if (oy + dy * mid < rwH(ox + dx * mid, oz + dz * mid)) hi = mid; else lo = mid; } best = hi; break; }
+          pt = tp;
         }
       }
-      if (ok && t0 < best) best = t0;
+    } else if (dy < 0) { var tg = -oy / dy; if (tg > 0 && tg < best) best = tg; }
+    var ex = ox + dx * best, ey = oy + dy * best, ez = oz + dz * best;
+    var sx0 = Math.min(ox, ex) - 0.02, sx1 = Math.max(ox, ex) + 0.02, sy0 = Math.min(oy, ey) - 0.02, sy1 = Math.max(oy, ey) + 0.02, sz0 = Math.min(oz, ez) - 0.02, sz1 = Math.max(oz, ez) + 0.02;
+    for (var i = 0; i < blockers.length; i++) {
+      var b = blockers[i];
+      if (b.maxX < sx0 || b.minX > sx1 || b.maxY < sy0 || b.minY > sy1 || b.maxZ < sz0 || b.minZ > sz1) continue;
+      var t0 = 0, t1 = best, ta, tb, tt;
+      if (Math.abs(dx) < 1e-9) { if (ox < b.minX || ox > b.maxX) continue; }
+      else { ta = (b.minX - ox) / dx; tb = (b.maxX - ox) / dx; if (ta > tb) { tt = ta; ta = tb; tb = tt; } if (ta > t0) t0 = ta; if (tb < t1) t1 = tb; if (t0 > t1) continue; }
+      if (Math.abs(dy) < 1e-9) { if (oy < b.minY || oy > b.maxY) continue; }
+      else { ta = (b.minY - oy) / dy; tb = (b.maxY - oy) / dy; if (ta > tb) { tt = ta; ta = tb; tb = tt; } if (ta > t0) t0 = ta; if (tb < t1) t1 = tb; if (t0 > t1) continue; }
+      if (Math.abs(dz) < 1e-9) { if (oz < b.minZ || oz > b.maxZ) continue; }
+      else { ta = (b.minZ - oz) / dz; tb = (b.maxZ - oz) / dz; if (ta > tb) { tt = ta; ta = tb; tb = tt; } if (ta > t0) t0 = ta; if (tb < t1) t1 = tb; if (t0 > t1) continue; }
+      if (t0 < best) best = t0;
     }
     return best;
   }
@@ -1467,6 +1475,7 @@ Object.assign(EN, {
         }
       }
     }
+    if (RW.on) rwResolve(p, r);
     p.x = Math.max(-A + r, Math.min(A - r, p.x));
     p.z = Math.max(-A + r, Math.min(A - r, p.z));
   }
@@ -1476,6 +1485,7 @@ Object.assign(EN, {
       var o = boxes[i];
       if (x > o.minX - 0.15 && x < o.maxX + 0.15 && z > o.minZ - 0.15 && z < o.maxZ + 0.15 && y >= o.h - 0.05) g = Math.max(g, o.h);
     }
+    if (RW.on) { var th = rwH(x, z); if (th > g) g = th; }
     return g;
   }
   // lowest underside above a standing head at feet height y
@@ -2449,6 +2459,7 @@ Object.assign(EN, {
     enemies.push(e);
   }
   function killEnemy(e, headshot) {
+    if (e.slot) { e.slot.e = null; e.slot.t = gtime + 90; }
     if (e.dead) return;
     if (e.ghost) { e.dead = true; CO.dead[e.gid] = gtime; coopDropGhost(e, true); tone(220, 50, 0.25, 'sawtooth', 0.12); return; }
     e.dead = true;
@@ -2876,20 +2887,30 @@ Object.assign(EN, {
     var targets = [];
     enemies.forEach(function (e) { targets.push(e.parts[0], e.parts[1]); });
     if (duel) DU.targets(targets);
+    if (RW.on) rwTargets(targets);
     var mp = gunObjs[cur].muzzle.getWorldPosition(new THREE.Vector3());
     var killed = false, hitAny = false, blastDone = false;
     PK.w = cur;
     for (var n = 0; n < d.pellets; n++) {
       var dir = tmpD.set((Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread, -1).applyQuaternion(camera.quaternion).normalize();
       ray.set(camera.position.clone(), dir);
-      ray.far = 80;
+      var RNG = RW.on ? 250 : 80;
+      ray.far = RNG;
       var hits = ray.intersectObjects(targets, false);
-      var wallT = rayWall(camera.position.x, camera.position.y, camera.position.z, dir.x, dir.y, dir.z, 80);
-      var end = camera.position.clone().add(dir.clone().multiplyScalar(Math.min(60, wallT)));
+      var wallT = rayWall(camera.position.x, camera.position.y, camera.position.z, dir.x, dir.y, dir.z, RNG);
+      var end = camera.position.clone().add(dir.clone().multiplyScalar(Math.min(RW.on ? 200 : 60, wallT)));
       var left = d.pierce + st.pierce, seen = [], stopped = false;
       for (var h = 0; h < hits.length; h++) {
         var hit = hits[h], ud = hit.object.userData;
         if (hit.distance > wallT) break;
+        if (ud && ud.rp !== undefined) {
+          var rpk = 'P' + ud.rp; if (seen.indexOf(rpk) >= 0) continue;
+          seen.push(rpk);
+          rwHitPlayer(ud.rp, (ud.head ? d.head : d.dmg) * CH.dmg * st.dmg * DU.K, !!ud.head);
+          end = hit.point.clone(); hitAny = true; burst(hit.point, 3, partMatO, 4);
+          if (left-- <= 0) { stopped = true; break; }
+          continue;
+        }
         if (ud && ud.remote) {
           if (!DU.alive || seen.indexOf('R') >= 0) continue;
           seen.push('R');
@@ -2913,7 +2934,7 @@ Object.assign(EN, {
           if (left-- <= 0) { stopped = true; break; }
         }
       }
-      if (!stopped && wallT < 80) {
+      if (!stopped && wallT < RNG) {
         end = camera.position.clone().add(dir.clone().multiplyScalar(wallT));
         burst(end, 3, partMatG, 3);
       }
@@ -3318,6 +3339,11 @@ Object.assign(EN, {
       var ab = document.createElement('button'); ab.className = 'ghost'; ab.id = 'accBtn'; ab.type = 'button'; ab.textContent = accLabel();
       $('goBtn').parentNode.insertBefore(ab, $('setBtn'));
       ab.addEventListener('click', accPanel);
+      if (dDefaultServer() || dSavedServer()) {
+        var rb = document.createElement('button'); rb.className = 'ghost'; rb.id = 'rwBtn'; rb.type = 'button'; rb.textContent = zt('🌍 进入荒野世界（Rust 模式，联机大地图）', '🌍 Enter the wild (Rust mode, huge online map)');
+        $('goBtn').parentNode.insertBefore(rb, ab);
+        rb.addEventListener('click', function () { RW.noAuto = false; rwEnter(); });
+      }
     }
     $('setBtn').addEventListener('click', function () { showSettings('menu'); });
   }
@@ -3362,6 +3388,7 @@ Object.assign(EN, {
   function releaseInput() { firing = false; touchFire = false; aiming = false; }
   function pause() {
     if (state !== 'playing') return;
+    if (RW.on) { if (RW.dead) return; rwToggleMap(false); rwPauseMenu(); return; }
     if (duel) { DU.pauseMenu(); return; }
     if (coop) { coopPauseMenu(); return; }
     state = 'paused';
@@ -3389,6 +3416,7 @@ Object.assign(EN, {
       if (c === KB.reload) reload();
       if (c === KB.pause) pause();
       if (c === KB.use && inShop) openShop();
+      if (RW.on && c === 'KeyM') rwToggleMap(!RW.mapOpen);
       if (c === KB.bag) openBag();
       if (c === KB.grenade) throwGrenade();
       if (c === KB.fire) firing = true;
@@ -3495,8 +3523,9 @@ Object.assign(EN, {
   function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
 
   function update(dt) {
+    if (RW.on) rwTick(dt);
     if (duel) DU.tick(dt); else if (coop) coopTick(dt);
-    var FZ = (duel && DU.phase !== 'fight') || (coop && CO.down);   // frozen: waiting, countdown, between rounds
+    var FZ = (duel && DU.phase !== 'fight') || (coop && CO.down) || (RW.on && (RW.dead || state !== 'playing'));   // frozen: waiting, countdown, between rounds
     gtime += dt;
     if (adrenT > 0) adrenT -= dt;
     // look with arrow keys
@@ -3511,12 +3540,14 @@ Object.assign(EN, {
     var str = FZ ? 0 : (keys[KB.right] ? 1 : 0) - (keys[KB.left] ? 1 : 0) + stick.x;
     var ml = Math.hypot(fwd, str);
     if (ml > 1) { fwd /= ml; str /= ml; }
-    var sp = ((keys[KB.sprint] || (KB.sprint === 'ShiftLeft' && keys.ShiftRight)) ? 10 : 7) * (aimT > 0.5 ? 0.55 : 1) * CH.speed * (adrenT > 0 ? 1.35 : 1);
+    var sp = ((keys[KB.sprint] || (KB.sprint === 'ShiftLeft' && keys.ShiftRight)) ? 10 : 7) * (aimT > 0.5 ? 0.55 : 1) * CH.speed * (adrenT > 0 ? 1.35 : 1) * rwSpeedMul();
     var sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
     P.x += (-sy * fwd + cy * str) * sp * dt;
     P.z += (-cy * fwd - sy * str) * sp * dt;
     resolveCircle(P, 0.45, P.y + 0.65);
+    if (RW.on) { if (rwDeep(P.x, P.z)) { P.x = RW.px; P.z = RW.pz; } else { RW.px = P.x; RW.pz = P.z; } }
     if (siege && fortRect) { P.x = Math.max(fortRect.x0 + 0.45, Math.min(fortRect.x1 - 0.45, P.x)); P.z = Math.max(fortRect.z0 + 0.45, Math.min(fortRect.z1 - 0.45, P.z)); }
+    var wasG = P.ground;
     if (!FZ && (keys[KB.jump] || keys.TouchJump) && P.ground) { P.vy = 7 * CH.jump; P.ground = false; }
     P.vy -= 22 * dt;
     var oldY = P.y;
@@ -3525,6 +3556,7 @@ Object.assign(EN, {
     if (P.y + 1.8 > cl) { P.y = cl - 1.8; if (P.vy > 0) P.vy = 0; }
     var gh = groundAt(P.x, P.z, oldY + 0.65);
     if (P.y <= gh) { P.y = gh; P.vy = 0; P.ground = true; } else P.ground = false;
+    if (RW.on && wasG && !P.ground && P.vy <= 0 && P.y - gh < 0.7) { P.y = gh; P.vy = 0; P.ground = true; }   // stick to the slope when running downhill
     bob += dt * (ml > 0.1 && P.ground ? sp : 0);
 
     camera.position.set(P.x, P.y + 1.7 + Math.sin(bob * 1.4) * 0.03 * Math.min(1, ml), P.z);
@@ -3597,6 +3629,7 @@ Object.assign(EN, {
     }
 
     // waves
+    if (!RW.on) {
     var maxAlive = mode === 'rush' ? 8 + wave : mode === 'boss' ? 4 + Math.floor(wave / 2) : siege ? Math.min(70, 26 + wave * 4) : 6 + Math.floor(wave / 2);
     maxAlive = Math.max(3, Math.round(maxAlive * DF.alive * coopMul()));
     if (coop) maxAlive = Math.min(maxAlive, CO_MAX_ALIVE);
@@ -3612,9 +3645,11 @@ Object.assign(EN, {
       if (waveDelay <= 0) { waveDelay = 0; nextWave(); }
     }
 
+    }
     // pickups
     for (var pi = 0; pi < pickups.length; pi++) {
       var pk = pickups[pi];
+      if (RW.on && (Math.abs(pk.x - P.x) > 170 || Math.abs(pk.z - P.z) > 170)) { pk.g.visible = false; if (pk.cool > 0) pk.cool -= dt; continue; }
       pk.g.rotation.y += dt * 1.5;
       pk.g.position.y = pk.y + 0.7 + Math.sin(gtime * 3 + pk.x) * 0.1;
       if (pk.cool > 0) { pk.cool -= dt; pk.g.visible = pk.cool <= 0; continue; }
@@ -3623,10 +3658,10 @@ Object.assign(EN, {
           if (P.hp >= P.maxHp) continue;
           P.hp = Math.min(P.maxHp, P.hp + 35 * DF.heal);
           banner(t('生命 +35'), 900); tone(600, 900, 0.12, 'sine', 0.08);
-          pk.cool = 30; pk.g.visible = false;
+          pk.cool = RW.on ? 240 : 30; pk.g.visible = false;
         } else if (addAmmo(1)) {
           banner(t('弹药补给'), 900); tone(500, 800, 0.12, 'sine', 0.08);
-          pk.cool = 30; pk.g.visible = false;
+          pk.cool = RW.on ? 240 : 30; pk.g.visible = false;
         }
       }
     }
@@ -3637,6 +3672,7 @@ Object.assign(EN, {
     for (var i = 0; i < enemies.length; i++) {
       var e = enemies[i], pos = e.g.position, ty = e.type;
       if (e.ghost) { coopGhostStep(e, dt); continue; }
+      if (e.rw) { if (rwNpcStep(e, dt)) i--; continue; }
       if (e.sp0 === undefined) e.sp0 = e.speed * DF.spd;
       e.speed = e.sp0 * (e.slow > 0 ? 0.55 : 1);
       if (e.slow > 0) e.slow -= dt;
@@ -3781,7 +3817,7 @@ Object.assign(EN, {
       p.x += bl.vx * dt; p.y += bl.vy * dt; p.z += bl.vz * dt;
       bl.life -= dt;
       var hitBox = insideBox(p.x, p.y, p.z);
-      var gone = bl.life <= 0 || Math.abs(p.x) > A || Math.abs(p.z) > A || p.y < 0 || hitBox;
+      var gone = bl.life <= 0 || Math.abs(p.x) > A || Math.abs(p.z) > A || p.y < (RW.on ? rwH(p.x, p.z) : 0) || hitBox;
       if (!gone && Math.hypot(p.x - P.x, p.z - P.z) < 0.6 && p.y > P.y && p.y < P.y + 1.8) { damage(bl.dmg || 10); gone = true; }
       if (!gone && coop && !coopG()) { for (var gi2 = 0; gi2 < CO.list.length; gi2++) { var gq = CO.list[gi2]; if (gq.seen && gq.hp > 0 && Math.hypot(p.x - gq.rt.x, p.z - gq.rt.z) < 0.6 && p.y > gq.rt.y && p.y < gq.rt.y + 1.8) { coopHurt(gq.id, bl.dmg || 10); gone = true; break; } } }
       if (gone) { scene.remove(bl.m); bolts.splice(k, 1); }
@@ -3814,8 +3850,8 @@ Object.assign(EN, {
       if (ff.style.width !== fw) { ff.style.width = fw; ff.style.background = fpct > 0.5 ? '#d9a441' : fpct > 0.25 ? '#e8782a' : '#e0412f'; }
     }
     var hp = Math.max(0, Math.ceil(P.hp));
-    if (!duel) setText('hWaveLab', t(mode === 'rush' ? '时间' : mode === 'boss' ? '关卡' : '波次'));
-    if (!duel) setText('hWave', mode === 'rush' ? String(Math.ceil(timeLeft)) : String(wave));
+    if (!duel) setText('hWaveLab', RW.on ? zt('在线', 'Online') : t(mode === 'rush' ? '时间' : mode === 'boss' ? '关卡' : '波次'));
+    if (!duel) setText('hWave', RW.on ? String(RW.online) : mode === 'rush' ? String(Math.ceil(timeLeft)) : String(wave));
     if (!duel) setText('hScore', String(score));
     setText('hHp', String(hp));
     if (!duel) setText('hCoin', tf('金币 {0}', coins));
@@ -3825,7 +3861,8 @@ Object.assign(EN, {
     setText('hAmmo', String(s.ammo));
     setText('hRel', W.reload > 0 ? t('换弹中') : (s.ammo === 0 && s.res === 0 ? t('弹药耗尽') : tf('备弹 {0}', s.res) + (s.ammo === 0 ? t('，按 R 换弹').replace(' R ', ' ' + keyLabel(KB.reload) + ' ') : '')));
     var leftTxt;
-    if (mode === 'rush') leftTxt = t('每击杀 +1 秒');
+    if (RW.on) leftTxt = zt('荒野世界 · M 地图 · E 采集', 'The wild · M map · E use');
+    else if (mode === 'rush') leftTxt = t('每击杀 +1 秒');
     else {
       var bs = null;
       for (var bi = 0; bi < enemies.length; bi++) if (enemies[bi].type === 'boss') bs = enemies[bi];
@@ -3855,14 +3892,15 @@ Object.assign(EN, {
 
   function damage(n) {
     if (coop && CO.down) return;
-    if (state !== 'playing') return;
+    if (state !== 'playing' && !(RW.on && (state === 'shop' || state === 'bag'))) return;
+    if (RW.on && RW.dead) return;
     if (siege) return;   // 守城战：敌人不会伤害主角，只会攻击城墙
     n *= CH.armor * DF.dmg;
     if (P.armor > 0) { var ab = Math.min(P.armor, n); P.armor -= ab; n -= ab; }
     P.hp -= n;
     hurtFlash();
     tone(140, 60, 0.2, 'sawtooth', 0.12);
-    if (P.hp <= 0) { P.hp = 0; if (coop) coopDown(); else gameOver(); }
+    if (P.hp <= 0) { P.hp = 0; if (RW.on) rwDie(); else if (coop) coopDown(); else gameOver(); }
   }
 
   /* ---------- grenades ---------- */
@@ -4295,6 +4333,9 @@ Object.assign(EN, {
       else if (m.op === 'paired') { if (!DU.connected) dOpen(); }
       else if (m.op === 'welcome') { if (DU.coopWanted || coop) { CO.id = m.id | 0; CO.myName = String(m.name || ''); (m.peers || []).forEach(function (id) { coopPeerAdd(id | 0, m.names && m.names[id]); }); if (!DU.connected) dOpen(); } }
       else if (m.op === 'peer-joined') { if (DU.coopWanted || coop) coopPeerJoined(m.id | 0, m.name); }
+      else if (m.op === 'world-welcome') { RW.entering = false; rwWelcome(m); dSend({ t: 'h', c: charId }); }
+      else if (m.op === 'authority') { rwSetAuth(m.id | 0); }
+      else if (m.op === 'roster') { RW.roster = (m.p || []).map(function (r) { return { id: r[0] | 0, x: +r[1] || 0, z: +r[2] || 0 }; }); RW.online = m.n | 0 || RW.roster.length; }
       else if (m.op === 'error') {
         var em = m.code === 'no-room' ? zt('没有这个房间号，请检查是否输错，或让房主重新创建。', 'No such room. Check the number or ask the host to create a new one.')
           : m.code === 'full' ? zt('这个房间已经满了。', 'That room is already full.') : zt('服务器返回了错误，请重试。', 'The server returned an error, please try again.');
@@ -4332,6 +4373,7 @@ Object.assign(EN, {
     var m;
     try { m = JSON.parse(ev.data); } catch (e) { return; }
     if (!m || typeof m.t !== 'string') return;
+    if (m.t.charAt(0) === 'R') { rwMsg(m); return; }
     if (m.t.charAt(0) === 'C') { coopMsg(m); return; }
     if (DU.coopWanted || coop) { coopNetMsg(m); return; }
     switch (m.t) {
@@ -4481,6 +4523,7 @@ Object.assign(EN, {
     coopClearPeers();
   }
   DU.leave = function (notify) {
+    rwTeardown();
     if (coop || DU.coopWanted) coopCleanup();
     if (notify && DU.connected) dSend({ t: 'q' });
     duCloseConn();
@@ -4692,6 +4735,782 @@ Object.assign(EN, {
     var b = $('accBtn'); if (b) b.textContent = accLabel();
   });
 
+  /* ================= RUST WORLD =================
+     One huge shared island (3 km x 3 km). Everybody who starts the game lands here; the other modes are in the lobby.
+     The terrain, trees, rocks and monuments are generated from a seed the server hands out, so every client builds the same
+     island. Terrain is streamed in 64 m chunks around the player. The server keeps one permanent world room. The oldest
+     player in it is the "authority" who runs the infected camps; resource nodes (trees, rocks, ore, crates) are kept by the server. */
+  var RW = { on: false, dead: false, half: 1500, s: 1, seed: '', chunks: {}, mons: [], safe: null, nst: {}, roster: [], online: 0, auth: 0,
+    group: null, water: null, mapCv: null, mapOpen: false, built: false, saved: null, gatherCd: 0, spawnT: 0, deadT: 0, uiT: 0, cullT: 0, loadQ: 0, matT: null, matD: null, hud: null, mapEl: null, hurtT: 0, lastHit: 0 };
+  var RW_SEA = -1.5, RW_CH = 64, RW_N = 20, RW_VIEW = 6;
+
+  function rwHash(ix, iz, s) {
+    var h = Math.imul(ix | 0, 374761393) ^ Math.imul(iz | 0, 668265263) ^ Math.imul(s | 0, 1274126177);
+    h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
+  function rwSm(t) { return t * t * (3 - 2 * t); }
+  function rwVn(x, z, s) {
+    var ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz, u = rwSm(fx), v = rwSm(fz);
+    var a = rwHash(ix, iz, s), b = rwHash(ix + 1, iz, s), c = rwHash(ix, iz + 1, s), d = rwHash(ix + 1, iz + 1, s);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+  function rwFbm(x, z, s, oct) {
+    var sum = 0, amp = 1, tot = 0, f = 1;
+    for (var i = 0; i < oct; i++) { sum += rwVn(x * f, z * f, s + i * 101) * amp; tot += amp; amp *= 0.5; f *= 2; }
+    return sum / tot;
+  }
+  function rwBase(x, z) {   // natural terrain, before monuments flatten their sites
+    var S = RW.s;
+    var n1 = rwFbm(x / 520, z / 520, S, 4), n2 = rwFbm(x / 90 + 17, z / 90 - 9, S + 7, 3);
+    var h = 2 + 55 * Math.pow(Math.max(0, n1 - 0.25) / 0.75, 1.5) + (n2 - 0.5) * 7;
+    var lk = rwFbm(x / 300 + 40, z / 300 - 25, S + 31, 3);              // lakes and ponds
+    var lw = rwSm(Math.min(1, Math.max(0, (lk - 0.58) / 0.14))) * (1 - rwSm(Math.min(1, Math.max(0, (h - 6) / 12))));   // lakes only form in the lowlands
+    h = h * (1 - lw) - 6 * lw;
+    var e = Math.max(Math.abs(x), Math.abs(z)) / RW.half;               // the sea around the island
+    var m = rwSm(Math.min(1, Math.max(0, (e - 0.78) / 0.19)));
+    return h * (1 - m) - 9 * m;
+  }
+  function rwMonW(x, z) {   // how flat the ground is at x,z (1 on a monument plateau)
+    var M = RW.mons, w = 0;
+    for (var i = 0; i < M.length; i++) {
+      var m = M[i], dx = x - m.x, dz = z - m.z, d2 = dx * dx + dz * dz;
+      if (d2 < m.R2) { var d = Math.sqrt(d2), q = d <= m.r ? 1 : 1 - rwSm((d - m.r) / (m.R - m.r)); if (q > w) w = q; }
+    }
+    return w;
+  }
+  function rwH(x, z) {
+    var h = rwBase(x, z), M = RW.mons;
+    for (var i = 0; i < M.length; i++) {
+      var m = M[i], dx = x - m.x, dz = z - m.z, d2 = dx * dx + dz * dz;
+      if (d2 < m.R2) { var d = Math.sqrt(d2), w = d <= m.r ? 1 : 1 - rwSm((d - m.r) / (m.R - m.r)); h = h * (1 - w); }
+    }
+    return h;
+  }
+  function rwNearMon(x, z, pad) {
+    var M = RW.mons;
+    for (var i = 0; i < M.length; i++) { var m = M[i]; if (Math.hypot(x - m.x, z - m.z) < m.r + pad) return m; }
+    return null;
+  }
+  function rwSafe(x, z) { var s = RW.safe; return !!s && Math.hypot(x - s.x, z - s.z) < s.r; }
+  function rwDeep(x, z) { return rwH(x, z) < RW_SEA - 1.5; }
+
+  var RW_SPECS = [['outpost', 70, 1], ['military', 80, 1], ['town', 90, 2], ['airfield', 95, 1], ['harbor', 70, 1], ['radtown', 62, 1], ['gas', 42, 2], ['farm', 58, 2], ['quarry', 62, 2], ['village', 66, 2]];
+  var RW_NAMES = { outpost: ['前哨站', 'Outpost'], military: ['军事基地', 'Military Base'], town: ['废弃小镇', 'Ghost Town'], airfield: ['机场', 'Airfield'], harbor: ['港口', 'Harbor'], radtown: ['辐射镇', 'Radtown'], gas: ['加油站', 'Gas Station'], farm: ['农场', 'Farm'], quarry: ['采石场', 'Quarry'], village: ['村庄', 'Village'] };
+  function rwSiteOk(x, z, r, tries) {
+    var relax = tries > 200, lo = relax ? 0.8 : 1.5, hi = relax ? 30 : 22, k, a;
+    var h = rwBase(x, z); if (h < lo || h > hi) return false;
+    for (k = 0; k < 8; k++) { a = k * Math.PI / 4; h = rwBase(x + Math.cos(a) * (r + 40), z + Math.sin(a) * (r + 40)); if (h < lo || h > hi + 8) return false; }
+    var gap = tries > 300 ? 40 : 140;
+    for (k = 0; k < RW.mons.length; k++) { var m = RW.mons[k]; if (Math.hypot(x - m.x, z - m.z) < r + m.r + gap) return false; }
+    return true;
+  }
+  function rwPlan() {
+    RW.mons = [];
+    var rg = seeded(hashStr('rwplan' + RW.seed)), list = [], plan = [], H = RW.half;
+    RW_SPECS.forEach(function (s) { for (var i = 0; i < s[2]; i++) list.push(s); });
+    list.forEach(function (s) {
+      var best = null, tries, lim = s[0] === 'outpost' ? 260 : H * 0.72;
+      for (tries = 0; tries < 450 && !best; tries++) {
+        var x = (rg() * 2 - 1) * lim, z = (rg() * 2 - 1) * lim;
+        if (rwSiteOk(x, z, s[1], tries)) best = { x: x, z: z };
+      }
+      if (best) { RW.mons.push({ k: s[0], x: best.x, z: best.z, r: s[1], R: s[1] + 80, R2: (s[1] + 80) * (s[1] + 80), y: 0, camp: [], rs: [], npcs: 0, meshes: [] }); }
+    });
+    for (var i = 0; i < RW.mons.length; i++) if (RW.mons[i].k === 'outpost') { RW.safe = { x: RW.mons[i].x, z: RW.mons[i].z, r: RW.mons[i].r }; }
+  }
+  function rwSpawnPoint() {
+    var rg = Math.random, H = RW.half, k, x, z, side;
+    for (k = 0; k < 120; k++) {
+      side = Math.floor(rg() * 4); var u = (rg() * 2 - 1) * H * 0.86;
+      x = side === 0 ? -H * 0.9 : side === 1 ? H * 0.9 : u; z = side === 2 ? -H * 0.9 : side === 3 ? H * 0.9 : u;
+      if (side < 2) z = u; else x = u;
+      var dx = -x, dz = -z, dl = Math.hypot(dx, dz) || 1, step;
+      for (step = 0; step < 90; step++) {
+        var px = x + dx / dl * step * 8, pz = z + dz / dl * step * 8, h = rwH(px, pz);
+        if (h > 0.5 && h < 3.5 && !rwNearMon(px, pz, 20)) return [px, pz, h];
+      }
+    }
+    var s = RW.safe || { x: 0, z: 0, r: 60 };
+    return [s.x + 20, s.z + 20, 0];
+  }
+
+  /* ---- decor geometry: flat-shaded low-poly pieces merged into one mesh per chunk ---- */
+  function rwNewB() { return { p: [], n: [], c: [] }; }
+  function rwTri(B, a, b, c, col) {
+    var ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, l = Math.hypot(nx, ny, nz) || 1;
+    nx /= l; ny /= l; nz /= l;
+    B.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    B.n.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+    B.c.push(col[0], col[1], col[2], col[0], col[1], col[2], col[0], col[1], col[2]);
+  }
+  function rwQuad(B, a, b, c, d, col) { rwTri(B, a, b, c, col); rwTri(B, a, c, d, col); }
+  function rwBoxB(B, x, y, z, w, h, d, col) {   // x,z centre, y bottom
+    var X = w / 2, Z = d / 2, v = [[x - X, y, z - Z], [x + X, y, z - Z], [x + X, y + h, z - Z], [x - X, y + h, z - Z], [x - X, y, z + Z], [x + X, y, z + Z], [x + X, y + h, z + Z], [x - X, y + h, z + Z]];
+    rwQuad(B, v[4], v[5], v[6], v[7], col); rwQuad(B, v[1], v[0], v[3], v[2], col);
+    rwQuad(B, v[5], v[1], v[2], v[6], col); rwQuad(B, v[0], v[4], v[7], v[3], col);
+    rwQuad(B, v[3], v[7], v[6], v[2], col);
+  }
+  function rwConeB(B, x, y, z, r, h, seg, col) {
+    var ap = [x, y + h, z], pts = [], i;
+    for (i = 0; i <= seg; i++) { var a = i / seg * Math.PI * 2; pts.push([x + Math.cos(a) * r, y, z + Math.sin(a) * r]); }
+    for (i = 0; i < seg; i++) rwTri(B, pts[i + 1], pts[i], ap, col);
+  }
+  function rwRockB(B, x, y, z, r, h, col, rg) {   // lumpy boulder
+    var seg = 6, top = [x, y + h, z], bot = [], mid = [], i, a, rr;
+    for (i = 0; i <= seg; i++) {
+      if (i === seg) { bot.push(bot[0]); mid.push(mid[0]); continue; }
+      a = i / seg * Math.PI * 2; rr = r * (0.8 + rg() * 0.35);
+      bot.push([x + Math.cos(a) * rr * 0.92, y, z + Math.sin(a) * rr * 0.92]);
+      mid.push([x + Math.cos(a) * rr, y + h * (0.45 + rg() * 0.15), z + Math.sin(a) * rr]);
+    }
+    for (i = 0; i < seg; i++) {
+      var shade = 0.9 + ((i * 37) % 5) * 0.03, c2 = [col[0] * shade, col[1] * shade, col[2] * shade];
+      rwTri(B, mid[i + 1], mid[i], top, c2);
+      rwTri(B, bot[i + 1], bot[i], mid[i], c2); rwTri(B, bot[i + 1], mid[i], mid[i + 1], c2);
+    }
+  }
+  function rwDecorGeo(B) {
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(B.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(B.n, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(B.c, 3));
+    g.computeBoundingSphere();
+    return g;
+  }
+  function rwGreen(v) { return [0.12 + v * 0.1, 0.34 + v * 0.14, 0.12 + v * 0.06]; }
+  function rwBuildNode(B, n, dead) {
+    var rg = seeded(hashStr(n.id)), sc = n.sc, i;
+    if (n.kind === 'tree') {
+      if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.55, 0.45, 0.55, [0.32, 0.22, 0.12]); return; }
+      var th = (1.8 + rg() * 0.9) * sc, bark = [0.33, 0.23, 0.14];
+      rwBoxB(B, n.x, n.y, n.z, 0.5 * sc, th + 0.6, 0.5 * sc, bark);
+      if (n.v < 0.7) {
+        var gc = rwGreen(n.v), cy = n.y + th - 0.2;
+        rwConeB(B, n.x, cy, n.z, 2.0 * sc, 2.6 * sc, 7, gc); rwConeB(B, n.x, cy + 1.7 * sc, n.z, 1.55 * sc, 2.3 * sc, 7, [gc[0] * 1.08, gc[1] * 1.08, gc[2]]);
+        rwConeB(B, n.x, cy + 3.2 * sc, n.z, 1.0 * sc, 2.0 * sc, 7, [gc[0] * 1.15, gc[1] * 1.15, gc[2]]);
+      } else {
+        rwRockB(B, n.x, n.y + th - 0.3, n.z, 2.3 * sc, 3.0 * sc, [0.2 + n.v * 0.12, 0.42 + n.v * 0.1, 0.14], rg);
+      }
+    } else if (n.kind === 'rock') {
+      if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.9, 0.5, 0.8, [0.36, 0.36, 0.35]); return; }
+      rwRockB(B, n.x, n.y - 0.2, n.z, 1.5 * sc, 1.8 * sc, [0.5, 0.5, 0.48], rg);
+    } else if (n.kind === 'ore') {
+      if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.9, 0.45, 0.8, [0.3, 0.28, 0.27]); return; }
+      rwRockB(B, n.x, n.y - 0.2, n.z, 1.3 * sc, 1.5 * sc, [0.42, 0.4, 0.4], rg);
+      for (i = 0; i < 5; i++) rwBoxB(B, n.x + (rg() - 0.5) * 1.5 * sc, n.y + 0.3 + rg() * 1.0 * sc, n.z + (rg() - 0.5) * 1.5 * sc, 0.28, 0.28, 0.28, i % 2 ? [0.9, 0.5, 0.18] : [0.95, 0.85, 0.25]);
+    } else if (n.kind === 'crate') {
+      if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.9, 0.14, 0.9, [0.28, 0.3, 0.22]); return; }
+      rwBoxB(B, n.x, n.y, n.z, 1.0, 0.85, 1.0, [0.3, 0.38, 0.24]); rwBoxB(B, n.x, n.y + 0.85, n.z, 1.06, 0.1, 1.06, [0.22, 0.28, 0.18]);
+      rwBoxB(B, n.x, n.y + 0.3, n.z, 1.04, 0.14, 1.04, [0.9, 0.75, 0.15]);
+    }
+  }
+  var RW_NODE = { tree: { max: 4, r: 0.5, coin: 3, last: 6, what: ['木材', 'Wood'] }, rock: { max: 5, r: 1.5, coin: 4, last: 8, what: ['石头', 'Stone'] }, ore: { max: 6, r: 1.3, coin: 7, last: 14, what: ['金属矿', 'Metal ore'] }, crate: { max: 1, r: 0.7, coin: 0, last: 0, what: ['补给箱', 'Supply crate'] } };
+  function rwNodeAlive(n) { var h = RW.nst[n.id]; return h === undefined || h > 0; }
+  function rwGenNodes(cx, cz) {
+    var rg = seeded(hashStr('rwn' + cx + '_' + cz + RW.seed)), out = [], S = RW_CH, x0 = cx * S, z0 = cz * S, i, x, z, h;
+    function slopeOk(px, pz, hh, lim) { return Math.abs(rwH(px + 2, pz) - hh) < lim && Math.abs(rwH(px, pz + 2) - hh) < lim; }
+    function add(kind, px, pz, hh, sc, v) { var d = RW_NODE[kind]; out.push({ id: cx + '_' + cz + '_' + out.length, kind: kind, x: px, z: pz, y: hh, r: d.r * (kind === 'tree' ? sc : sc * 0.9), max: d.max, sc: sc, v: v }); }
+    for (i = 0; i < 46; i++) {
+      x = x0 + rg() * S; z = z0 + rg() * S;
+      var f = rwFbm(x / 170, z / 170, RW.s + 55, 2), pr = Math.min(0.95, Math.max(0.05, (f - 0.45) * 3.2));
+      if (rg() > pr) continue;
+      h = rwH(x, z); if (h < 1.0 || h > 40 || rwNearMon(x, z, 8) || !slopeOk(x, z, h, 1.6)) continue;
+      add('tree', x, z, h, 0.8 + rg() * 0.6, rg());
+    }
+    for (i = 0; i < 6; i++) {
+      x = x0 + rg() * S; z = z0 + rg() * S;
+      if (rg() > 0.5) continue;
+      h = rwH(x, z); if (h < 1.0 || h > 45 || rwNearMon(x, z, 8) || !slopeOk(x, z, h, 2.2)) continue;
+      add('rock', x, z, h, 0.8 + rg() * 0.8, rg());
+    }
+    for (i = 0; i < 3; i++) {
+      x = x0 + rg() * S; z = z0 + rg() * S;
+      var q = rwMonNear(x, z), pOre = q && q.k === 'quarry' ? 0.8 : 0.16;
+      if (rg() > pOre) continue;
+      h = rwH(x, z); if (h < 1.0 || h > 50 || (rwNearMon(x, z, 4) && !(q && q.k === 'quarry' && Math.hypot(x - q.x, z - q.z) > q.r - 15)) || !slopeOk(x, z, h, 2.2)) continue;
+      add('ore', x, z, h, 0.9 + rg() * 0.5, rg());
+    }
+    for (i = 0; i < 2; i++) {
+      x = x0 + rg() * S; z = z0 + rg() * S;
+      var nm = rwMonNear(x, z), pc = nm ? 0.55 : 0.1;
+      if (rg() > pc) continue;
+      h = rwH(x, z); if (h < 0.6 || h > 45 || rwNearMon(x, z, 6) || !slopeOk(x, z, h, 1.2)) continue;
+      add('crate', x, z, h, 1, rg());
+    }
+    return out;
+  }
+  function rwMonNear(x, z) {   // the monument whose surroundings (within 120 m) x,z lies in
+    var M = RW.mons;
+    for (var i = 0; i < M.length; i++) if (Math.hypot(x - M[i].x, z - M[i].z) < M[i].r + 120) return M[i];
+    return null;
+  }
+
+  /* ---- terrain chunk ---- */
+  function rwTerrainColor(x, z, h, slope, out) {
+    var nz = (rwVn(x / 11, z / 11, 5) - 0.5) * 0.14, w = rwMonW(x, z);
+    var sand = 1 - rwSm(Math.min(1, Math.max(0, (h - 0.7) / 1.6)));
+    var rock = Math.max(rwSm(Math.min(1, Math.max(0, (slope - 0.4) / 0.25))), rwSm(Math.min(1, Math.max(0, (h - 34) / 10))));
+    var t = Math.min(1, Math.max(0, h / 26));
+    var gr = 0.25 + 0.12 * t + nz, gg = 0.44 + 0.04 * (1 - t) + nz, gb = 0.2 + nz * 0.5;
+    var r = gr, g = gg, b = gb;
+    r = r * (1 - rock) + 0.45 * rock; g = g * (1 - rock) + 0.43 * rock; b = b * (1 - rock) + 0.41 * rock;
+    r = r * (1 - sand) + (h < RW_SEA + 0.3 ? 0.5 : 0.78) * sand; g = g * (1 - sand) + (h < RW_SEA + 0.3 ? 0.46 : 0.7) * sand; b = b * (1 - sand) + (h < RW_SEA + 0.3 ? 0.36 : 0.5) * sand;
+    if (w > 0) { r = r * (1 - w * 0.85) + 0.48 * w * 0.85; g = g * (1 - w * 0.85) + 0.44 * w * 0.85; b = b * (1 - w * 0.85) + 0.36 * w * 0.85; }
+    out[0] = Math.min(1, Math.max(0, r + nz * 0.3)); out[1] = Math.min(1, Math.max(0, g + nz * 0.3)); out[2] = Math.min(1, Math.max(0, b + nz * 0.3));
+  }
+  function rwBuildTerrain(cx, cz) {
+    var N = RW_N, S = RW_CH, x0 = cx * S, z0 = cz * S, st = S / N, W1 = N + 1, vc = W1 * W1, i, j, k;
+    var pos = new Float32Array(vc * 3), nor = new Float32Array(vc * 3), col = new Float32Array(vc * 3), hs = new Float32Array(vc), idx = new Uint16Array(N * N * 6);
+    for (j = 0; j <= N; j++) for (i = 0; i <= N; i++) hs[j * W1 + i] = rwH(x0 + i * st, z0 + j * st);
+    function hAt(a, b) { return (a >= 0 && a <= N && b >= 0 && b <= N) ? hs[b * W1 + a] : rwH(x0 + a * st, z0 + b * st); }
+    var c3 = [0, 0, 0];
+    for (j = 0; j <= N; j++) for (i = 0; i <= N; i++) {
+      var o = (j * W1 + i) * 3, h = hs[j * W1 + i];
+      var dx = (hAt(i + 1, j) - hAt(i - 1, j)) / (2 * st), dz = (hAt(i, j + 1) - hAt(i, j - 1)) / (2 * st), nl = Math.hypot(dx, 1, dz);
+      pos[o] = x0 + i * st; pos[o + 1] = h; pos[o + 2] = z0 + j * st;
+      nor[o] = -dx / nl; nor[o + 1] = 1 / nl; nor[o + 2] = -dz / nl;
+      rwTerrainColor(pos[o], pos[o + 2], h, Math.hypot(dx, dz), c3);
+      col[o] = c3[0]; col[o + 1] = c3[1]; col[o + 2] = c3[2];
+    }
+    k = 0;
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+      var a = j * W1 + i, b = a + 1, c = a + W1, d = c + 1;
+      idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d;
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    g.computeBoundingSphere();
+    return new THREE.Mesh(g, RW.matT);
+  }
+  function rwRebuildDecor(ch) {
+    if (ch.d) { RW.group.remove(ch.d); ch.d.geometry.dispose(); ch.d = null; }
+    var B = rwNewB();
+    ch.nodes.forEach(function (n) { rwBuildNode(B, n, !rwNodeAlive(n)); });
+    if (B.p.length) { ch.d = new THREE.Mesh(rwDecorGeo(B), RW.matD); RW.group.add(ch.d); }
+  }
+  function rwLoadChunk(cx, cz) {
+    var key = cx + ',' + cz, ch = { key: key, cx: cx, cz: cz, t: rwBuildTerrain(cx, cz), d: null, nodes: rwGenNodes(cx, cz) };
+    RW.group.add(ch.t);
+    rwRebuildDecor(ch);
+    RW.chunks[key] = ch;
+  }
+  function rwDropChunk(key) {
+    var ch = RW.chunks[key]; if (!ch) return;
+    RW.group.remove(ch.t); ch.t.geometry.dispose();
+    if (ch.d) { RW.group.remove(ch.d); ch.d.geometry.dispose(); }
+    delete RW.chunks[key];
+  }
+  function rwStream(px, pz, all) {
+    var pcx = Math.floor(px / RW_CH), pcz = Math.floor(pz / RW_CH), R = RW_VIEW, need = [], i, j, lim = Math.floor(RW.half / RW_CH) + 1;
+    for (j = -R; j <= R; j++) for (i = -R; i <= R; i++) {
+      var cx = pcx + i, cz = pcz + j;
+      if (cx < -lim || cx > lim || cz < -lim || cz > lim || i * i + j * j > R * R + 1) continue;
+      if (!RW.chunks[cx + ',' + cz]) need.push([i * i + j * j, cx, cz]);
+    }
+    need.sort(function (a, b) { return a[0] - b[0]; });
+    var budget = all ? 1e9 : 2;
+    for (i = 0; i < need.length && i < budget; i++) rwLoadChunk(need[i][1], need[i][2]);
+    Object.keys(RW.chunks).forEach(function (k) {
+      var ch = RW.chunks[k], dx = ch.cx - pcx, dz = ch.cz - pcz;
+      if (dx * dx + dz * dz > (R + 2) * (R + 2)) rwDropChunk(k);
+    });
+  }
+  // trees, rocks, ore and crates are solid: push a walker out of the ones nearby
+  function rwResolve(p, r) {
+    var pcx = Math.floor(p.x / RW_CH), pcz = Math.floor(p.z / RW_CH), a, b, k;
+    for (b = -1; b <= 1; b++) for (a = -1; a <= 1; a++) {
+      var ch = RW.chunks[(pcx + a) + ',' + (pcz + b)]; if (!ch) continue;
+      for (k = 0; k < ch.nodes.length; k++) {
+        var n = ch.nodes[k]; if (!rwNodeAlive(n)) continue;
+        var dx = p.x - n.x, dz = p.z - n.z, rr = n.r + r, d2 = dx * dx + dz * dz;
+        if (d2 < rr * rr) { var d = Math.sqrt(d2) || 0.001; p.x = n.x + dx / d * rr; p.z = n.z + dz / d * rr; }
+      }
+    }
+  }
+
+  /* ---- monuments: built with the same building/prop helpers the small maps use (they all sit on flat ground at y = 0) ---- */
+  var RW_CAMPS = {
+    military: ['gunner', 'gunner', 'gunner', 'sniper', 'tank'], town: ['rusher', 'rusher', 'rusher', 'rusher', 'gunner'],
+    airfield: ['gunner', 'gunner', 'rusher', 'rusher'], harbor: ['rusher', 'rusher', 'rusher', 'gunner'],
+    radtown: ['bomber', 'bomber', 'rusher', 'rusher', 'gunner'], gas: ['rusher', 'rusher'], farm: ['rusher', 'rusher'],
+    quarry: ['tank', 'rusher'], village: ['rusher', 'rusher']
+  };
+  function rwBuildMonument(m) {
+    var cx = m.x, cz = m.z, k = m.k;
+    function B(kind, dx, dz, w, d, door) { put(kind, cx + dx, cz + dz, w, d, door || faceCenter(dx, dz)); }
+    function C(dx, dz, along, col, stack) { container(cx + dx, cz + dz, along, col, stack); }
+    var ccol = [0x35527a, 0x7a3b2a, 0x4a5a3a, 0x7a6a2a, 0x5a3a5a];
+    if (k === 'outpost') {
+      B('shop', 0, 0, 14, 10, 's');
+      B('bungalow', -38, -30, 12, 9); B('bungalow', 38, -30, 12, 9); B('cottage', -36, 32, 10, 8); B('cottage', 36, 32, 10, 8);
+      road(cx, cz, 8, 150); road(cx, cz, 150, 8);
+      C(-12, -48, true, ccol[0]); C(12, -48, true, ccol[1], true); sandbags(cx - 20, cz + 16, true); sandbags(cx + 20, cz + 16, true);
+      for (var a = 0; a < 8; a++) lamp(cx + Math.cos(a * Math.PI / 4) * 55, cz + Math.sin(a * Math.PI / 4) * 55);
+    } else if (k === 'military') {
+      B('bunker', -46, -42, 9, 7); B('bunker', 46, -42, 9, 7); B('bunker', -46, 42, 9, 7); B('bunker', 46, 42, 9, 7);
+      B('warehouse', 0, -56, 20, 12); B('warehouse', 0, 56, 20, 12); B('garage', -58, 0, 10, 8);
+      road(cx, cz, 7, 140); road(cx, cz, 140, 7);
+      C(-14, -14, true, ccol[2]); C(14, 14, false, ccol[2], true); C(-16, 16, true, ccol[1]); C(18, -18, false, ccol[0]);
+      sandbags(cx - 24, cz - 4, true); sandbags(cx + 24, cz + 4, true); sandbags(cx, cz - 30, false); sandbags(cx, cz + 30, false);
+      for (var q = 0; q < 8; q++) crate(cx - 18 + (q % 4) * 7, cz - 6 + Math.floor(q / 4) * 12, 1.2, 0x4a5a3a);
+      [[-60, -60], [60, -60], [-60, 60], [60, 60], [0, 0]].forEach(function (p) { lamp(cx + p[0], cz + p[1]); });
+    } else if (k === 'town') {
+      var kinds = ['villa', 'townhouse', 'cottage', 'bungalow', 'apartment', 'garage', 'villa', 'cottage', 'townhouse', 'bungalow'];
+      var slots = [[-30, -26], [30, -28], [-30, 28], [30, 26], [-66, -26], [66, -26], [-66, 26], [66, 28], [0, -68], [0, 68]];
+      var size = { cottage: [10, 8], villa: [13, 11], townhouse: [9, 11], bungalow: [12, 9], garage: [10, 8], apartment: [15, 11] };
+      slots.forEach(function (s, i) { var kd = kinds[(i + (RW.s & 7)) % kinds.length], sz = size[kd]; B(kd, s[0], s[1], sz[0], sz[1]); });
+      road(cx, cz, 7, 170); road(cx, cz, 170, 7);
+      fenceRun(cx - 38, cz + 38, cx - 22, cz + 38); fenceRun(cx + 22, cz - 40, cx + 38, cz - 40);
+      C(-10, 10, true, ccol[3]); sandbags(cx + 12, cz - 12, true);
+      [[-20, 4], [20, -4], [-50, 4], [50, -4], [4, -40], [-4, 40]].forEach(function (p) { lamp(cx + p[0], cz + p[1]); });
+    } else if (k === 'airfield') {
+      road(cx, cz - 24, 170, 16, 0x2a2a2a); paint(cx, cz - 24, 150, 0.6, 0xe8e2d0);
+      B('warehouse', -56, 22, 20, 12, 'n'); B('warehouse', -8, 22, 20, 12, 'n'); B('warehouse', 40, 22, 20, 12, 'n');
+      B('garage', -60, 56, 10, 8, 'n'); B('garage', 0, 58, 10, 8, 'n'); B('bunker', 62, 56, 9, 7, 'n');
+      C(-30, 46, true, ccol[0]); C(30, 48, true, ccol[1], true); sandbags(cx + 18, cz - 4, true);
+      [[-70, -10], [-35, -10], [0, -10], [35, -10], [70, -10]].forEach(function (p) { lamp(cx + p[0], cz + p[1]); });
+    } else if (k === 'harbor') {
+      B('warehouse', -40, -30, 20, 12); B('warehouse', 40, -30, 20, 12);
+      for (var i = 0; i < 12; i++) C(-50 + (i % 6) * 20, 14 + Math.floor(i / 6) * 8, true, ccol[i % ccol.length], i % 3 === 0);
+      for (var b = 0; b < 6; b++) barrel(cx - 30 + b * 2, cz + 44, [0x35527a, 0x7a3b2a, 0x4a5a3a][b % 3]);
+      road(cx, cz, 150, 8); road(cx, cz - 14, 8, 60);
+      [[-60, 0], [0, 0], [60, 0], [0, -50]].forEach(function (p) { lamp(cx + p[0], cz + p[1]); });
+    } else if (k === 'radtown') {
+      B('bunker', -30, -24, 9, 7); B('bunker', 30, -24, 9, 7); B('bunker', 0, 34, 9, 7); B('warehouse', 0, -48, 20, 12);
+      for (var r2 = 0; r2 < 14; r2++) barrel(cx - 24 + (r2 % 7) * 8, cz + (r2 < 7 ? -4 : 6), r2 % 2 ? 0x6a7a2a : 0x7a6a2a);
+      C(-20, 20, true, ccol[2]); C(22, 18, false, ccol[1]); sandbags(cx, cz - 12, true);
+      road(cx, cz, 120, 6); lamp(cx - 40, cz); lamp(cx + 40, cz);
+    } else if (k === 'gas') {
+      B('garage', 0, 0, 10, 8, 's'); B('bungalow', 24, 14, 12, 9, 'w');
+      for (var g2 = 0; g2 < 4; g2++) barrel(cx - 14 + g2 * 2, cz + 12, [0x7a3b2a, 0x35527a][g2 % 2]);
+      road(cx, cz, 90, 7); road(cx, cz, 7, 70); lamp(cx - 20, cz + 6); lamp(cx + 20, cz - 6); sandbags(cx - 18, cz - 14, true);
+    } else if (k === 'farm') {
+      B('barn', -20, 0, 14, 16, 'e'); B('barn', 22, -8, 14, 16, 'w'); B('cottage', 0, 34, 10, 8, 'n');
+      fenceRun(cx - 40, cz - 30, cx + 40, cz - 30); fenceRun(cx - 40, cz + 24, cx - 8, cz + 24); fenceRun(cx + 8, cz + 24, cx + 40, cz + 24);
+      road(cx, cz + 20, 100, 5, 0x4d4030); crate(cx - 4, cz - 4, 1.3); crate(cx + 4, cz + 2, 1.1, 0xb89a4a);
+    } else if (k === 'quarry') {
+      B('barn', -20, -14, 14, 16, 'e'); C(14, -16, true, ccol[3]); C(14, -6, true, ccol[1], true); C(24, 8, false, ccol[2]);
+      road(cx, cz, 110, 7, 0x4d4030); sandbags(cx - 6, cz + 14, true); crate(cx - 34, cz + 20, 1.4); lamp(cx - 30, cz); lamp(cx + 30, cz);
+    } else if (k === 'village') {
+      var vk = ['cottage', 'bungalow', 'cottage', 'bungalow', 'cottage', 'bungalow'], vs = [[-26, -20], [26, -22], [-26, 22], [26, 20], [0, -46], [0, 46]];
+      vs.forEach(function (s, i) { B(vk[i], s[0], s[1], vk[i] === 'cottage' ? 10 : 12, vk[i] === 'cottage' ? 8 : 9); });
+      road(cx, cz, 6, 120); road(cx, cz, 110, 6); fenceRun(cx - 36, cz - 32, cx - 18, cz - 32); lamp(cx - 10, cz + 4); lamp(cx + 10, cz - 4);
+    }
+    m.camp = (RW_CAMPS[k] || []).slice();
+    m.slots = null;
+  }
+  function rwBuildMonuments() {
+    boxes.length = 0; blockers.length = 0; solidMeshes.length = 0; placed.length = 0; lootSpots.length = 0; bldList.length = 0; roadList.length = 0; shopZone = null;
+    fortRect = null; turrets.length = 0; allies.length = 0; turretSlots.length = 0; lowerOpen = false; lowerHatch = null; fortHole = null; towers.length = 0; towerRoofs.length = 0; towerSpots.length = 0;
+    while (mapGroup.children.length) { var ch = mapGroup.children[0]; mapGroup.remove(ch); if (ch.geometry) ch.geometry.dispose(); }
+    batches = {}; lineBatches = {};
+    rng = seeded(hashStr('rwmon' + RW.seed));
+    RW.mons.forEach(function (m) {
+      var n0 = mapGroup.children.length;
+      rwBuildMonument(m);
+      flushBatches();
+      m.meshes = []; for (var i = n0; i < mapGroup.children.length; i++) m.meshes.push(mapGroup.children[i]);
+    });
+    var list = [], keep = Math.min(1, 520 / Math.max(1, lootSpots.length));
+    lootSpots.forEach(function (sp) { if (rng() > keep) return; var r = rng(); list.push([r < (sp.rich ? 0.4 : 0.3) ? 'health' : 'ammo', sp.x, sp.z, sp.y]); });
+    setPickups(list);
+    NAV.dirty = false;
+  }
+
+  /* ---- gathering and crates ---- */
+  function rwChunkOf(id) { var p = String(id).split('_'); return RW.chunks[p[0] + ',' + p[1]]; }
+  function rwFindNode() {
+    var pcx = Math.floor(P.x / RW_CH), pcz = Math.floor(P.z / RW_CH), fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), best = null, bs = 1e9, a, b, k;
+    for (b = -1; b <= 1; b++) for (a = -1; a <= 1; a++) {
+      var ch = RW.chunks[(pcx + a) + ',' + (pcz + b)]; if (!ch) continue;
+      for (k = 0; k < ch.nodes.length; k++) {
+        var n = ch.nodes[k]; if (!rwNodeAlive(n) || Math.abs(n.y - P.y) > 4) continue;
+        var dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz);
+        if (d > n.r + 2.6) continue;
+        var dot = d > 0.01 ? (dx * fx + dz * fz) / d : 1;
+        if (d > n.r + 0.7 && dot < 0.45) continue;
+        var sc = d - dot * 2; if (sc < bs) { bs = sc; best = n; }
+      }
+    }
+    return best;
+  }
+  function rwSetNode(id, hp) {   // hp < 0 means "back to full"
+    var was = RW.nst[id], alive0 = was === undefined || was > 0;
+    if (hp < 0) delete RW.nst[id]; else RW.nst[id] = hp;
+    var now = RW.nst[id], alive1 = now === undefined || now > 0;
+    if (alive0 !== alive1) { var ch = rwChunkOf(id); if (ch) rwRebuildDecor(ch); }
+  }
+  function rwLoot(n) {
+    var near = rwMonNear(n.x, n.z), rich = !!near, r = Math.random();
+    if (r < 0.3) { if (addAmmo(rich ? 1 : 0.6)) { banner(zt('补给箱：弹药', 'Supply crate: ammo'), 1200); return; } }
+    if (r < 0.55 && P.hp < P.maxHp) { healP(rich ? 55 : 35); banner(zt('补给箱：医疗包', 'Supply crate: medkit'), 1200); return; }
+    var c = Math.round((rich ? 90 : 45) * (0.6 + Math.random() * 0.9)); coins += c;
+    banner(tf('补给箱：金币 +{0}', c), 1200); tone(700, 1100, 0.1, 'sine', 0.06);
+  }
+  function rwUse() {
+    if (RW.dead || RW.gatherCd > 0 || state !== 'playing') return false;
+    var n = rwFindNode(); if (!n) return false;
+    var d = RW_NODE[n.kind], hp = RW.nst[n.id]; if (hp === undefined) hp = n.max;
+    RW.gatherCd = n.kind === 'crate' ? 0.35 : 0.5;
+    hp -= 1; RW.nst[n.id] = hp;
+    dSend({ t: 'Rg', id: n.id, max: n.max, k: n.kind });
+    if (n.kind === 'crate') { rwLoot(n); }
+    else {
+      var gain = hp <= 0 ? d.last : d.coin; coins += gain;
+      banner(zt(d.what[0], d.what[1]) + ' +' + gain, 700);
+      tone(n.kind === 'tree' ? 180 : 420, n.kind === 'tree' ? 120 : 260, 0.07, 'square', 0.07);
+      var pt = new THREE.Vector3(n.x, n.y + 1.2, n.z); burst(pt, 4, partMatY, 3);
+    }
+    if (hp <= 0) { var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch); }
+    return true;
+  }
+
+  /* ---- fights between players ---- */
+  function rwTargets(arr) {
+    if (!RW.on || rwSafe(P.x, P.z)) return;
+    for (var i = 0; i < CO.list.length; i++) {
+      var p = CO.list[i];
+      if (!p.rem || !p.rem.visible || p.hp <= 0 || rwSafe(p.rt.x, p.rt.z)) continue;
+      var h = p.rem.userData.hit; for (var k = 0; k < h.length; k++) arr.push(h[k]);
+    }
+  }
+  function rwHitPlayer(id, dmg, head) {
+    var now = performance.now();
+    dSend({ t: 'Rd', d: Math.min(150, Math.round(dmg * 10) / 10), h: head ? 1 : 0, to: id });
+    RW.lastHit = now;
+  }
+  function rwTakeHit(d, from) {
+    if (RW.dead || state !== 'playing' || rwSafe(P.x, P.z) || !(d > 0)) return;
+    RW.attacker = from; RW.attackT = gtime;
+    damage(Math.min(150, d));
+  }
+  function rwDie() {
+    if (RW.dead) return;
+    RW.dead = true; RW.deadT = 0; releaseInput();
+    if (RW.attacker && gtime - RW.attackT < 15) dSend({ t: 'Rk', to: RW.attacker });
+    RW.attacker = 0;
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    var h = duHead('RUST', '荒野世界', zt('你倒下了', 'You died'));
+    h += '<p>' + zt('死亡会丢掉一半金币和身上的装备。', 'Dying costs you half your coins and your gear.') + '</p><button class="go" id="rwRespawn" type="button" disabled>' + zt('重生', 'Respawn') + '</button><button class="ghost" id="rwLobby" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
+    duCard(h, function () {});
+    $('rwLobby').addEventListener('click', function () { DU.leave(false); });
+    setTimeout(function () { var b = $('rwRespawn'); if (b) { b.disabled = false; b.addEventListener('click', rwRespawn); } }, 2500);
+  }
+  function rwRespawn() {
+    var sp = rwSpawnPoint();
+    P.hp = P.maxHp; P.armor = 0; P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; RW.px = P.x; RW.pz = P.z;
+    resetLoadout(); resetInv(); coins = Math.floor(coins * 0.5); grenades = 1; adrenT = 0; W.cd = 0; W.reload = 0; aiming = false; updateSlots();
+    RW.dead = false; $('menu').hidden = true; requestLock();
+    banner(zt('你在海岸重生了', 'You respawned on the coast'), 1500);
+  }
+
+  /* ---- infected camps (the authority runs them, everybody else sees them as ghosts) ---- */
+  function rwPlayersNear(x, z, r) {
+    if (Math.hypot(P.x - x, P.z - z) < r && !RW.dead) return true;
+    for (var i = 0; i < CO.list.length; i++) { var p = CO.list[i]; if (p.seen && p.hp > 0 && Math.hypot(p.rt.x - x, p.rt.z - z) < r) return true; }
+    return false;
+  }
+  function rwDespawnCamp(m) {
+    if (!m.slots) return;
+    m.slots.forEach(function (s) { if (s.e) { var e = s.e, ix = enemies.indexOf(e); if (ix >= 0) enemies.splice(ix, 1); scene.remove(e.g); s.e = null; } s.t = 0; });
+  }
+  function rwSpawnNpc(m, s) {
+    for (var tries = 0; tries < 20; tries++) {
+      var a = Math.random() * Math.PI * 2, d = 8 + Math.random() * (m.r * 0.7), x = m.x + Math.cos(a) * d, z = m.z + Math.sin(a) * d;
+      if (insideBox(x, 0.4, z) || insideBox(x, 1.4, z)) continue;
+      if (rwPlayersNear(x, z, 22)) continue;
+      var e = makeEnemy(s.type); e.rw = true; e.camp = m; e.slot = s;
+      e.g.position.set(x, rwH(x, z), z); scene.add(e.g); enemies.push(e); s.e = e;
+      return true;
+    }
+    return false;
+  }
+  function rwNpcTick(dt) {
+    RW.spawnT -= dt; if (RW.spawnT > 0) return;
+    RW.spawnT = 1.2;
+    RW.mons.forEach(function (m) {
+      if (!m.camp.length) return;
+      if (!rwPlayersNear(m.x, m.z, m.r + 220)) { if (m.slots && !rwPlayersNear(m.x, m.z, m.r + 320)) rwDespawnCamp(m); return; }
+      if (!m.slots) m.slots = m.camp.map(function (t) { return { type: t, e: null, t: 0 }; });
+      for (var i = 0; i < m.slots.length; i++) {
+        var s = m.slots[i];
+        if (s.e && s.e.dead) s.e = null;
+        if (!s.e && gtime >= s.t) { if (rwSpawnNpc(m, s)) break; }
+      }
+    });
+  }
+  function rwNpcStep(e, dt) {   // returns true when the enemy was removed
+    var pos = e.g.position, m = e.camp, ty = e.type;
+    e.t += dt; animEnemy(e, dt);
+    if (e.slow > 0) e.slow -= dt;
+    if (e.burn > 0) {
+      e.burn -= dt; e.hp -= e.burnDps * dt;
+      if (e.hp <= 0) { PK.w = e.burnW === undefined ? -1 : e.burnW; killEnemy(e, false); PK.w = -1; return true; }
+    }
+    if (e.flash > 0) { e.flash -= dt; setEm(e, 0xffffff); } else setEm(e, e.burn > 0 ? 0x6a2005 : e.slow > 0 ? 0x0d4272 : 0);
+    var TP = coopTarget(pos); BT = TP;
+    var dx = TP.x - pos.x, dz = TP.z - pos.z, dd = Math.hypot(dx, dz) || 1;
+    updateBar(e, Math.hypot(P.x - pos.x, P.z - pos.z));
+    var home = Math.hypot(pos.x - m.x, pos.z - m.z), sp = e.speed * (e.slow > 0 ? 0.55 : 1) * 0.9;
+    var aggro = ty === 'sniper' ? 70 : ty === 'tank' ? 30 : 36;
+    if (e.hurt > 0) { e.hurt -= dt; aggro += 30; }
+    var chase = !rwSafe(TP.x, TP.z) && dd < aggro && home < m.r + 60 && (TP === P ? !RW.dead : true);
+    var mv = 0, ux = dx / dd, uz = dz / dd;
+    if (chase) {
+      e.g.rotation.y = Math.atan2(dx, dz);
+      if (ty === 'rusher' || ty === 'tank' || ty === 'bomber') {
+        mv = dd > 1.3 ? 1 : 0; e.melee = (e.melee || 0) - dt;
+        if (ty === 'bomber') { if (dd < 2.3) { e.dead = true; scene.remove(e.g); var ix = enemies.indexOf(e); if (ix >= 0) enemies.splice(ix, 1); if (e.slot) { e.slot.e = null; e.slot.t = gtime + 90; } explode(pos.x, pos.y + 1, pos.z, 4, 34, false); return true; } }
+        else if (dd < (ty === 'tank' ? 2.3 : 1.7) && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'tank' ? 1.2 : 0.8; dmgTP(TP, ty === 'tank' ? 22 : 12); }
+      } else {
+        var near = ty === 'sniper' ? 24 : 7, far = ty === 'sniper' ? 42 : 15;
+        if (dd > far) mv = 1; else if (dd < near) mv = -0.6;
+        e.cd = (e.cd === undefined ? 1 : e.cd) - dt;
+        if (ty === 'sniper') {
+          if (e.charge > 0) { e.charge -= dt; mv = 0; if (e.charge <= 0) { fireBolt(pos.x, pos.y + 1.7, pos.z, 38, 24, 0, boltMatC, 0.1); tone(900, 200, 0.2, 'sawtooth', 0.09); } }
+          else if (e.cd <= 0 && dd < 75) { e.charge = 0.8; e.cd = 3.8 + Math.random(); tone(500, 1200, 0.7, 'sine', 0.05); }
+        } else if (e.cd <= 0 && dd < 34) { e.cd = 1.5 + Math.random() * 1.1; fireBolt(pos.x, pos.y + 1.3, pos.z, 15, 9, 0); tone(300, 180, 0.15, 'square', 0.05); }
+      }
+    } else {
+      var tx = home > m.r * 0.75 ? m.x - pos.x : (e.wx === undefined ? 0 : e.wx - pos.x), tz = home > m.r * 0.75 ? m.z - pos.z : (e.wz === undefined ? 0 : e.wz - pos.z), tl = Math.hypot(tx, tz);
+      e.wt = (e.wt || 0) - dt;
+      if (e.wt <= 0) { e.wt = 3 + Math.random() * 5; var wa = Math.random() * 6.28, wd = Math.random() * m.r * 0.6; e.wx = m.x + Math.cos(wa) * wd; e.wz = m.z + Math.sin(wa) * wd; }
+      if (tl > 1.5) { ux = tx / tl; uz = tz / tl; mv = home > m.r * 0.75 ? 0.9 : 0.3; e.g.rotation.y = Math.atan2(ux, uz); } else mv = 0;
+    }
+    var nx = pos.x + ux * sp * mv * dt, nz = pos.z + uz * sp * mv * dt;
+    if (!rwDeep(nx, nz)) { pos.x = nx; pos.z = nz; }
+    for (var j = 0; j < 2; j++) { rwResolve(pos, e.r); resolveCircle(pos, e.r, 0); }
+    pos.y = rwH(pos.x, pos.z);
+    return false;
+  }
+
+  /* ---- messages from the relay and from other players ---- */
+  function rwMsg(m) {
+    switch (m.t) {
+      case 'Rs': rwSetNode(String(m.id), +m.hp); break;
+      case 'Rd': rwTakeHit(+m.d, m.i | 0); break;
+      case 'Rk': { var vic = coins; coins += 80; banner(zt('击杀玩家 +80', 'Player kill +80'), 1500); tone(900, 1300, 0.12, 'sine', 0.07); break; }
+    }
+  }
+  function rwSetAuth(id) {
+    HOST_ID = id; RW.auth = id;
+    var host = id === CO.id;
+    if (!RW.on) { CO.role = DU.role = host ? 'host' : 'guest'; return; }
+    var was = CO.role === 'host';
+    CO.role = DU.role = host ? 'host' : 'guest';
+    if (host !== was) {
+      enemies.forEach(function (e) { scene.remove(e.g); }); enemies = []; CO.ghosts = {}; CO.dead = {}; CO.pend = [];
+      RW.mons.forEach(function (m) { m.slots = null; });
+      if (host) banner(zt('你现在负责运行世界里的敌人', 'You now run the infected for this world'), 2200);
+    }
+  }
+  function rwWelcome(m) {
+    RW.seed = String(m.seed || 'rust'); RW.s = hashStr(RW.seed) | 0; RW.half = (m.size | 0) || 1500;
+    CO.id = m.id | 0; CO.myName = String(m.name || '');
+    CO.peers = {}; CO.list = [];
+    (m.peers || []).forEach(function (id) { coopPeerAdd(id | 0, m.names && m.names[id]); });
+    RW.nst = {}; (m.nodes || []).forEach(function (n) { RW.nst[String(n[0])] = +n[1]; });
+    DU.connected = true; DU.opened = true;
+    rwSetAuth(m.auth | 0);
+    RW.online = (m.peers ? m.peers.length : 0) + 1;
+    rwBuildWorld(); rwStart();
+  }
+
+  /* ---- building the world and starting to play ---- */
+  function rwBuildWorld() {
+    rwTeardownWorld();
+    A = RW.half;
+    RW.matT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+    RW.matD = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
+    RW.group = new THREE.Group(); scene.add(RW.group);
+    var wg = new THREE.PlaneGeometry(RW.half * 4, RW.half * 4); wg.rotateX(-Math.PI / 2);
+    RW.water = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: 0x2b6a8c, transparent: true, opacity: 0.82, roughness: 0.25, metalness: 0.15 }));
+    RW.water.position.y = RW_SEA; RW.group.add(RW.water);
+    rwPlan();
+    rwBuildMonuments();
+    RW.built = true;
+    rwMakeMap();
+  }
+  function rwTeardownWorld() {
+    Object.keys(RW.chunks).forEach(function (k) { rwDropChunk(k); });
+    RW.chunks = {};
+    if (RW.group) { scene.remove(RW.group); RW.group = null; }
+    RW.built = false;
+  }
+  function rwSaveScene() {
+    if (RW.saved) return;
+    RW.saved = { fogNear: scene.fog.near, fogFar: scene.fog.far, fogCol: scene.fog.color.getHex(), far: camera.far, diff: diff, mode: mode, mapId: mapId, floor: floor.visible,
+      lights: cornerLights.map(function (o) { return o.l.visible; }), cl: cLight.visible };
+  }
+  function rwStart() {
+    rwSaveScene();
+    coop = true; duel = false; siege = false; RW.on = true; RW.dead = false;
+    mode = 'rush'; diff = 'normal'; DF = DIFFS.normal; CH = CHARS[charId];
+    floor.visible = false; cornerLights.forEach(function (o) { o.l.visible = false; }); cLight.visible = false;
+    var sky = 0x9cc4dc; scene.fog.color.setHex(sky); scene.background.setHex(sky); scene.fog.near = 90; scene.fog.far = RW_VIEW * RW_CH * 0.95;
+    camera.far = 900; camera.updateProjectionMatrix();
+    enemies.forEach(function (e) { scene.remove(e.g); }); bolts.forEach(function (b) { scene.remove(b.m); }); parts.forEach(function (p) { scene.remove(p.m); }); tracers.forEach(function (t) { scene.remove(t.m); });
+    enemies = []; bolts = []; parts = []; tracers = []; CO.ghosts = {}; CO.dead = {}; CO.pend = [];
+    nades.forEach(function (n) { scene.remove(n.m); }); nades = []; rockets.forEach(function (n) { scene.remove(n.m); }); rockets = []; blasts.forEach(function (b) { scene.remove(b.m); }); blasts = [];
+    pickups.forEach(function (p) { p.cool = 0; p.g.visible = true; });
+    gunAcc.color.setHex(CH.color);
+    grenades = 2; coins = 120; adrenT = 0; vit = 0; resetInv(); resetLoadout(); updateSlots();
+    P.maxHp = CH.hp; P.armor = 0; P.hp = P.maxHp;
+    var sp = rwSpawnPoint(); P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; P.yaw = Math.atan2(P.x, P.z) + Math.PI; P.pitch = 0; RW.px = P.x; RW.pz = P.z;
+    W.cd = 0; W.reload = 0; aiming = false; aimT = 0; latched = false;
+    wave = 0; score = 0; waveDelay = 0; spawned = 0; toSpawn = 0;
+    coopBoardEl().hidden = true;
+    rwStream(P.x, P.z, true);
+    rwInitUi(); RW.hud.style.display = 'block';
+    state = 'playing'; $('menu').hidden = true; $('hud').hidden = false; $('cross').hidden = false;
+    requestLock(); tone(200, 400, 0.1, 'square', 0.05);
+    banner(zt('欢迎来到荒野世界 · 按 M 打开地图 · 按 E 采集和开箱', 'Welcome to the wild · M opens the map · E gathers and opens crates'), 4200);
+    RW.safeNow = false; RW.cullT = 0;
+  }
+  function rwTeardown() {
+    if (!RW.built && !RW.on) return;
+    RW.on = false; RW.dead = false; RW.mapOpen = false;
+    if (RW.hud) RW.hud.style.display = 'none';
+    if (RW.mapEl) RW.mapEl.style.display = 'none';
+    rwTeardownWorld();
+    var S = RW.saved; RW.saved = null;
+    if (S) {
+      scene.fog.near = S.fogNear; scene.fog.far = S.fogFar; scene.fog.color.setHex(S.fogCol); camera.far = S.far; camera.updateProjectionMatrix();
+      diff = S.diff; DF = DIFFS[diff]; mode = S.mode; mapId = S.mapId; floor.visible = true;
+      cornerLights.forEach(function (o, i) { o.l.visible = S.lights[i] !== false; }); cLight.visible = S.cl !== false;
+    }
+    RW.mons = []; RW.safe = null; RW.nst = {}; RW.roster = [];
+  }
+
+  /* ---- per frame ---- */
+  function rwTick(dt) {
+    RW.gatherCd = Math.max(0, RW.gatherCd - dt);
+    rwStream(P.x, P.z, false);
+    if (keys[KB.use] && !inShop && !RW.dead) rwUse();
+    if (!coopG()) rwNpcTick(dt);
+    var safe = rwSafe(P.x, P.z);
+    if (safe !== RW.safeNow) { RW.safeNow = safe; banner(safe ? zt('进入前哨站安全区：这里不能互相伤害', 'Outpost safe zone: no fighting here') : zt('离开了安全区', 'You left the safe zone'), 1800); }
+    RW.cullT -= dt;
+    if (RW.cullT <= 0) {
+      RW.cullT = 0.5;
+      RW.mons.forEach(function (m) { var vis = Math.hypot(P.x - m.x, P.z - m.z) < m.r + 560; m.meshes.forEach(function (o) { o.visible = vis; }); });
+    }
+    RW.uiT -= dt;
+    if (RW.uiT <= 0) { RW.uiT = 0.2; rwUpdateUi(); }
+  }
+  function rwSpeedMul() { return RW.on && P.y < RW_SEA + 0.3 ? 0.6 : 1; }
+
+  /* ---- HUD, mini map and the full live map ---- */
+  function rwInitUi() {
+    if (RW.hud) return;
+    var st = document.getElementById('stage') || document.body;
+    var d = document.createElement('div'); d.id = 'rwHud';
+    d.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:6;display:none;font:600 13px/1.35 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6;text-shadow:0 1px 2px #000';
+    d.innerHTML = '<div id="rwInfo" style="position:absolute;right:12px;top:170px;text-align:right;white-space:pre"></div>' +
+      '<canvas id="rwMini" width="150" height="150" style="position:absolute;right:12px;top:12px;border:2px solid rgba(255,255,255,.4);border-radius:50%;background:#0b1a22"></canvas>' +
+      '<div id="rwBtns" style="position:absolute;right:12px;top:236px;display:flex;gap:8px;pointer-events:auto"><button id="rwMapBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('地图 M', 'Map M') + '</button><button id="rwUseBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('采集 E', 'Use E') + '</button></div>';
+    st.appendChild(d); RW.hud = d;
+    var mp = document.createElement('div'); mp.id = 'rwMap';
+    mp.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;z-index:8;display:none;background:rgba(5,12,16,.82);align-items:center;justify-content:center;flex-direction:column;color:#ece6d6;font:600 14px system-ui,"PingFang SC","Microsoft YaHei",sans-serif';
+    mp.innerHTML = '<canvas id="rwBig" width="720" height="720" style="width:min(88vh,92vw);height:min(88vh,92vw);border:2px solid rgba(255,255,255,.4);border-radius:6px;background:#0b1a22"></canvas><div id="rwLegend" style="margin-top:8px;opacity:.85"></div>';
+    mp.addEventListener('click', function () { rwToggleMap(false); });
+    st.appendChild(mp); RW.mapEl = mp;
+    $('rwMapBtn').addEventListener('click', function () { rwToggleMap(!RW.mapOpen); });
+    $('rwUseBtn').addEventListener('click', function () { rwUse(); });
+  }
+  function rwToggleMap(on) {
+    RW.mapOpen = !!on; RW.mapEl.style.display = on ? 'flex' : 'none';
+    if (on) rwDrawMap();
+  }
+  function rwMakeMap() {   // the island, drawn once: water depth, height, hill shading, monuments
+    var W = 720, cv = document.createElement('canvas'); cv.width = W; cv.height = W;
+    var c = cv.getContext('2d'), img = c.createImageData(W, W), px = img.data, i, j, step = RW.half * 2 / W, hs = new Float32Array(W * W);
+    for (j = 0; j < W; j++) for (i = 0; i < W; i++) hs[j * W + i] = rwH(-RW.half + (i + 0.5) * step, -RW.half + (j + 0.5) * step);
+    for (j = 0; j < W; j++) for (i = 0; i < W; i++) {
+      var h = hs[j * W + i], o = (j * W + i) * 4, r, g, b;
+      var hl = hs[j * W + Math.max(0, i - 1)], hu = hs[Math.max(0, j - 1) * W + i], sh = Math.max(-0.25, Math.min(0.25, (hl - h + hu - h) * 0.05));
+      if (h < RW_SEA) { var dp = Math.min(1, (RW_SEA - h) / 8); r = 40 - 18 * dp; g = 100 - 36 * dp; b = 140 - 40 * dp; }
+      else if (h < 1.2) { r = 205; g = 190; b = 140; }
+      else { var t = Math.min(1, h / 40); r = 70 + 90 * t; g = 120 + 20 * (1 - t) + 40 * t; b = 60 + 70 * t; if (t > 0.8) { r = g = b = 170; } }
+      var k = 1 + sh * 2.2;
+      px[o] = Math.max(0, Math.min(255, r * k)); px[o + 1] = Math.max(0, Math.min(255, g * k)); px[o + 2] = Math.max(0, Math.min(255, b * k)); px[o + 3] = 255;
+    }
+    c.putImageData(img, 0, 0);
+    RW.mapCv = cv;
+  }
+  function rwDrawLayer(ctx, W, x0, z0, span, big) {   // draws the visible part of the island and everything on it
+    var half = RW.half, sc = W / span, i;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(RW.mapCv, (x0 + half) / (half * 2) * RW.mapCv.width, (z0 + half) / (half * 2) * RW.mapCv.height, span / (half * 2) * RW.mapCv.width, span / (half * 2) * RW.mapCv.height, 0, 0, W, W);
+    function X(x) { return (x - x0) * sc; } function Z(z) { return (z - z0) * sc; }
+    if (big) { ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 1; for (i = -1000; i <= 1000; i += 500) { ctx.beginPath(); ctx.moveTo(X(i), 0); ctx.lineTo(X(i), W); ctx.moveTo(0, Z(i)); ctx.lineTo(W, Z(i)); ctx.stroke(); } }
+    ctx.font = (big ? '700 13px' : '700 9px') + ' system-ui,"PingFang SC","Microsoft YaHei",sans-serif'; ctx.textAlign = 'center';
+    RW.mons.forEach(function (m) {
+      var x = X(m.x), z = Z(m.z); if (x < -20 || z < -20 || x > W + 20 || z > W + 20) return;
+      ctx.fillStyle = m.k === 'outpost' ? '#3fd16a' : m.camp.length ? '#e0553a' : '#e8d28a';
+      var s = big ? 7 : 4; ctx.fillRect(x - s / 2, z - s / 2, s, s);
+      if (big || span < 500) { ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; var nm = zt(RW_NAMES[m.k][0], RW_NAMES[m.k][1]); ctx.strokeText(nm, x, z - s - 2); ctx.fillText(nm, x, z - s - 2); }
+    });
+    RW.roster.forEach(function (r) {
+      if (r.id === CO.id) return;
+      var x = X(r.x), z = Z(r.z); if (x < -10 || z < -10 || x > W + 10 || z > W + 10) return;
+      ctx.fillStyle = '#ffd23a'; ctx.beginPath(); ctx.arc(x, z, big ? 5 : 3, 0, 6.3); ctx.fill();
+      if (big) { var pp = CO.peers[r.id], nm = pp ? coopPeerName(pp) : zt('玩家 ', 'Player ') + r.id; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; ctx.strokeText(nm, x, z - 8); ctx.fillText(nm, x, z - 8); }
+    });
+    var mx = X(P.x), mz = Z(P.z); ctx.save(); ctx.translate(mx, mz); ctx.rotate(-P.yaw);
+    ctx.fillStyle = '#ff5a2a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); var a = big ? 9 : 6; ctx.moveTo(0, -a); ctx.lineTo(a * 0.7, a * 0.8); ctx.lineTo(0, a * 0.4); ctx.lineTo(-a * 0.7, a * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  function rwDrawMap() {
+    if (!RW.mapCv) return;
+    var cv = $('rwBig'), ctx = cv.getContext('2d');
+    rwDrawLayer(ctx, cv.width, -RW.half, -RW.half, RW.half * 2, true);
+    $('rwLegend').textContent = zt('红点：有敌人的据点 · 黄点：其他玩家 · 绿点：安全区 · 点击或按 M 关闭', 'Red: camps · Yellow: players · Green: safe zone · click or press M to close') + '  ·  ' + zt('在线 ', 'Online ') + RW.online;
+  }
+  function rwUpdateUi() {
+    if (!RW.hud) return;
+    var mc = $('rwMini'); if (mc && RW.mapCv) { var ctx = mc.getContext('2d'), span = 360; ctx.save(); rwDrawLayer(ctx, mc.width, P.x - span / 2, P.z - span / 2, span, false); ctx.restore(); }
+    if (RW.mapOpen) rwDrawMap();
+    var dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'], hd = Math.atan2(-Math.sin(P.yaw), -Math.cos(P.yaw)), di = ((Math.round(hd / (Math.PI / 4)) % 8) + 8) % 8;
+    var near = null, nd = 1e9;
+    RW.mons.forEach(function (m) { var d = Math.hypot(P.x - m.x, P.z - m.z); if (d < nd) { nd = d; near = m; } });
+    $('rwInfo').textContent = dirs[di] + '  ' + Math.round(P.x) + ', ' + Math.round(P.z) + '\n' + zt('在线 ', 'Online ') + RW.online + (near ? '\n' + zt(RW_NAMES[near.k][0], RW_NAMES[near.k][1]) + ' ' + Math.round(nd) + 'm' : '') + (rwSafe(P.x, P.z) ? '\n' + zt('安全区', 'Safe zone') : '');
+  }
+
+  /* ---- entering the world ---- */
+  function rwCard(h1, body, buttons) {
+    var h = duHead('RUST', '荒野世界', h1) + '<p>' + body + '</p>' + buttons;
+    duCard(h, function () {});
+  }
+  function rwFail(msg) {
+    RW.entering = false;
+    rwCard(zt('进不去荒野世界', 'Could not enter the world'), duEsc(msg), '<button class="go" id="rwRetry" type="button">' + zt('重试', 'Retry') + '</button><button class="ghost" id="rwToLobby" type="button">' + zt('进入大厅，玩其他模式', 'Go to the lobby (other modes)') + '</button>');
+    $('rwRetry').addEventListener('click', rwEnter);
+    $('rwToLobby').addEventListener('click', function () { RW.noAuto = true; showLobby(); });
+  }
+  function rwEnter() {
+    if (RW.on || RW.entering) return;
+    var srv = String(dDefaultServer() || dSavedServer() || '').trim();
+    if (!srv) { RW.noAuto = true; showLobby(); return; }
+    RW.entering = true; DU.role = 'guest'; DU.coopWanted = true; coop = false; duel = false;
+    rwCard(zt('正在进入荒野世界……', 'Entering the wild…'), zt('免费服务器睡眠后第一次连接要等约 1 分钟，请稍等。', 'A sleeping free server needs about a minute on the first connection.'), '<button class="ghost" id="rwToLobby" type="button">' + zt('取消，进入大厅', 'Cancel, go to the lobby') + '</button>');
+    $('rwToLobby').addEventListener('click', function () { RW.noAuto = true; RW.entering = false; duCloseConn(); DU.coopWanted = false; showLobby(); });
+    dConnect(srv, accMsg({ op: 'world' }), function (msg) { DU.coopWanted = false; rwFail(msg); });
+  }
+  function rwPauseMenu() {
+    releaseInput();
+    var h = duHead('PAUSED', '已暂停', zt('荒野世界', 'The wild'));
+    h += '<p>' + zt('世界不会暂停，其他玩家和敌人都在继续。M 打开地图，E 采集或开箱。', 'The world keeps running. M opens the map, E gathers or opens crates.') + '</p>';
+    h += '<button class="go" id="duResume" type="button">' + zt('继续', 'Resume') + '</button><button class="ghost" id="duQuit" type="button">' + zt('返回大厅（玩其他模式）', 'Back to the lobby (other modes)') + '</button>';
+    duCard(h, rwPauseMenu);
+    $('duResume').addEventListener('click', function () { $('menu').hidden = true; requestLock(); });
+    $('duQuit').addEventListener('click', function () { RW.noAuto = true; DU.leave(false); });
+  }
+
   function duHome() {
     if (DU.coopWanted) { coopHome(); return; }
     DU.ui = 'home';
@@ -4829,6 +5648,7 @@ Object.assign(EN, {
   function coopPeerName(p) { return p.name || (p.id === HOST_ID ? zt('房主', 'Host') : zt('玩家 ', 'Player ') + p.id); }
   function coopPeerJoined(id, name) {
     var p = coopPeerAdd(id, name); if (!p) return;
+    if (RW.on || RW.entering) { RW.online = CO.list.length + 1; dSend({ t: 'h', c: charId, to: id }); return; }
     dSend({ t: 'h', c: charId, to: id });                // tell the newcomer who we are
     if (DU.role !== 'host') { if (DU.ui === 'ready' && !coop) coopReadyPanel(); return; }
     DU.connected = true;
@@ -4836,6 +5656,7 @@ Object.assign(EN, {
     else duReadyPanel();
   }
   function coopPeerLeft(id) {
+    if (RW.on || RW.entering) { var pw = CO.peers[id]; if (pw) coopPeerDrop(pw); RW.online = CO.list.length + 1; return; }
     if (id === HOST_ID && DU.role === 'guest') { DU.connected = false; duLeft(zt('房主离开了房间', 'The host left the room')); return; }
     var p = CO.peers[id]; if (!p) return;
     var lname = coopPeerName(p);
@@ -4847,7 +5668,8 @@ Object.assign(EN, {
     else duHostPanel(false);   // nobody left: back to showing the room number
   }
   function coopMakeMesh(p) {
-    p.rem = duMakeRemote(CHARS[p.ch].color); p.rem.visible = false; p.snap = true; p.lblHp = -1;
+    p.rem = duMakeRemote(CHARS[p.ch].color); p.rem.visible = false;
+    p.rem.userData.hit.forEach(function (o) { o.userData.rp = p.id; }); p.snap = true; p.lblHp = -1;
     scene.add(p.rem);
   }
   function coopDrawLabel(p) {
@@ -4931,6 +5753,7 @@ Object.assign(EN, {
         if (!p || !isFinite(m.x) || !isFinite(m.z)) return;
         p.rt.x = +m.x; p.rt.y = +m.y || 0; p.rt.z = +m.z; p.rt.yaw = +m.yaw || 0;
         p.hp = Math.max(0, +m.hp || 0); p.mx = Math.max(1, +m.mx || 100); p.ar = Math.max(0, +m.ar || 0);
+        p.lastS = gtime;
         if (!p.seen) { p.seen = true; p.snap = true; }
         break;
       case 'f':
@@ -4951,7 +5774,7 @@ Object.assign(EN, {
     var fromHost = (m.i | 0) === HOST_ID;
     switch (m.t) {
       case 'Cs':
-        if (CO.role !== 'guest' || !fromHost || !MODES[m.mode] || m.mode === 'duel' || !MAPDEF[m.map]) return;
+        if (RW.on || CO.role !== 'guest' || !fromHost || !MODES[m.mode] || m.mode === 'duel' || !MAPDEF[m.map]) return;
         mode = m.mode; mapId = m.map; diff = DIFFS[m.df] ? m.df : 'normal'; DF = DIFFS[diff]; CO.seed = String(m.seed || '');
         coopBegin(); break;
       case 'Ce': if (coopG() && fromHost && state === 'playing') coopApplySnap(m); break;
@@ -4959,7 +5782,7 @@ Object.assign(EN, {
       case 'Cd': if (coopG() && fromHost) damage(Math.min(250, Math.max(0, +m.n || 0))); break;
       case 'Ck': if (coopG() && fromHost) coins += Math.max(0, Math.min(500, +m.c || 0)); break;
       case 'Cr': if (coop && CO.down && fromHost) coopRevive(); break;
-      case 'Cx': if (coopG() && fromHost && state === 'playing') gameOver(typeof m.r === 'string' && m.r ? m.r : undefined); break;
+      case 'Cx': if (!RW.on && coopG() && fromHost && state === 'playing') gameOver(typeof m.r === 'string' && m.r ? m.r : undefined); break;
     }
   }
   function coopTarget(pos) {   // nearest living player: the host or any remote teammate
@@ -5017,7 +5840,7 @@ Object.assign(EN, {
   }
   function coopDropGhost(g, fx) {
     var ix = enemies.indexOf(g); if (ix >= 0) enemies.splice(ix, 1);
-    if (fx) { var p = g.g.position.clone(); p.y += 1.2; burst(p, g.type === 'boss' ? 40 : 14, partMatO, 6); }
+    if (fx && (!RW.on || Math.hypot(g.g.position.x - P.x, g.g.position.z - P.z) < 80)) { var p = g.g.position.clone(); p.y += 1.2; burst(p, g.type === 'boss' ? 40 : 14, partMatO, 6); }
     scene.remove(g.g); delete CO.ghosts[g.gid];
   }
   function coopWaveStart() {
@@ -5031,6 +5854,7 @@ Object.assign(EN, {
     var seen = {}, i, q, g, id, ty;
     for (i = 0; i < m.en.length; i++) {
       q = m.en[i]; id = q[0];
+      if (RW.on && Math.hypot(q[2] - P.x, q[4] - P.z) > 230) continue;   // too far away to bother drawing
       if (CO.dead[id] && gtime - CO.dead[id] < 1.5) continue;   // we already killed it locally, the host will catch up
       seen[id] = 1;
       g = CO.ghosts[id];
@@ -5072,14 +5896,14 @@ Object.assign(EN, {
     var k = Math.min(1, dt * 16);
     for (i = 0; i < CO.list.length; i++) {      // smooth the remote players
       p = CO.list[i];
-      if (!p.rem) coopMakeMesh(p);
+      if (!p.rem) { if (RW.on && !(p.seen && gtime - (p.lastS || 0) < 2.5)) continue; coopMakeMesh(p); }
       var down = p.seen && p.hp <= 0, ty = p.rt.y + (down ? 0.25 : 0);
       var R = p.rem, dx = p.rt.x - R.position.x, dy = ty - R.position.y, dz = p.rt.z - R.position.z;
       if (p.snap || dx * dx + dz * dz > 25) { R.position.set(p.rt.x, ty, p.rt.z); if (p.seen) p.snap = false; }
       else { R.position.x += dx * k; R.position.y += dy * k; R.position.z += dz * k; }
       var ta = p.rt.yaw + Math.PI, da = Math.atan2(Math.sin(ta - R.rotation.y), Math.cos(ta - R.rotation.y));
       R.rotation.y += da * k;
-      R.visible = p.seen;   // a downed teammate stays visible, lying on the ground, so you can run over and see them
+      R.visible = p.seen && (!RW.on || gtime - (p.lastS || 0) < 2.5);   // a downed teammate stays visible, lying on the ground, so you can run over and see them
       R.rotation.x = down ? -Math.PI / 2 : 0;
       var lb = R.userData.lbl; if (lb) { if (down) lb.position.set(0, 0, 0.9); else lb.position.set(0, 2.25, 0); }
       var hpR = Math.ceil(p.hp);
@@ -5087,7 +5911,8 @@ Object.assign(EN, {
     }
     CO.ui -= dt; if (CO.ui <= 0) { CO.ui = 0.25; coopBoardUpdate(); }
     if (host) {
-      if (net && CO.list.length) { CO.snd -= dt; if (CO.snd <= 0) { CO.snd = 0.066; coopSendSnap(); } }
+      if (net && CO.list.length) { CO.snd -= dt; if (CO.snd <= 0) { CO.snd = RW.on ? 0.1 : 0.066; coopSendSnap(); } }
+      if (RW.on) return;
       var anyUp = false;
       for (i = 0; i < CO.list.length; i++) if (CO.list[i].seen && CO.list[i].hp > 0) { anyUp = true; break; }
       for (i = 0; i < CO.list.length; i++) {     // revive downed teammates after 12 s if somebody else is still standing
@@ -5196,7 +6021,7 @@ Object.assign(EN, {
       fpsN++; fpsT += el;
       if (fpsT >= 500) { fpsMeter.textContent = Math.round(fpsN * 1000 / fpsT) + ' FPS'; fpsN = 0; fpsT = 0; }
     }
-    if (state === 'playing') update(dt);
+    if (state === 'playing' || (RW.on && (state === 'shop' || state === 'bag'))) update(dt);
     else if (state === 'menu') {
       menuT += dt * 0.18;
       camera.position.set(Math.cos(menuT) * A * 0.75, A * 0.3 + 3, Math.sin(menuT) * A * 0.75);
@@ -5210,6 +6035,7 @@ Object.assign(EN, {
   loadMap(mapId);
   showMenu('menu');
   requestAnimationFrame(frame);
+  if (/^https?:/i.test(location.protocol) && dDefaultServer() && !RW.noAuto) setTimeout(rwEnter, 50);   // everybody lands in the wild first; the other modes are in the lobby
 })();
 </script>
 
