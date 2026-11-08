@@ -6,6 +6,7 @@
 //   {op:'create', max:0}  -> co-op room, any number of players (override with env COOP_MAX)
 //   {op:'join', code}     -> join a room by its 4-digit code
 // Accounts: POST /api/register {user,pass,name} | /api/login {user,pass} | /api/me {token} | /api/name {token,name}
+// The wild: player-built parts {t:'Rb'|'Rx'|'Ro'|'Ru'} are checked and stored here (DATA_DIR/world.json) and sent to everybody.
 // The creator is always player id 1 (the host). Every message a player sends is forwarded to
 // everybody else in the room with the sender's id added as "i". A message may carry "to": <id>
 // to reach one player only (the game uses it for host <-> guest traffic).
@@ -45,15 +46,18 @@ function electAuthority() {
   if (best !== world.auth) { world.auth = best; for (const o of world.clients.values()) o.send(JSON.stringify({ op: 'authority', id: best })); }
 }
 function worldJoin(c, m) {
+  checkBuildSeed();
   const peers = [...world.clients.keys()], names = {};
   for (const o of world.clients.values()) names[o.id] = o.name || '';
   c.world = true; c.room = { code: 'WORLD', duel: false, clients: world.clients }; c.id = world.nextId++; c.x = 0; c.z = 0; c.hasPos = false;
   c.name = whoIs(m);
+  const user = readToken(m.token), gk = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
+  c.owner = user ? 'u:' + user : gk ? 'k:' + crypto.createHash('sha256').update(gk).digest('hex').slice(0, 16) : 'c:' + c.id;   // who owns what this player builds
   world.clients.set(c.id, c);
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
   if (!world.auth) world.auth = c.id;
-  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg }));
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, builds: [...builds.values()] }));
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
   electAuthority();
 }
@@ -100,6 +104,71 @@ function saveDb() {
   }, 300);
 }
 saveDb();   // writes the secret on first start
+// ---------- player-built structures in the wild ----------
+// Each part is [id, kind, x, y, z, rot, grade, owner, open]. Kinds: fd foundation, wl wall, dw doorway, wn window wall, fl floor,
+// st stairs, dr door. Only the owner may remove, upgrade or open/close a part. Same disk caveat as accounts.json.
+const BUILD_FILE = path.join(DATA_DIR, 'world.json');
+const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr']);
+const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
+const builds = new Map();
+let buildSeq = 0, buildSeed = '', buildT = null;
+try {
+  const w = JSON.parse(fs.readFileSync(BUILD_FILE, 'utf8'));
+  buildSeed = String(w.seed || ''); buildSeq = +w.seq || 0;
+  (w.b || []).forEach((a) => { if (Array.isArray(a) && a.length >= 9 && BUILD_KINDS.has(a[1])) { builds.set(a[0], a); if (a[0] > buildSeq) buildSeq = a[0]; } });
+} catch (e) {}
+function writeBuilds() {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(BUILD_FILE + '.tmp', JSON.stringify({ seed: buildSeed, seq: buildSeq, b: [...builds.values()] })); fs.renameSync(BUILD_FILE + '.tmp', BUILD_FILE); }
+  catch (e) { console.error('could not save buildings:', e.message); }
+}
+function saveBuilds() { if (!buildT) buildT = setTimeout(() => { buildT = null; writeBuilds(); }, 2000); }
+function checkBuildSeed() {   // a new island (new seed) starts with no buildings
+  const s = worldSeed();
+  if (buildSeed !== s) { if (builds.size) console.log('world seed changed: clearing ' + builds.size + ' building parts'); builds.clear(); buildSeq = 0; buildSeed = s; saveBuilds(); }
+}
+function worldAll(s) { for (const o of world.clients.values()) o.send(s); }
+const isWallish = (k) => k === 'wl' || k === 'dw' || k === 'wn';
+function worldBuild(c, m) {
+  const k = String(m.k || ''), x = +m.x, y = +m.y, z = +m.z, r = (m.r | 0) & 3;
+  const no = () => c.send(JSON.stringify({ t: 'Rr', k: BUILD_KINDS.has(k) ? k : '' }));
+  const now = Date.now();
+  c.bh = (c.bh || []).filter((t) => now - t < 10000);
+  if (c.bh.length >= 40) return no();                              // at most 40 parts per 10 s
+  if (!BUILD_KINDS.has(k) || ![x, y, z].every(Number.isFinite) || Math.abs(x) > WORLD_SIZE || Math.abs(z) > WORLD_SIZE || y < -40 || y > 400) return no();
+  if (builds.size >= MAX_BUILDS) return no();
+  let mine = 0;
+  for (const a of builds.values()) {
+    if (a[7] === c.owner) mine++;
+    if (Math.abs(a[2] - x) < 0.25 && Math.abs(a[4] - z) < 0.25 && Math.abs(a[3] - y) < 0.25 && (a[1] === k || (isWallish(k) && isWallish(a[1])))) return no();
+  }
+  if (mine >= MAX_PER_OWNER) return no();
+  c.bh.push(now);
+  const R = (v) => Math.round(v * 100) / 100;
+  const a = [++buildSeq, k, R(x), R(y), R(z), (isWallish(k) || k === 'dr') ? r & 1 : r, 0, c.owner, 0];
+  builds.set(a[0], a); saveBuilds();
+  worldAll(JSON.stringify({ t: 'Rb', p: a }));
+}
+function worldRemove(c, m) {
+  const a = builds.get(m.id | 0); if (!a || a[7] !== c.owner) return;
+  const gone = [a[0]]; builds.delete(a[0]);
+  if (a[1] === 'dw') for (const b of builds.values()) if (b[1] === 'dr' && Math.abs(b[2] - a[2]) < 0.25 && Math.abs(b[4] - a[4]) < 0.25 && Math.abs(b[3] - a[3]) < 0.25) { builds.delete(b[0]); gone.push(b[0]); }
+  saveBuilds();
+  gone.forEach((id) => worldAll(JSON.stringify({ t: 'Rx', id })));
+}
+function worldDoor(c, m) {
+  const a = builds.get(m.id | 0); if (!a || a[1] !== 'dr' || a[7] !== c.owner) return;
+  a[8] = a[8] ? 0 : 1; saveBuilds();
+  worldAll(JSON.stringify({ t: 'Ro', id: a[0], o: a[8] }));
+}
+function worldUpgrade(c, m) {
+  const a = builds.get(m.id | 0), g = m.g | 0; if (!a || a[1] === 'dr' || a[7] !== c.owner || g < 1 || g > 2 || g <= a[6]) return;
+  a[6] = g; saveBuilds();
+  worldAll(JSON.stringify({ t: 'Ru', id: a[0], g }));
+}
+function flushOnExit() { if (buildT) { clearTimeout(buildT); buildT = null; writeBuilds(); } if (saveT) { clearTimeout(saveT); saveT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) {} } }
+process.on('SIGTERM', () => { flushOnExit(); process.exit(0); });
+process.on('SIGINT', () => { flushOnExit(); process.exit(0); });
+
 function cleanName(n) {
   return Array.from(String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f<>&"'`\\]/g, '').replace(/\s+/g, ' ').trim()).slice(0, 16).join('');
 }
@@ -167,7 +236,7 @@ function api(req, res, url) {
 
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
-  if (url === '/api/world') { res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ players: world.clients.size, size: WORLD_SIZE })); return; }
+  if (url === '/api/world') { res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ players: world.clients.size, size: WORLD_SIZE, builds: builds.size })); return; }
   if (url.indexOf('/api/') === 0) { api(req, res, url); return; }
   if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); return; }
   if (url === '/' || url === '/index.html') {
@@ -283,6 +352,10 @@ function onMessage(c, text) {
   let m; try { m = JSON.parse(text); } catch (e) { return; }
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
   if (c.world && m.t === 'Rg') { worldGather(c, m); return; }
+  if (c.world && m.t === 'Rb') { worldBuild(c, m); return; }
+  if (c.world && m.t === 'Rx') { worldRemove(c, m); return; }
+  if (c.world && m.t === 'Ro') { worldDoor(c, m); return; }
+  if (c.world && m.t === 'Ru') { worldUpgrade(c, m); return; }
   const to = m.to; delete m.to;
   m.i = c.id;
   const out = J(m);
@@ -331,4 +404,4 @@ setInterval(() => {
 }, 25000).unref();
 
 if (require.main === module) server.listen(PORT, () => console.log('Rust Range relay on :' + PORT));
-module.exports = { server, rooms };
+module.exports = { server, rooms, builds };

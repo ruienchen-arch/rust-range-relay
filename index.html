@@ -438,7 +438,7 @@ button:focus-visible { box-shadow: 0 0 0 3px rgba(255,122,26,.55); }
   window.addEventListener('resize', resize);
   resize();
 
-  scene.add(new THREE.HemisphereLight(0xcfc6b0, 0x2a2118, 0.95));
+  var hemi = new THREE.HemisphereLight(0xcfc6b0, 0x2a2118, 0.95); scene.add(hemi);
   var sun = new THREE.DirectionalLight(0xffe2b8, 0.55);
   sun.position.set(10, 20, 6);
   scene.add(sun);
@@ -2807,6 +2807,7 @@ Object.assign(EN, {
   var ray = new THREE.Raycaster();
   var tmpD = new THREE.Vector3();
   function reload() {
+    if (heldKind() !== 'gun') { if (RW.on && heldKind() === 'plan') { RW.brot = (RW.brot + 1) % 4; tone(500, 700, 0.04, 'square', 0.04); banner(zt('楼梯方向已旋转', 'Stairs turned'), 600); } return; }
     if (duel && DU.phase !== 'fight') return;
     var d = WDEF[cur], s = ws[cur];
     if (W.reload > 0 || s.ammo === d.mag || s.res <= 0) return;
@@ -2992,6 +2993,8 @@ Object.assign(EN, {
     }
   }
   function setWeapon(i) {
+    if (RW.on) { rwEquipGun(i); return; }
+    if (holster && owned[i]) { holster = false; drawT = 1; VM.sw = 0; if (i === cur) { updateSlots(); return; } }
     if (i === cur || !owned[i]) return;
     cur = i; drawT = 1;
     W.reload = 0; W.cd = 0.25; aiming = false; latched = true;
@@ -2999,10 +3002,12 @@ Object.assign(EN, {
     updateSlots();
   }
   function updateSlots() {
+    if (RW && RW.on) { $('slots').innerHTML = ''; rwHotRender(true); return; }
     var h = '';
     for (var i = 0; i < WDEF.length; i++) {
-      if (owned[i]) h += '<button class="slot' + (i === cur ? ' on' : '') + '" data-i="' + i + '" type="button">' + (i + 1) + '<small>' + t(WDEF[i].name) + '</small><i class="lvb">Lv' + wlv[i] + '</i></button>';
+      if (owned[i]) h += '<button class="slot' + (i === cur && !holster ? ' on' : '') + '" data-i="' + i + '" type="button">' + (i + 1) + '<small>' + t(WDEF[i].name) + '</small><i class="lvb">Lv' + wlv[i] + '</i></button>';
     }
+    h += '<button class="slot' + (holster ? ' on' : '') + '" data-i="-1" type="button">X<small>' + zt('空手', 'Hands') + '</small></button>';
     $('slots').innerHTML = h;
   }
 
@@ -3042,7 +3047,7 @@ Object.assign(EN, {
     var lmgI = 0; WDEF.forEach(function (w, wi) { if (w.id === 'lmg') lmgI = wi; });
     WDEF[lmgI].mag = siege ? 150 : 60; WDEF[lmgI].maxRes = siege ? 600 : 300; WDEF[lmgI].res = siege ? 300 : 120; WDEF[lmgI].pack = siege ? 150 : 60;
     WDEF[lmgI].desc = siege ? '150 发大弹匣，持续火力，可穿透。' : '60 发弹链，持续火力，可穿透。';
-    resetLoadout();
+    resetLoadout(); holster = false;
     if (siege) { owned[lmgI] = true; ws[lmgI] = { ammo: 150, res: 300 }; cur = lmgI; }
     W.cd = 0; W.reload = 0; aiming = false; aimT = 0; latched = false;
     updateSlots();
@@ -3385,7 +3390,7 @@ Object.assign(EN, {
     tone(200, 400, 0.1, 'square', 0.05);
   }
 
-  function releaseInput() { firing = false; touchFire = false; aiming = false; }
+  function releaseInput() { firing = false; touchFire = false; aiming = false; firePress = false; }
   function pause() {
     if (state !== 'playing') return;
     if (RW.on) { if (RW.dead) return; rwToggleMap(false); rwPauseMenu(); return; }
@@ -3416,17 +3421,20 @@ Object.assign(EN, {
       if (c === KB.reload) reload();
       if (c === KB.pause) pause();
       if (c === KB.use && inShop) openShop();
+      else if (c === KB.use && RW.on) rwInteract();
       if (RW.on && c === 'KeyM') rwToggleMap(!RW.mapOpen);
-      if (c === KB.bag) openBag();
+      if (c === KB.bag || (RW.on && c === 'Tab')) { e.preventDefault(); openBag(); }
       if (c === KB.grenade) throwGrenade();
-      if (c === KB.fire) firing = true;
-      if (c === KB.aim) aiming = !aiming && W.reload <= 0;
-      if (/^Digit[1-8]$/.test(c)) setWeapon(+c.slice(5) - 1);
+      if (c === KB.fire) { firing = true; firePress = true; }
+      if (c === KB.aim) { if (heldKind() !== 'gun') heldAlt(); else aiming = !aiming && W.reload <= 0; }
+      if (c === 'KeyX' && !e.repeat) { var xb = false; for (var kk in KB) if (KB[kk] === 'KeyX') xb = true; if (!xb) toggleHolster(); }
+      if (RW.on) { if (/^Digit[1-6]$/.test(c)) rwSelectHot(+c.slice(5) - 1); }
+      else if (/^Digit[1-8]$/.test(c)) setWeapon(+c.slice(5) - 1);
     } else if (state === 'paused' && c === KB.pause && menuMode !== 'settings') begin('paused');
     else if (state === 'shop' && (c === KB.use || c === 'Escape')) closeShop();
     else if (state === 'bag') {
-      if (c === KB.bag || c === 'Escape') closeBag();
-      else if (/^Digit[1-5]$/.test(c)) useItem(BAG_ORDER[+c.slice(5) - 1]);
+      if (c === KB.bag || c === 'Escape' || (RW.on && c === 'Tab')) { e.preventDefault(); closeBag(); }
+      else if (!RW.on && /^Digit[1-5]$/.test(c)) useItem(BAG_ORDER[+c.slice(5) - 1]);
     }
   });
   document.addEventListener('keyup', function (e) { keys[e.code] = false; if (e.code === KB.fire) firing = false; });
@@ -3440,13 +3448,14 @@ Object.assign(EN, {
   });
   canvas.addEventListener('mousedown', function (e) {
     if (state !== 'playing' || isTouch) return;
-    if (e.button === 0) { firing = true; e.preventDefault(); }
-    if (e.button === 2) { aiming = W.reload <= 0; e.preventDefault(); }
+    if (e.button === 0) { firing = true; firePress = true; e.preventDefault(); }
+    if (e.button === 2) { if (heldKind() !== 'gun') heldAlt(); else aiming = W.reload <= 0; e.preventDefault(); }
   });
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   window.addEventListener('mouseup', function (e) { if (e.button === 2) aiming = false; else if (e.button === 0) firing = false; });
   document.addEventListener('wheel', function (e) {
     if (state === 'playing' && Math.abs(e.deltaY) > 1) {
+      if (RW.on) { rwSelectHot((RW.hot + (e.deltaY > 0 ? 1 : -1) + 6) % 6); return; }
       var dir = e.deltaY > 0 ? 1 : -1, n = cur;
       for (var t = 0; t < WDEF.length; t++) { n = (n + dir + WDEF.length) % WDEF.length; if (owned[n]) { setWeapon(n); break; } }
     }
@@ -3457,7 +3466,7 @@ Object.assign(EN, {
   });
   $('slots').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('.slot') : null;
-    if (b && state === 'playing') setWeapon(+b.getAttribute('data-i'));
+    if (b && state === 'playing') { var si = +b.getAttribute('data-i'); if (si < 0) toggleHolster(); else setWeapon(si); }
   });
 
   // touch controls
@@ -3510,9 +3519,9 @@ Object.assign(EN, {
     var up = function (e) { e.preventDefault(); b.classList.remove('held'); if (off) off(); };
     b.addEventListener('touchend', up); b.addEventListener('touchcancel', up);
   }
-  holdBtn('bFire', function () { touchFire = true; }, function () { touchFire = false; });
+  holdBtn('bFire', function () { touchFire = true; firePress = true; }, function () { touchFire = false; });
   holdBtn('bReload', function () { if (state === 'playing') reload(); });
-  holdBtn('bAim', function () { if (state === 'playing') aiming = !aiming && W.reload <= 0; });
+  holdBtn('bAim', function () { if (state === 'playing') { if (heldKind() !== 'gun') heldAlt(); else aiming = !aiming && W.reload <= 0; } });
   holdBtn('bJump', function () { keys.TouchJump = true; }, function () { keys.TouchJump = false; });
   holdBtn('bGren', function () { throwGrenade(); });
   holdBtn('bUse', function () { if (state === 'playing' && inShop) openShop(); });
@@ -3540,7 +3549,10 @@ Object.assign(EN, {
     var str = FZ ? 0 : (keys[KB.right] ? 1 : 0) - (keys[KB.left] ? 1 : 0) + stick.x;
     var ml = Math.hypot(fwd, str);
     if (ml > 1) { fwd /= ml; str /= ml; }
-    var sp = ((keys[KB.sprint] || (KB.sprint === 'ShiftLeft' && keys.ShiftRight)) ? 10 : 7) * (aimT > 0.5 ? 0.55 : 1) * CH.speed * (adrenT > 0 ? 1.35 : 1) * rwSpeedMul();
+    var hk = heldKind();
+    fireHold = (!FZ && (firing || touchFire || firePress) && hk === 'gun') ? 0.6 : Math.max(0, fireHold - dt);
+    var sprinting = !FZ && !!(keys[KB.sprint] || (KB.sprint === 'ShiftLeft' && keys.ShiftRight)) && ml > 0.1 && fwd > -0.3 && fireHold <= 0 && !aiming;
+    var sp = (sprinting ? 10 : 7) * (aimT > 0.5 ? 0.55 : 1) * CH.speed * (adrenT > 0 ? 1.35 : 1) * rwSpeedMul();
     var sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
     P.x += (-sy * fwd + cy * str) * sp * dt;
     P.z += (-cy * fwd - sy * str) * sp * dt;
@@ -3558,6 +3570,9 @@ Object.assign(EN, {
     if (P.y <= gh) { P.y = gh; P.vy = 0; P.ground = true; } else P.ground = false;
     if (RW.on && wasG && !P.ground && P.vy <= 0 && P.y - gh < 0.7) { P.y = gh; P.vy = 0; P.ground = true; }   // stick to the slope when running downhill
     bob += dt * (ml > 0.1 && P.ground ? sp : 0);
+    sprT += ((sprinting && P.ground ? 1 : 0) - sprT) * Math.min(1, dt * (sprinting ? 7 : 14));   // running poses: sprint (gun across the chest) and low ready while moving
+    var lowW = ml > 0.1 && !sprinting && fireHold <= 0 && !aiming;
+    lowT += ((lowW ? 1 : 0) - lowT) * Math.min(1, dt * (lowW ? 3.5 : 16));
 
     camera.position.set(P.x, P.y + 1.7 + Math.sin(bob * 1.4) * 0.03 * Math.min(1, ml), P.z);
     camera.rotation.set(P.pitch, P.yaw, 0);
@@ -3570,6 +3585,7 @@ Object.assign(EN, {
     camera.updateMatrixWorld(true);
 
     // weapon
+    if (RW.on && hk === 'gun') { var gsl = rwHeldSlot(), gix = gsl ? RWI[gsl.id].gun : cur; if (gix !== undefined && gix !== cur) { cur = gix; drawT = 1; W.reload = 0; } }
     var d = WDEF[cur], s = ws[cur];
     W.cd = Math.max(0, W.cd - dt);
     if (W.reload > 0) {
@@ -3580,8 +3596,9 @@ Object.assign(EN, {
         s.ammo += take; s.res -= take;
       }
     }
-    var want = !FZ && (firing || touchFire);
-    if (want && (d.auto || !latched)) { if (shoot()) latched = true; }
+    var want = !FZ && (firing || touchFire || firePress); firePress = false;
+    if (hk === 'gun') { if (want && sprT < 0.35 && (d.auto || !latched)) { if (shoot()) latched = true; } }
+    else { aiming = false; W.reload = 0; vmAction(hk, want); }
     if (!want) latched = false;
 
     recoil = Math.max(0, recoil - dt * 9); drawT = Math.max(0, drawT - dt * 3.2);
@@ -3600,8 +3617,8 @@ Object.assign(EN, {
     var rk = Math.min(recoil, 1.5);
     for (var gi = 0; gi < gunObjs.length; gi++) {
       var G = gunObjs[gi];
-      G.g.visible = gi === cur && !scoped;
-      if (gi !== cur) continue;
+      G.g.visible = gi === cur && !scoped && hk === 'gun';
+      if (gi !== cur || hk !== 'gun') continue;
       var rpg = W.reload > 0 ? 1 - W.reload / (W.reloadMax || 1) : -1;
       animateReload(G, rpg);
       if (rpg >= 0) {
@@ -3614,6 +3631,10 @@ Object.assign(EN, {
       G.g.position.set((G.base[0] * (1 - aimT) + adsX * aimT + G.pose.px) * fk, (G.base[1] * (1 - aimT) + adsY * aimT + G.pose.py + Math.sin(bob * 1.4) * 0.006 * (1 - aimT * 0.7) + raise * 0.5 - 0.3 * dw) * fk, (G.base[2] * (1 - aimT) + adsZ * aimT + rk * 0.06) * fk);
       G.g.scale.setScalar(fk);
       G.g.rotation.x = rk * 0.05 + G.pose.rx + raise - 0.7 * dw; G.g.rotation.z = G.pose.rz;
+      var lo = lowT * (1 - aimT), sr2 = sprT * (1 - aimT), rl = W.reload > 0 ? 0.3 : 1;
+      G.g.position.x += (0.015 * lo + 0.05 * sr2) * fk; G.g.position.y += (-0.035 * lo - 0.09 * sr2 + Math.sin(bob * 2.8) * 0.014 * sr2) * fk; G.g.position.z += (0.03 * lo + 0.09 * sr2) * fk;
+      G.g.rotation.x += (-0.2 * lo - 0.42 * sr2) * rl; G.g.rotation.y = (0.2 * lo + 0.95 * sr2) * rl; G.g.rotation.z += (0.08 * lo + 0.45 * sr2) * rl;
+      if (G.lh) G.lh.visible = !G.hand.visible;
       G.flash.visible = flashT > 0;
       if (G.pulse && G.pulse.length) { var pz = 1 + 0.14 * Math.sin(performance.now() / 1000 * 6); for (var pq = 0; pq < G.pulse.length; pq++) G.pulse[pq].scale.setScalar(pz); }
       var scp = scopeOf(gi);
@@ -3627,6 +3648,7 @@ Object.assign(EN, {
       }
       if (G.id === 'rpg' && W.reload <= 0) G.mag.visible = ws[gi].ammo > 0;
     }
+    vmUpdate(dt, hk);
 
     // waves
     if (!RW.on) {
@@ -3857,11 +3879,13 @@ Object.assign(EN, {
     if (!duel) setText('hCoin', tf('金币 {0}', coins));
     if (!duel) setText('hArm', (P.armor > 0 ? tf('护甲 {0} · ', Math.ceil(P.armor)) : '') + tf('手雷 {0}', grenades) + (adrenT > 0 ? tf(' · 加速 {0}', Math.ceil(adrenT)) : '') + (bagCount() > 0 ? tf(' · 背包 {0}', bagCount()) : ''));
     if (duel) DU.hud(); else updateBagHud();
+    if (hk === 'gun') {
     setText('hWeap', t(d.name) + ' Lv' + wlv[cur] + perkIcons(cur));
     setText('hAmmo', String(s.ammo));
     setText('hRel', W.reload > 0 ? t('换弹中') : (s.ammo === 0 && s.res === 0 ? t('弹药耗尽') : tf('备弹 {0}', s.res) + (s.ammo === 0 ? t('，按 R 换弹').replace(' R ', ' ' + keyLabel(KB.reload) + ' ') : '')));
+    } else rwHudHeld(hk);
     var leftTxt;
-    if (RW.on) leftTxt = zt('荒野世界 · M 地图 · E 采集', 'The wild · M map · E use');
+    if (RW.on) leftTxt = zt('荒野世界 · Tab 背包 · M 地图 · ' + keyLabel(KB.use) + ' 交互', 'The wild · Tab inventory · M map · ' + keyLabel(KB.use) + ' use');
     else if (mode === 'rush') leftTxt = t('每击杀 +1 秒');
     else {
       var bs = null;
@@ -3953,6 +3977,7 @@ Object.assign(EN, {
     var tb = [['guns', '枪械'], ['scopes', '倍镜'], ['heal', '回复'], ['supply', '弹药与投掷']];
     tb.splice(2, 0, ['gunup', '枪械升级']);
     if (siege) { tb.push(['fort', '守城']); tb.push(['upg', '升级']); }
+    if (RW.on) tb.push(['sell', '收购']);
     return tb;
   }
   function ammoPrice(d) { return Math.round(d.price * 0.12 + 30); }
@@ -3991,6 +4016,8 @@ Object.assign(EN, {
         var label = own ? (full ? t('备弹已满') : tf('补弹 {0}', cost)) : tf('购买 {0}', cost);
         h += '<div class="shrow"><div><b>' + t(d.name) + (own ? '<em>' + t('已拥有') + '</em>' : '') + '</b><small>' + t(d.desc) + tf(' 弹匣 {0}', d.mag) + t(d.auto ? '，连发' : '，单发') + '</small></div><button type="button" class="buy" data-k="gun" data-i="' + i + '"' + (dis ? ' disabled' : '') + '>' + label + '</button></div>';
       });
+    } else if (shopTab === 'sell') {
+      h += rwSellHtml();
     } else if (shopTab === 'gunup') {
       h += gunUpHtml();
     } else if (shopTab === 'scopes') {
@@ -4038,6 +4065,7 @@ Object.assign(EN, {
     $('shList').innerHTML = h;
   }
   function buy(kind, i) {
+    if (kind === 'sell') { rwSell(i); renderShop(); return; }
     if (kind === 'twr' || kind === 'twrx') {
       if (!siege || !towers[i]) return;
       if (kind === 'twrx') assignTower(i, -1);
@@ -4104,6 +4132,7 @@ Object.assign(EN, {
       var d = WDEF[i];
       if (!owned[i]) {
         if (coins < d.price) return;
+        if (RW.on && rwGive('g' + i, 1) > 0) { banner(zt('背包满了', 'Inventory full'), 1200); return; }
         coins -= d.price; owned[i] = true; ws[i] = { ammo: d.mag, res: d.res };
         updateSlots(); setWeapon(i);
       } else {
@@ -4116,7 +4145,7 @@ Object.assign(EN, {
       if (it.only && it.only !== mode) return;
       var price = itemPrice(it);
       if (coins < price) return;
-      if (BAG_ORDER.indexOf(it.id) >= 0) { if (inv[it.id] >= 9 || (it.id === 'vital' && vit + inv.vital >= 3)) return; inv[it.id]++; }
+      if (BAG_ORDER.indexOf(it.id) >= 0) { if (RW.on) { if (rwGive(it.id, 1) > 0) { banner(zt('背包满了', 'Inventory full'), 1200); return; } } else { if (inv[it.id] >= 9 || (it.id === 'vital' && vit + inv.vital >= 3)) return; inv[it.id]++; } }
       else if (it.id === 'gren') { if (grenades >= 9) return; grenades = Math.min(9, grenades + 3); }
       else if (it.id === 'repair') { if (!siege || fort.hp >= fort.max) return; fort.hp = Math.min(fort.max, fort.hp + fort.max * 0.3); }
       else if (it.id === 'turret') { if (!buyTurret()) return; }
@@ -4183,6 +4212,7 @@ Object.assign(EN, {
     $('bgList').innerHTML = h;
   }
   function openBag() {
+    if (RW.on) { rwInvOpen(); return; }
     if (state !== 'playing' || duel) return;
     if (!bagSeen) { bagSeen = true; savePrefs(); }
     state = 'bag';
@@ -4193,6 +4223,7 @@ Object.assign(EN, {
     $('prompt').hidden = true;
   }
   function closeBag() {
+    if (RW.ui) { rwUiClose(); return; }
     if (state !== 'bag') return;
     $('bag').hidden = true;
     state = 'playing';
@@ -4742,7 +4773,7 @@ Object.assign(EN, {
      player in it is the "authority" who runs the infected camps; resource nodes (trees, rocks, ore, crates) are kept by the server. */
   var RW = { on: false, dead: false, half: 1500, s: 1, seed: '', chunks: {}, mons: [], safe: null, nst: {}, roster: [], online: 0, auth: 0,
     group: null, water: null, mapCv: null, mapOpen: false, built: false, saved: null, gatherCd: 0, spawnT: 0, deadT: 0, uiT: 0, cullT: 0, loadQ: 0, matT: null, matD: null, hud: null, mapEl: null, hurtT: 0, lastHit: 0 };
-  var RW_SEA = -1.5, RW_CH = 64, RW_N = 20, RW_VIEW = 6;
+  var RW_SEA = -1.5, RW_CH = 64, RW_N = 28, RW_VIEW = 6;
 
   function rwHash(ix, iz, s) {
     var h = Math.imul(ix | 0, 374761393) ^ Math.imul(iz | 0, 668265263) ^ Math.imul(s | 0, 1274126177);
@@ -4883,30 +4914,41 @@ Object.assign(EN, {
   function rwBuildNode(B, n, dead) {
     var rg = seeded(hashStr(n.id)), sc = n.sc, i;
     if (n.kind === 'tree') {
-      if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.55, 0.45, 0.55, [0.32, 0.22, 0.12]); return; }
-      var th = (1.8 + rg() * 0.9) * sc, bark = [0.33, 0.23, 0.14];
-      rwBoxB(B, n.x, n.y, n.z, 0.5 * sc, th + 0.6, 0.5 * sc, bark);
-      if (n.v < 0.7) {
-        var gc = rwGreen(n.v), cy = n.y + th - 0.2;
-        rwConeB(B, n.x, cy, n.z, 2.0 * sc, 2.6 * sc, 7, gc); rwConeB(B, n.x, cy + 1.7 * sc, n.z, 1.55 * sc, 2.3 * sc, 7, [gc[0] * 1.08, gc[1] * 1.08, gc[2]]);
-        rwConeB(B, n.x, cy + 3.2 * sc, n.z, 1.0 * sc, 2.0 * sc, 7, [gc[0] * 1.15, gc[1] * 1.15, gc[2]]);
-      } else {
-        rwRockB(B, n.x, n.y + th - 0.3, n.z, 2.3 * sc, 3.0 * sc, [0.2 + n.v * 0.12, 0.42 + n.v * 0.1, 0.14], rg);
+      if (dead) { rwFrustumB(B, n.x, n.y - 0.25, n.z, 0.3 * sc, 0.27 * sc, 0.7, 7, [0.33, 0.23, 0.13], [0.66, 0.5, 0.3]); return; }
+      var th = (2.3 + rg() * 1.1) * sc, bark = [0.3 + rg() * 0.05, 0.21, 0.13];
+      if (n.v < 0.7) {   // conifer: tapered trunk and ragged layers
+        rwFrustumB(B, n.x, n.y - 0.3, n.z, 0.3 * sc, 0.1 * sc, th + 4.2 * sc, 7, bark);
+        var gc = rwGreen(n.v * 0.8), tiers = 4 + (rg() < 0.5 ? 1 : 0), base = n.y + th * 0.55;
+        for (i = 0; i < tiers; i++) {
+          var f = i / tiers, rad = (2.25 - f * 1.6) * sc * (0.92 + rg() * 0.16), hh = (2.0 - f * 0.55) * sc;
+          rwConeB2(B, n.x + (rg() - 0.5) * 0.15, base + i * 1.2 * sc, n.z + (rg() - 0.5) * 0.15, rad, hh, 9, [gc[0] * (0.8 + f * 0.35), gc[1] * (0.82 + f * 0.3), gc[2] * (0.85 + f * 0.25)], rg);
+        }
+      } else {   // broadleaf: trunk, branches and a lumpy crown
+        rwFrustumB(B, n.x, n.y - 0.3, n.z, 0.34 * sc, 0.2 * sc, th + 0.6, 7, bark);
+        var top = n.y + th + 0.2, lc = [0.2 + n.v * 0.12, 0.42 + n.v * 0.1, 0.14];
+        for (i = 0; i < 3; i++) { var la = i / 3 * 6.28 + rg(), lr = (0.9 + rg() * 0.5) * sc; rwLimbB(B, [n.x, n.y + th * 0.75, n.z], [n.x + Math.cos(la) * lr, top + 0.5 * sc, n.z + Math.sin(la) * lr], 0.09 * sc, bark); }
+        var nb = 5 + Math.floor(rg() * 3);
+        for (i = 0; i < nb; i++) {
+          var ba = rg() * 6.28, bd = (i === 0 ? 0 : 0.7 + rg() * 0.8) * sc, bs = (1.25 + rg() * 0.6) * sc, cv = 0.85 + rg() * 0.3;
+          rwBlobB(B, n.x + Math.cos(ba) * bd, top + (0.6 + rg() * 1.1) * sc + (i === 0 ? 0.6 * sc : 0), n.z + Math.sin(ba) * bd, bs, bs * 0.8, bs, [lc[0] * cv, lc[1] * cv, lc[2] * cv], rg, 0.2);
+        }
       }
     } else if (n.kind === 'rock') {
-      if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.9, 0.5, 0.8, [0.36, 0.36, 0.35]); return; }
-      rwRockB(B, n.x, n.y - 0.2, n.z, 1.5 * sc, 1.8 * sc, [0.5, 0.5, 0.48], rg);
+      if (dead) { rwBlobB(B, n.x, n.y, n.z, 0.6, 0.25, 0.55, [0.38, 0.38, 0.37], rg, 0.25); return; }
+      var gcol = 0.46 + rg() * 0.1;
+      rwBlobB(B, n.x, n.y + 0.35 * sc, n.z, 1.55 * sc, 1.15 * sc, 1.35 * sc, [gcol, gcol * 0.98, gcol * 0.94], rg, 0.24);
+      rwBlobB(B, n.x + 0.9 * sc, n.y + 0.1, n.z + 0.5 * sc, 0.6 * sc, 0.45 * sc, 0.55 * sc, [gcol * 0.9, gcol * 0.88, gcol * 0.85], rg, 0.25);
     } else if (n.kind === 'ore') {
-      if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.9, 0.45, 0.8, [0.3, 0.28, 0.27]); return; }
-      rwRockB(B, n.x, n.y - 0.2, n.z, 1.3 * sc, 1.5 * sc, [0.42, 0.4, 0.4], rg);
-      for (i = 0; i < 5; i++) rwBoxB(B, n.x + (rg() - 0.5) * 1.5 * sc, n.y + 0.3 + rg() * 1.0 * sc, n.z + (rg() - 0.5) * 1.5 * sc, 0.28, 0.28, 0.28, i % 2 ? [0.9, 0.5, 0.18] : [0.95, 0.85, 0.25]);
+      if (dead) { rwBlobB(B, n.x, n.y, n.z, 0.55, 0.22, 0.5, [0.3, 0.28, 0.27], rg, 0.25); return; }
+      rwBlobB(B, n.x, n.y + 0.3 * sc, n.z, 1.3 * sc, 1.0 * sc, 1.2 * sc, [0.4, 0.38, 0.37], rg, 0.26);
+      for (i = 0; i < 7; i++) { var oa = rg() * 6.28, oy = rg() * 0.9 * sc; rwBlobB(B, n.x + Math.cos(oa) * 1.05 * sc, n.y + 0.35 * sc + oy, n.z + Math.sin(oa) * 1.0 * sc, 0.2, 0.16, 0.2, i % 2 ? [0.92, 0.52, 0.18] : [0.96, 0.84, 0.28], rg, 0.2); }
     } else if (n.kind === 'crate') {
       if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.9, 0.14, 0.9, [0.28, 0.3, 0.22]); return; }
       rwBoxB(B, n.x, n.y, n.z, 1.0, 0.85, 1.0, [0.3, 0.38, 0.24]); rwBoxB(B, n.x, n.y + 0.85, n.z, 1.06, 0.1, 1.06, [0.22, 0.28, 0.18]);
       rwBoxB(B, n.x, n.y + 0.3, n.z, 1.04, 0.14, 1.04, [0.9, 0.75, 0.15]);
     }
   }
-  var RW_NODE = { tree: { max: 4, r: 0.5, coin: 3, last: 6, what: ['木材', 'Wood'] }, rock: { max: 5, r: 1.5, coin: 4, last: 8, what: ['石头', 'Stone'] }, ore: { max: 6, r: 1.3, coin: 7, last: 14, what: ['金属矿', 'Metal ore'] }, crate: { max: 1, r: 0.7, coin: 0, last: 0, what: ['补给箱', 'Supply crate'] } };
+  var RW_NODE = { tree: { max: 8, r: 0.5, coin: 3, last: 6, what: ['木材', 'Wood'] }, rock: { max: 8, r: 1.5, coin: 4, last: 8, what: ['石头', 'Stone'] }, ore: { max: 9, r: 1.3, coin: 7, last: 14, what: ['金属矿', 'Metal ore'] }, crate: { max: 1, r: 0.7, coin: 0, last: 0, what: ['补给箱', 'Supply crate'] } };
   function rwNodeAlive(n) { var h = RW.nst[n.id]; return h === undefined || h > 0; }
   function rwGenNodes(cx, cz) {
     var rg = seeded(hashStr('rwn' + cx + '_' + cz + RW.seed)), out = [], S = RW_CH, x0 = cx * S, z0 = cz * S, i, x, z, h;
@@ -4962,7 +5004,7 @@ Object.assign(EN, {
   }
   function rwBuildTerrain(cx, cz) {
     var N = RW_N, S = RW_CH, x0 = cx * S, z0 = cz * S, st = S / N, W1 = N + 1, vc = W1 * W1, i, j, k;
-    var pos = new Float32Array(vc * 3), nor = new Float32Array(vc * 3), col = new Float32Array(vc * 3), hs = new Float32Array(vc), idx = new Uint16Array(N * N * 6);
+    var pos = new Float32Array(vc * 3), nor = new Float32Array(vc * 3), col = new Float32Array(vc * 3), hs = new Float32Array(vc), idx = new Uint16Array(N * N * 6), uvs = new Float32Array(vc * 2);
     for (j = 0; j <= N; j++) for (i = 0; i <= N; i++) hs[j * W1 + i] = rwH(x0 + i * st, z0 + j * st);
     function hAt(a, b) { return (a >= 0 && a <= N && b >= 0 && b <= N) ? hs[b * W1 + a] : rwH(x0 + a * st, z0 + b * st); }
     var c3 = [0, 0, 0];
@@ -4973,6 +5015,7 @@ Object.assign(EN, {
       nor[o] = -dx / nl; nor[o + 1] = 1 / nl; nor[o + 2] = -dz / nl;
       rwTerrainColor(pos[o], pos[o + 2], h, Math.hypot(dx, dz), c3);
       col[o] = c3[0]; col[o + 1] = c3[1]; col[o + 2] = c3[2];
+      uvs[(j * W1 + i) * 2] = pos[o] / 5; uvs[(j * W1 + i) * 2 + 1] = pos[o + 2] / 5;
     }
     k = 0;
     for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
@@ -4983,6 +5026,7 @@ Object.assign(EN, {
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     g.setIndex(new THREE.BufferAttribute(idx, 1));
     g.computeBoundingSphere();
     return new THREE.Mesh(g, RW.matT);
@@ -4991,6 +5035,7 @@ Object.assign(EN, {
     if (ch.d) { RW.group.remove(ch.d); ch.d.geometry.dispose(); ch.d = null; }
     var B = rwNewB();
     ch.nodes.forEach(function (n) { rwBuildNode(B, n, !rwNodeAlive(n)); });
+    rwClutterB(B, ch);
     if (B.p.length) { ch.d = new THREE.Mesh(rwDecorGeo(B), RW.matD); RW.group.add(ch.d); }
   }
   function rwLoadChunk(cx, cz) {
@@ -5124,12 +5169,13 @@ Object.assign(EN, {
 
   /* ---- gathering and crates ---- */
   function rwChunkOf(id) { var p = String(id).split('_'); return RW.chunks[p[0] + ',' + p[1]]; }
-  function rwFindNode() {
+  function rwFindNode(filter) {
     var pcx = Math.floor(P.x / RW_CH), pcz = Math.floor(P.z / RW_CH), fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), best = null, bs = 1e9, a, b, k;
     for (b = -1; b <= 1; b++) for (a = -1; a <= 1; a++) {
       var ch = RW.chunks[(pcx + a) + ',' + (pcz + b)]; if (!ch) continue;
       for (k = 0; k < ch.nodes.length; k++) {
         var n = ch.nodes[k]; if (!rwNodeAlive(n) || Math.abs(n.y - P.y) > 4) continue;
+        if (filter && !filter(n)) continue;
         var dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz);
         if (d > n.r + 2.6) continue;
         var dot = d > 0.01 ? (dx * fx + dz * fz) / d : 1;
@@ -5145,30 +5191,7 @@ Object.assign(EN, {
     var now = RW.nst[id], alive1 = now === undefined || now > 0;
     if (alive0 !== alive1) { var ch = rwChunkOf(id); if (ch) rwRebuildDecor(ch); }
   }
-  function rwLoot(n) {
-    var near = rwMonNear(n.x, n.z), rich = !!near, r = Math.random();
-    if (r < 0.3) { if (addAmmo(rich ? 1 : 0.6)) { banner(zt('补给箱：弹药', 'Supply crate: ammo'), 1200); return; } }
-    if (r < 0.55 && P.hp < P.maxHp) { healP(rich ? 55 : 35); banner(zt('补给箱：医疗包', 'Supply crate: medkit'), 1200); return; }
-    var c = Math.round((rich ? 90 : 45) * (0.6 + Math.random() * 0.9)); coins += c;
-    banner(tf('补给箱：金币 +{0}', c), 1200); tone(700, 1100, 0.1, 'sine', 0.06);
-  }
-  function rwUse() {
-    if (RW.dead || RW.gatherCd > 0 || state !== 'playing') return false;
-    var n = rwFindNode(); if (!n) return false;
-    var d = RW_NODE[n.kind], hp = RW.nst[n.id]; if (hp === undefined) hp = n.max;
-    RW.gatherCd = n.kind === 'crate' ? 0.35 : 0.5;
-    hp -= 1; RW.nst[n.id] = hp;
-    dSend({ t: 'Rg', id: n.id, max: n.max, k: n.kind });
-    if (n.kind === 'crate') { rwLoot(n); }
-    else {
-      var gain = hp <= 0 ? d.last : d.coin; coins += gain;
-      banner(zt(d.what[0], d.what[1]) + ' +' + gain, 700);
-      tone(n.kind === 'tree' ? 180 : 420, n.kind === 'tree' ? 120 : 260, 0.07, 'square', 0.07);
-      var pt = new THREE.Vector3(n.x, n.y + 1.2, n.z); burst(pt, 4, partMatY, 3);
-    }
-    if (hp <= 0) { var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch); }
-    return true;
-  }
+  function rwUse() { return rwInteract(); }
 
   /* ---- fights between players ---- */
   function rwTargets(arr) {
@@ -5191,12 +5214,12 @@ Object.assign(EN, {
   }
   function rwDie() {
     if (RW.dead) return;
-    RW.dead = true; RW.deadT = 0; releaseInput();
+    RW.dead = true; RW.deadT = 0; releaseInput(); rwUiClose(true); rwDropOnDeath();
     if (RW.attacker && gtime - RW.attackT < 15) dSend({ t: 'Rk', to: RW.attacker });
     RW.attacker = 0;
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
     var h = duHead('RUST', '荒野世界', zt('你倒下了', 'You died'));
-    h += '<p>' + zt('死亡会丢掉一半金币和身上的装备。', 'Dying costs you half your coins and your gear.') + '</p><button class="go" id="rwRespawn" type="button" disabled>' + zt('重生', 'Respawn') + '</button><button class="ghost" id="rwLobby" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
+    h += '<p>' + zt('死亡会丢掉一半金币；身上的东西都留在倒下的地方（一个只有你看得见的背包，15 分钟后消失），跑回去还能捡。', 'Dying costs half your coins. Everything you carried stays where you fell, in a bag only you can see (gone after 15 minutes): run back for it.') + '</p><button class="go" id="rwRespawn" type="button" disabled>' + zt('重生', 'Respawn') + '</button><button class="ghost" id="rwLobby" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
     duCard(h, function () {});
     $('rwLobby').addEventListener('click', function () { DU.leave(false); });
     setTimeout(function () { var b = $('rwRespawn'); if (b) { b.disabled = false; b.addEventListener('click', rwRespawn); } }, 2500);
@@ -5204,7 +5227,7 @@ Object.assign(EN, {
   function rwRespawn() {
     var sp = rwSpawnPoint();
     P.hp = P.maxHp; P.armor = 0; P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; RW.px = P.x; RW.pz = P.z;
-    resetLoadout(); resetInv(); coins = Math.floor(coins * 0.5); grenades = 1; adrenT = 0; W.cd = 0; W.reload = 0; aiming = false; updateSlots();
+    resetLoadout(); resetInv(); coins = Math.floor(coins * 0.5); grenades = 1; adrenT = 0; W.cd = 0; W.reload = 0; aiming = false; updateSlots(); rwInvReset(false);
     RW.dead = false; $('menu').hidden = true; requestLock();
     banner(zt('你在海岸重生了', 'You respawned on the coast'), 1500);
   }
@@ -5284,7 +5307,7 @@ Object.assign(EN, {
     }
     var nx = pos.x + ux * sp * mv * dt, nz = pos.z + uz * sp * mv * dt;
     if (!rwDeep(nx, nz)) { pos.x = nx; pos.z = nz; }
-    for (var j = 0; j < 2; j++) { rwResolve(pos, e.r); resolveCircle(pos, e.r, 0); }
+    for (var j = 0; j < 2; j++) { rwResolve(pos, e.r); resolveCircle(pos, e.r, pos.y + 0.65); }
     pos.y = rwH(pos.x, pos.z);
     return false;
   }
@@ -5294,6 +5317,11 @@ Object.assign(EN, {
     switch (m.t) {
       case 'Rs': rwSetNode(String(m.id), +m.hp); break;
       case 'Rd': rwTakeHit(+m.d, m.i | 0); break;
+      case 'Rb': if (m.p) rwPieceAdd(m.p); break;
+      case 'Rx': rwPieceDel(m.id | 0); break;
+      case 'Ro': rwPieceDoor(m.id | 0, m.o | 0); break;
+      case 'Ru': rwPieceGrade(m.id | 0, m.g | 0); break;
+      case 'Rr': { var bc = RWB[m.k]; if (bc) { for (var ck in bc.c) rwGive(ck, bc.c[ck]); banner(zt('这里不能建造（被占用了）', 'Could not build there (taken)'), 1400); } break; }
       case 'Rk': { var vic = coins; coins += 80; banner(zt('击杀玩家 +80', 'Player kill +80'), 1500); tone(900, 1300, 0.12, 'sine', 0.07); break; }
     }
   }
@@ -5318,18 +5346,20 @@ Object.assign(EN, {
     DU.connected = true; DU.opened = true;
     rwSetAuth(m.auth | 0);
     RW.online = (m.peers ? m.peers.length : 0) + 1;
-    rwBuildWorld(); rwStart();
+    RW.me = String(m.me || '');
+    rwBuildWorld(); rwPiecesLoad(m.builds); rwStart();
   }
 
   /* ---- building the world and starting to play ---- */
   function rwBuildWorld() {
     rwTeardownWorld();
     A = RW.half;
-    RW.matT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+    RW.matT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, map: RW.detail || (RW.detail = rwDetailTex()) });
     RW.matD = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
     RW.group = new THREE.Group(); scene.add(RW.group);
+    RW.sky = rwSky(); RW.group.add(RW.sky); RW.bgroup = new THREE.Group(); RW.group.add(RW.bgroup); RW.ghost = null; rwGrassInit();
     var wg = new THREE.PlaneGeometry(RW.half * 4, RW.half * 4); wg.rotateX(-Math.PI / 2);
-    RW.water = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: 0x2b6a8c, transparent: true, opacity: 0.82, roughness: 0.25, metalness: 0.15 }));
+    RW.water = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: 0x2f7593, transparent: true, opacity: 0.8, roughness: 0.18, metalness: 0.2 }));
     RW.water.position.y = RW_SEA; RW.group.add(RW.water);
     rwPlan();
     rwBuildMonuments();
@@ -5337,6 +5367,8 @@ Object.assign(EN, {
     rwMakeMap();
   }
   function rwTeardownWorld() {
+    RW.tearing = true; rwGrassClear(); RW.drops.slice().forEach(rwDropRemove); RW.myX = {};
+    RW.plist.slice().forEach(function (p) { rwPieceDel(p.id); }); RW.pieces = {}; RW.plist = []; RW.ghost = null; RW.sky = null; RW.bgroup = null; RW.tearing = false;
     Object.keys(RW.chunks).forEach(function (k) { rwDropChunk(k); });
     RW.chunks = {};
     if (RW.group) { scene.remove(RW.group); RW.group = null; }
@@ -5345,36 +5377,39 @@ Object.assign(EN, {
   function rwSaveScene() {
     if (RW.saved) return;
     RW.saved = { fogNear: scene.fog.near, fogFar: scene.fog.far, fogCol: scene.fog.color.getHex(), far: camera.far, diff: diff, mode: mode, mapId: mapId, floor: floor.visible,
-      lights: cornerLights.map(function (o) { return o.l.visible; }), cl: cLight.visible };
+      lights: cornerLights.map(function (o) { return o.l.visible; }), cl: cLight.visible,
+      hemi: [hemi.color.getHex(), hemi.groundColor.getHex(), hemi.intensity], sun: [sun.color.getHex(), sun.intensity, sun.position.x, sun.position.y, sun.position.z] };
   }
   function rwStart() {
     rwSaveScene();
     coop = true; duel = false; siege = false; RW.on = true; RW.dead = false;
     mode = 'rush'; diff = 'normal'; DF = DIFFS.normal; CH = CHARS[charId];
     floor.visible = false; cornerLights.forEach(function (o) { o.l.visible = false; }); cLight.visible = false;
-    var sky = 0x9cc4dc; scene.fog.color.setHex(sky); scene.background.setHex(sky); scene.fog.near = 90; scene.fog.far = RW_VIEW * RW_CH * 0.95;
+    hemi.color.setHex(0xe4eef5); hemi.groundColor.setHex(0x56603c); hemi.intensity = 0.8; sun.color.setHex(0xfff0d2); sun.intensity = 1.0; sun.position.set(60, 100, 40);
+    var sky = 0xcbdde8; scene.fog.color.setHex(sky); scene.background.setHex(sky); scene.fog.near = 90; scene.fog.far = RW_VIEW * RW_CH * 0.95;
     camera.far = 900; camera.updateProjectionMatrix();
     enemies.forEach(function (e) { scene.remove(e.g); }); bolts.forEach(function (b) { scene.remove(b.m); }); parts.forEach(function (p) { scene.remove(p.m); }); tracers.forEach(function (t) { scene.remove(t.m); });
     enemies = []; bolts = []; parts = []; tracers = []; CO.ghosts = {}; CO.dead = {}; CO.pend = [];
     nades.forEach(function (n) { scene.remove(n.m); }); nades = []; rockets.forEach(function (n) { scene.remove(n.m); }); rockets = []; blasts.forEach(function (b) { scene.remove(b.m); }); blasts = [];
     pickups.forEach(function (p) { p.cool = 0; p.g.visible = true; });
     gunAcc.color.setHex(CH.color);
-    grenades = 2; coins = 120; adrenT = 0; vit = 0; resetInv(); resetLoadout(); updateSlots();
+    grenades = 2; coins = 120; adrenT = 0; vit = 0; resetInv(); resetLoadout(); updateSlots(); rwInvReset(true);
     P.maxHp = CH.hp; P.armor = 0; P.hp = P.maxHp;
     var sp = rwSpawnPoint(); P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; P.yaw = Math.atan2(P.x, P.z) + Math.PI; P.pitch = 0; RW.px = P.x; RW.pz = P.z;
     W.cd = 0; W.reload = 0; aiming = false; aimT = 0; latched = false;
     wave = 0; score = 0; waveDelay = 0; spawned = 0; toSpawn = 0;
     coopBoardEl().hidden = true;
     rwStream(P.x, P.z, true);
-    rwInitUi(); RW.hud.style.display = 'block';
+    rwInitUi(); rwInitUi2(); RW.hud.style.display = 'block'; rwHotRender(true); $('bagHud').hidden = true;
     state = 'playing'; $('menu').hidden = true; $('hud').hidden = false; $('cross').hidden = false;
     requestLock(); tone(200, 400, 0.1, 'square', 0.05);
-    banner(zt('欢迎来到荒野世界 · 按 M 打开地图 · 按 E 采集和开箱', 'Welcome to the wild · M opens the map · E gathers and opens crates'), 4200);
+    banner(zt('欢迎来到荒野世界 · 左键挥石块采集 · Tab 背包 · E 捡东西', 'Welcome to the wild · swing the rock to gather · Tab inventory · E picks up'), 4200);
     RW.safeNow = false; RW.cullT = 0;
   }
   function rwTeardown() {
     if (!RW.built && !RW.on) return;
     RW.on = false; RW.dead = false; RW.mapOpen = false;
+    rwUiClose(true); holster = false;
     if (RW.hud) RW.hud.style.display = 'none';
     if (RW.mapEl) RW.mapEl.style.display = 'none';
     rwTeardownWorld();
@@ -5383,6 +5418,7 @@ Object.assign(EN, {
       scene.fog.near = S.fogNear; scene.fog.far = S.fogFar; scene.fog.color.setHex(S.fogCol); camera.far = S.far; camera.updateProjectionMatrix();
       diff = S.diff; DF = DIFFS[diff]; mode = S.mode; mapId = S.mapId; floor.visible = true;
       cornerLights.forEach(function (o, i) { o.l.visible = S.lights[i] !== false; }); cLight.visible = S.cl !== false;
+      if (S.hemi) { hemi.color.setHex(S.hemi[0]); hemi.groundColor.setHex(S.hemi[1]); hemi.intensity = S.hemi[2]; sun.color.setHex(S.sun[0]); sun.intensity = S.sun[1]; sun.position.set(S.sun[2], S.sun[3], S.sun[4]); }
     }
     RW.mons = []; RW.safe = null; RW.nst = {}; RW.roster = [];
   }
@@ -5391,7 +5427,7 @@ Object.assign(EN, {
   function rwTick(dt) {
     RW.gatherCd = Math.max(0, RW.gatherCd - dt);
     rwStream(P.x, P.z, false);
-    if (keys[KB.use] && !inShop && !RW.dead) rwUse();
+    rwTick2(dt);
     if (!coopG()) rwNpcTick(dt);
     var safe = rwSafe(P.x, P.z);
     if (safe !== RW.safeNow) { RW.safeNow = safe; banner(safe ? zt('进入前哨站安全区：这里不能互相伤害', 'Outpost safe zone: no fighting here') : zt('离开了安全区', 'You left the safe zone'), 1800); }
@@ -5413,7 +5449,7 @@ Object.assign(EN, {
     d.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:6;display:none;font:600 13px/1.35 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6;text-shadow:0 1px 2px #000';
     d.innerHTML = '<div id="rwInfo" style="position:absolute;right:12px;top:170px;text-align:right;white-space:pre"></div>' +
       '<canvas id="rwMini" width="150" height="150" style="position:absolute;right:12px;top:12px;border:2px solid rgba(255,255,255,.4);border-radius:50%;background:#0b1a22"></canvas>' +
-      '<div id="rwBtns" style="position:absolute;right:12px;top:236px;display:flex;gap:8px;pointer-events:auto"><button id="rwMapBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('地图 M', 'Map M') + '</button><button id="rwUseBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('采集 E', 'Use E') + '</button></div>';
+      '<div id="rwBtns" style="position:absolute;right:12px;top:236px;display:flex;gap:8px;pointer-events:auto"><button id="rwMapBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('地图 M', 'Map M') + '</button><button id="rwInvBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('背包 Tab', 'Bag Tab') + '</button><button id="rwUseBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('交互 E', 'Use E') + '</button></div>';
     st.appendChild(d); RW.hud = d;
     var mp = document.createElement('div'); mp.id = 'rwMap';
     mp.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;z-index:8;display:none;background:rgba(5,12,16,.82);align-items:center;justify-content:center;flex-direction:column;color:#ece6d6;font:600 14px system-ui,"PingFang SC","Microsoft YaHei",sans-serif';
@@ -5421,7 +5457,8 @@ Object.assign(EN, {
     mp.addEventListener('click', function () { rwToggleMap(false); });
     st.appendChild(mp); RW.mapEl = mp;
     $('rwMapBtn').addEventListener('click', function () { rwToggleMap(!RW.mapOpen); });
-    $('rwUseBtn').addEventListener('click', function () { rwUse(); });
+    $('rwUseBtn').addEventListener('click', function () { rwInteract(); });
+    $('rwInvBtn').addEventListener('click', function () { if (state === 'playing') openBag(); else if (state === 'bag') closeBag(); });
   }
   function rwToggleMap(on) {
     RW.mapOpen = !!on; RW.mapEl.style.display = on ? 'flex' : 'none';
@@ -5499,12 +5536,12 @@ Object.assign(EN, {
     RW.entering = true; DU.role = 'guest'; DU.coopWanted = true; coop = false; duel = false;
     rwCard(zt('正在进入荒野世界……', 'Entering the wild…'), zt('免费服务器睡眠后第一次连接要等约 1 分钟，请稍等。', 'A sleeping free server needs about a minute on the first connection.'), '<button class="ghost" id="rwToLobby" type="button">' + zt('取消，进入大厅', 'Cancel, go to the lobby') + '</button>');
     $('rwToLobby').addEventListener('click', function () { RW.noAuto = true; RW.entering = false; duCloseConn(); DU.coopWanted = false; showLobby(); });
-    dConnect(srv, accMsg({ op: 'world' }), function (msg) { DU.coopWanted = false; rwFail(msg); });
+    dConnect(srv, accMsg({ op: 'world', gk: GK }), function (msg) { DU.coopWanted = false; rwFail(msg); });
   }
   function rwPauseMenu() {
     releaseInput();
     var h = duHead('PAUSED', '已暂停', zt('荒野世界', 'The wild'));
-    h += '<p>' + zt('世界不会暂停，其他玩家和敌人都在继续。M 打开地图，E 采集或开箱。', 'The world keeps running. M opens the map, E gathers or opens crates.') + '</p>';
+    h += '<p>' + zt('世界不会暂停，其他玩家和敌人都在继续。左键挥动工具采集，Tab 打开背包和制作，M 地图，E 捡东西、开箱、开门，X 空手。', 'The world keeps running. Swing a tool to gather, Tab opens inventory and crafting, M the map, E picks up, opens crates and doors, X holsters.') + '</p>';
     h += '<button class="go" id="duResume" type="button">' + zt('继续', 'Resume') + '</button><button class="ghost" id="duQuit" type="button">' + zt('返回大厅（玩其他模式）', 'Back to the lobby (other modes)') + '</button>';
     duCard(h, rwPauseMenu);
     $('duResume').addEventListener('click', function () { $('menu').hidden = true; requestLock(); });
@@ -6004,6 +6041,1285 @@ Object.assign(EN, {
     duCard(h, function () { coopLeftCard(msg); });
     $('duQuit').addEventListener('click', function () { DU.leave(false); });
   }
+
+  /* ================= THE WILD 2.0: items, belt, Rust-style inventory, tools, hands, gather drops ================= */
+  var holster = false, fireHold = 0, sprT = 0, lowT = 0, firePress = false;
+  var GK = (function () {   // a random key kept in this browser: the server turns it into your builder id (guests too)
+    var k = '';
+    try { k = localStorage.getItem('rustrange-gk') || ''; } catch (e) {}
+    if (!/^[a-f0-9]{32}$/.test(k)) { k = ''; for (var i = 0; i < 32; i++) k += '0123456789abcdef'.charAt(Math.floor(Math.random() * 16)); try { localStorage.setItem('rustrange-gk', k); } catch (e) {} }
+    return k;
+  })();
+  var RWI = {
+    wood: { n: ['木材', 'Wood'], st: 1000, d: ['砍树得到，用来建房子和制作工具。', 'From trees. Used for building and crafting.'] },
+    stone: { n: ['石头', 'Stone'], st: 1000, d: ['敲石头得到，用来制作工具、把建筑升级成石头。', 'From rocks. Used for tools and stone upgrades.'] },
+    metal: { n: ['金属矿', 'Metal Ore'], st: 1000, d: ['开采矿石得到，用来制作弹药、护甲，把建筑升级成金属。', 'From ore nodes. Used for ammo, armor and metal upgrades.'] },
+    rock: { n: ['石块', 'Rock'], st: 1, tool: 'rock', d: ['最原始的工具：能砍树、敲石头，也能拿来砸人，就是慢。', 'The most basic tool: chops trees and breaks rocks, slowly. Hurts people too.'] },
+    hatchet: { n: ['斧头', 'Hatchet'], st: 1, tool: 'hatchet', d: ['砍树比石块快将近三倍。', 'Chops wood almost three times faster than a rock.'] },
+    pickaxe: { n: ['镐', 'Pickaxe'], st: 1, tool: 'pickaxe', d: ['开采石头和金属矿的专用工具。', 'The tool for stone and metal ore.'] },
+    plan: { n: ['建筑图纸', 'Building Plan'], st: 1, tool: 'plan', d: ['拿在手上建房子：左键放置，右键选部件，R 旋转楼梯。', 'Hold it to build: left click places, right click picks a part, R turns stairs.'] },
+    hammer: { n: ['锤子', 'Hammer'], st: 1, tool: 'hammer', d: ['左键把看着的建筑升级（木 → 石 → 金属），右键拆除自己的建筑（返还一半木材）。', 'Left click upgrades the part you look at (wood → stone → metal). Right click removes your own part (half the wood back).'] },
+    medkit: { n: ['医疗包', 'Medkit'], st: 5, use: 1, d: ['立刻恢复 60 点生命。', 'Instantly restores 60 HP.'] },
+    armor: { n: ['护甲板', 'Armor Plate'], st: 5, use: 1, d: ['获得 50 点护甲，上限 100。', 'Gain 50 armor, max 100.'] },
+    adren: { n: ['肾上腺素', 'Adrenaline'], st: 5, use: 1, d: ['30 秒内移动速度 +35%。', '+35% move speed for 30 seconds.'] },
+    ammo: { n: ['弹药箱', 'Ammo Crate'], st: 10, use: 1, d: ['给所有带着的枪补充备弹。', 'Refills reserve ammo for every gun you carry.'] },
+    vital: { n: ['强化体质', 'Vitality'], st: 3, use: 1, d: ['生命上限 +20 并回复 20 点，最多 3 次。', 'Max HP +20 and heal 20. Up to 3 times.'] }
+  };
+  WDEF.forEach(function (w, i) { RWI['g' + i] = { gun: i, st: 1 }; });
+  function rwIN(id) { var d = RWI[id]; if (!d) return id; return d.gun !== undefined ? t(WDEF[d.gun].name) : zt(d.n[0], d.n[1]); }
+  function rwID(id) { var d = RWI[id]; if (!d) return ''; if (d.gun !== undefined) { var w = WDEF[d.gun]; return t(w.desc) + tf(' 弹匣 {0}', w.mag) + t(w.auto ? '，连发' : '，单发'); } return zt(d.d[0], d.d[1]); }
+  // swing timing (seconds), when in the swing the hit lands, melee damage (in enemy hp units)
+  var VT = { hands: { dur: 0.42, hit: 0.42, dmg: 0.5 }, rock: { dur: 0.78, hit: 0.56, dmg: 0.9 }, hatchet: { dur: 0.62, hit: 0.55, dmg: 1.4 }, pickaxe: { dur: 0.86, hit: 0.56, dmg: 1.6 }, hammer: { dur: 0.6, hit: 0.55, dmg: 1 } };
+  var RW_YIELD = { hands: { tree: 2, rock: 1, ore: 0 }, rock: { tree: 5, rock: 5, ore: 2 }, hatchet: { tree: 14, rock: 2, ore: 1 }, pickaxe: { tree: 3, rock: 12, ore: 8 }, hammer: { tree: 2, rock: 2, ore: 1 } };
+  var RW_CRAFT = [['plan', { wood: 20 }], ['hammer', { wood: 30 }], ['hatchet', { wood: 100, stone: 50 }], ['pickaxe', { wood: 100, stone: 80 }], ['ammo', { metal: 40, stone: 20 }], ['medkit', { wood: 40, metal: 15 }], ['armor', { metal: 80, stone: 40 }]];
+  var RW_SLOTS = 30, RW_HOT0 = 24;
+  RW.inv = []; RW.hot = 0; RW.isel = -1; RW.ui = ''; RW.drops = []; RW.pieces = {}; RW.plist = []; RW.me = ''; RW.bsel = 'fd'; RW.brot = 0;
+  RW.hotT = 0; RW.lastHeld = ''; RW.myX = {}; RW.dconf = 0; RW.dconfT = 0; RW.pcull = 0;
+
+  /* ---- icons, drawn once on small canvases ---- */
+  var RWICON = {}, RWURL = {};
+  function rwIconCv(id) {
+    if (RWICON[id]) return RWICON[id];
+    var c = document.createElement('canvas'); c.width = c.height = 64;
+    var x = c.getContext('2d'), i;
+    x.lineJoin = 'round'; x.lineCap = 'round'; x.shadowColor = 'rgba(0,0,0,.75)'; x.shadowBlur = 3; x.shadowOffsetY = 1;
+    function poly(pts, fill, stroke, lw) { x.beginPath(); x.moveTo(pts[0][0], pts[0][1]); for (var k = 1; k < pts.length; k++) x.lineTo(pts[k][0], pts[k][1]); x.closePath(); if (fill) { x.fillStyle = fill; x.fill(); } if (stroke) { x.strokeStyle = stroke; x.lineWidth = lw || 2; x.stroke(); } }
+    function line(x0, y0, x1, y1, col, w) { x.strokeStyle = col; x.lineWidth = w; x.beginPath(); x.moveTo(x0, y0); x.lineTo(x1, y1); x.stroke(); }
+    function handle(x0, y0, x1, y1) { line(x0, y0, x1, y1, '#3b2614', 9); line(x0, y0, x1, y1, '#9a6a3a', 6); }
+    var d = RWI[id] || {};
+    if (id === 'wood') {
+      [[20, 44], [44, 44], [32, 23]].forEach(function (p) {
+        x.fillStyle = '#5a3a1e'; x.beginPath(); x.arc(p[0], p[1], 13.5, 0, 7); x.fill();
+        x.fillStyle = '#d2a066'; x.beginPath(); x.arc(p[0], p[1], 10.5, 0, 7); x.fill();
+        x.strokeStyle = '#9a6634'; x.lineWidth = 1.6; x.beginPath(); x.arc(p[0], p[1], 6.5, 0, 7); x.stroke(); x.beginPath(); x.arc(p[0], p[1], 2.6, 0, 7); x.stroke();
+      });
+    } else if (id === 'stone' || id === 'metal' || id === 'rock') {
+      var pts = id === 'rock' ? [[16, 40], [22, 22], [38, 16], [50, 26], [52, 42], [38, 50], [22, 50]] : [[8, 44], [14, 24], [30, 12], [48, 16], [58, 34], [52, 52], [26, 56]];
+      poly(pts, id === 'metal' ? '#5d5a57' : '#8c8a84', '#2b2a28', 2.5);
+      poly([[pts[1][0] + 2, pts[1][1] + 2], [pts[2][0], pts[2][1] + 3], [pts[3][0] - 2, pts[3][1] + 3], [pts[3][0] - 10, pts[3][1] + 12], [pts[1][0] + 6, pts[1][1] + 12]], 'rgba(255,255,255,.18)');
+      if (id === 'metal') for (i = 0; i < 6; i++) { x.fillStyle = i % 2 ? '#e88a2a' : '#f2d04a'; x.fillRect(16 + (i * 13) % 32, 22 + (i * 17) % 24, 6, 5); }
+      if (id === 'stone') { x.strokeStyle = 'rgba(0,0,0,.25)'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(20, 30); x.lineTo(34, 38); x.lineTo(46, 32); x.stroke(); }
+    } else if (id === 'hatchet') {
+      handle(16, 56, 42, 12);
+      poly([[34, 10], [52, 6], [58, 22], [46, 26], [38, 20]], '#b9c0c6', '#2b2d30', 2.5);
+      poly([[52, 6], [58, 22], [55, 23], [49, 8]], '#e6ebef');
+    } else if (id === 'pickaxe') {
+      handle(14, 58, 44, 14);
+      x.strokeStyle = '#2b2d30'; x.lineWidth = 8; x.beginPath(); x.moveTo(12, 22); x.quadraticCurveTo(40, 2, 60, 26); x.stroke();
+      x.strokeStyle = '#9aa1a8'; x.lineWidth = 5; x.beginPath(); x.moveTo(12, 22); x.quadraticCurveTo(40, 2, 60, 26); x.stroke();
+    } else if (id === 'hammer') {
+      handle(16, 58, 40, 20);
+      x.save(); x.translate(42, 16); x.rotate(0.66); x.fillStyle = '#2b2d30'; x.fillRect(-16, -8, 32, 14); x.fillStyle = '#a3a9ae'; x.fillRect(-14, -6, 28, 10); x.restore();
+    } else if (id === 'plan') {
+      x.fillStyle = '#1d4f86'; x.fillRect(8, 10, 48, 44); x.strokeStyle = 'rgba(255,255,255,.25)'; x.lineWidth = 1;
+      for (i = 1; i < 6; i++) { x.beginPath(); x.moveTo(8 + i * 8, 10); x.lineTo(8 + i * 8, 54); x.stroke(); x.beginPath(); x.moveTo(8, 10 + i * 7.3); x.lineTo(56, 10 + i * 7.3); x.stroke(); }
+      poly([[20, 46], [20, 30], [32, 20], [44, 30], [44, 46]], null, '#ffffff', 2.5); x.strokeStyle = '#fff'; x.strokeRect(29, 36, 6, 10);
+    } else if (id === 'medkit') {
+      x.fillStyle = '#2f9e4a'; x.fillRect(8, 14, 48, 38); x.fillStyle = '#1f6e33'; x.fillRect(24, 8, 16, 8);
+      x.fillStyle = '#fff'; x.fillRect(28, 20, 8, 26); x.fillRect(19, 29, 26, 8);
+    } else if (id === 'armor') {
+      poly([[14, 12], [32, 8], [50, 12], [50, 34], [32, 56], [14, 34]], '#4a4f55', '#1c1e20', 3);
+      poly([[20, 16], [32, 13], [44, 16], [44, 32], [32, 48], [20, 32]], '#6b7178');
+    } else if (id === 'adren') {
+      x.save(); x.translate(32, 32); x.rotate(-0.78); x.fillStyle = '#e8f2f6'; x.fillRect(-20, -6, 30, 12); x.fillStyle = '#e8432f'; x.fillRect(-18, -4, 18, 8);
+      x.fillStyle = '#9aa1a8'; x.fillRect(10, -2, 14, 4); x.fillRect(-26, -8, 6, 16); x.restore();
+    } else if (id === 'ammo') {
+      x.fillStyle = '#6a5a2c'; x.fillRect(8, 28, 48, 26); x.fillStyle = '#857238'; x.fillRect(8, 28, 48, 6);
+      for (i = 0; i < 4; i++) { x.fillStyle = '#c99a3a'; x.fillRect(14 + i * 10, 12, 7, 18); x.fillStyle = '#8a6a2a'; x.beginPath(); x.arc(17.5 + i * 10, 12, 3.5, Math.PI, 0); x.fill(); }
+    } else if (id === 'vital') {
+      x.fillStyle = '#d8342a'; x.beginPath(); x.moveTo(32, 54); x.bezierCurveTo(4, 34, 10, 10, 32, 22); x.bezierCurveTo(54, 10, 60, 34, 32, 54); x.fill();
+    } else if (id === 'bag') {
+      poly([[14, 24], [50, 24], [56, 56], [8, 56]], '#7a6440', '#33281a', 2.5); poly([[22, 24], [26, 12], [38, 12], [42, 24]], '#5e4c30');
+    } else if (d.gun !== undefined) {
+      var gid = WDEF[d.gun].id, L = { pistol: 50, revolver: 52, smg: 54, rifle: 60, shotgun: 60, sniper: 62, lmg: 62, rpg: 60 }[gid] || 54;
+      x.save(); x.translate(32, 32); x.rotate(-0.42); var gs = gid === 'pistol' || gid === 'revolver' ? 1.5 : 1.15; x.scale(1, gs);
+      var x0 = -L / 2;
+      if (gid === 'rpg') { x.fillStyle = '#5a6352'; x.fillRect(x0, -6, L, 12); x.fillStyle = '#ff7a1a'; x.fillRect(x0 - 6, -4, 8, 8); x.fillStyle = '#222'; x.fillRect(-4, 6, 6, 10); }
+      else {
+        var wood = gid === 'rifle' || gid === 'shotgun' || gid === 'revolver' || gid === 'sniper';
+        x.fillStyle = '#5d6166'; x.fillRect(x0 + L * 0.3, -5, L * 0.45, 10);                         // receiver
+        x.fillStyle = '#9aa1a8'; x.fillRect(x0, -2.5, L * 0.35, 4);                                  // barrel
+        x.fillStyle = wood ? '#a8642e' : '#3e4044';
+        if (gid !== 'pistol' && gid !== 'revolver' && gid !== 'smg') { x.beginPath(); x.moveTo(x0 + L * 0.74, -4); x.lineTo(x0 + L, -1); x.lineTo(x0 + L, 9); x.lineTo(x0 + L * 0.74, 5); x.fill(); }   // stock
+        x.fillRect(x0 + L * 0.62, 4, 6, 12);                                                         // grip
+        if (gid === 'rifle' || gid === 'smg' || gid === 'lmg') { x.fillStyle = '#3e4044'; x.fillRect(x0 + L * 0.42, 4, 6, gid === 'lmg' ? 9 : 13); }
+        if (gid === 'sniper') { x.fillStyle = '#2e3034'; x.fillRect(x0 + L * 0.36, -11, L * 0.3, 5); }
+        if (wood && gid !== 'revolver' && gid !== 'sniper') { x.fillStyle = '#a8642e'; x.fillRect(x0 + L * 0.2, -5, L * 0.16, 9); }
+      }
+      x.restore();
+    }
+    RWICON[id] = c;
+    return c;
+  }
+  function rwIconUrl(id) { return RWURL[id] || (RWURL[id] = rwIconCv(id).toDataURL()); }
+
+  /* ---- the inventory itself: 24 backpack slots (0..23) + 6 belt slots (24..29) ---- */
+  function rwInvClear() { RW.inv = []; for (var i = 0; i < RW_SLOTS; i++) RW.inv.push(null); RW.isel = -1; }
+  rwInvClear();
+  function rwInvReset(fresh) {
+    rwInvClear(); RW.hot = 0; holster = false;
+    RW.inv[RW_HOT0] = { id: 'rock', n: 1 };
+    if (fresh) { RW.inv[RW_HOT0 + 1] = { id: 'g0', n: 1 }; RW.inv[0] = { id: 'medkit', n: 1 }; }
+    rwInvChanged();
+  }
+  function rwCount(id) { var n = 0; for (var i = 0; i < RW_SLOTS; i++) { var s = RW.inv[i]; if (s && s.id === id) n += s.n; } return n; }
+  function rwHas(cost) { for (var k in cost) if (rwCount(k) < cost[k]) return false; return true; }
+  function rwTake(id, n, quiet) {
+    if (rwCount(id) < n) return false;
+    for (var i = RW_SLOTS - 1; i >= 0 && n > 0; i--) { var s = RW.inv[i]; if (!s || s.id !== id) continue; var k = Math.min(n, s.n); s.n -= k; n -= k; if (s.n <= 0) RW.inv[i] = null; }
+    if (!quiet) rwInvChanged();
+    return true;
+  }
+  function rwPay(cost) { if (!rwHas(cost)) return false; for (var k in cost) rwTake(k, cost[k], true); rwInvChanged(); return true; }
+  function rwGive(id, n) {   // puts n of an item into the inventory; returns how many did NOT fit
+    var d = RWI[id]; if (!d || !(n > 0)) return n || 0;
+    var st = d.st || 1, i, s, k;
+    for (i = 0; i < RW_SLOTS && n > 0; i++) { s = RW.inv[i]; if (s && s.id === id && s.n < st) { k = Math.min(n, st - s.n); s.n += k; n -= k; } }
+    var beltFirst = !!(d.tool || d.gun !== undefined || d.use);
+    for (i = 0; i < RW_SLOTS && n > 0; i++) {
+      var j = beltFirst ? (i < 6 ? RW_HOT0 + i : i - 6) : i;
+      if (!RW.inv[j]) { k = Math.min(n, st); RW.inv[j] = { id: id, n: k }; n -= k; }
+    }
+    rwInvChanged();
+    return n;
+  }
+  function rwCostTxt(cost, withHave) {
+    var a = [];
+    for (var k in cost) { var have = rwCount(k), ok = have >= cost[k]; a.push('<em class="' + (ok ? '' : 'no') + '">' + rwIN(k) + ' ' + cost[k] + (withHave ? ' (' + have + ')' : '') + '</em>'); }
+    return a.join(' · ');
+  }
+  function rwSyncOwned() {
+    if (!RW.on) return;
+    for (var i = 0; i < WDEF.length; i++) owned[i] = rwCount('g' + i) > 0;
+  }
+  function rwInvChanged() { rwSyncOwned(); rwHotRender(true); if (RW.ui === 'inv') rwInvRender(); }
+  function rwHeldSlot() { return RW.inv[RW_HOT0 + RW.hot]; }
+  function heldKind() {
+    if (holster) return 'hands';
+    if (!RW.on) return 'gun';
+    var s = RW.inv[RW_HOT0 + RW.hot]; if (!s) return 'hands';
+    var d = RWI[s.id]; if (!d) return 'hands';
+    if (d.gun !== undefined) return 'gun';
+    if (d.tool) return d.tool;
+    return 'item';
+  }
+  function rwSelectHot(i) {
+    if (i < 0 || i > 5) return;
+    if (i === RW.hot && !holster) return;
+    RW.hot = i; holster = false; rwHeldSwitched();
+  }
+  function rwHeldSwitched() {
+    var s = rwHeldSlot(), d = s ? RWI[s.id] : null;
+    if (d && d.gun !== undefined) cur = d.gun;
+    W.reload = 0; W.cd = 0.25; aiming = false; latched = true; drawT = 1; VM.sw = 0;
+    RW.lastHeld = s ? s.id : '';
+    tone(400, 600, 0.06, 'square', 0.04);
+    rwHotRender(true); if (RW.ui === 'inv') rwInvRender();
+  }
+  function rwEquipGun(i) {
+    var id = 'g' + i, k;
+    for (k = 0; k < 6; k++) { var s = RW.inv[RW_HOT0 + k]; if (s && s.id === id) { holster = false; if (k !== RW.hot) RW.hot = k; rwHeldSwitched(); return; } }
+    for (k = 0; k < RW_HOT0; k++) if (RW.inv[k] && RW.inv[k].id === id) { rwHoldSlot(k); return; }
+  }
+  function toggleHolster() {
+    holster = !holster; drawT = 1; aiming = false; W.reload = 0; VM.sw = 0; latched = true;
+    tone(holster ? 300 : 400, holster ? 200 : 600, 0.06, 'square', 0.04);
+    if (RW.on) { rwHotRender(true); if (RW.ui === 'inv') rwInvRender(); } else updateSlots();
+  }
+  function rwCanUseId(id) {
+    if (id === 'medkit') return P.hp < P.maxHp;
+    if (id === 'armor') return P.armor < 100;
+    if (id === 'adren') return adrenT < 25;
+    if (id === 'ammo') { for (var i = 0; i < WDEF.length; i++) if (owned[i] && ws[i].res < WDEF[i].maxRes) return true; return false; }
+    if (id === 'vital') return vit < 3;
+    return false;
+  }
+  function rwUseSlot(i) {
+    var s = RW.inv[i]; if (!s || !RWI[s.id] || !RWI[s.id].use) return false;
+    var id = s.id;
+    if (!rwCanUseId(id)) { tone(150, 120, 0.06, 'square', 0.04); banner(id === 'medkit' ? zt('生命是满的', 'Health is full') : id === 'armor' ? zt('护甲已满', 'Armor is full') : id === 'ammo' ? zt('备弹都是满的', 'Reserve ammo is full') : zt('现在用不了', 'Cannot use that now'), 1000); return false; }
+    if (id === 'medkit') P.hp = Math.min(P.maxHp, P.hp + 60);
+    else if (id === 'armor') P.armor = Math.min(100, P.armor + 50);
+    else if (id === 'adren') adrenT = 30;
+    else if (id === 'ammo') addAmmo(2);
+    else if (id === 'vital') { vit++; P.maxHp += 20; P.hp = Math.min(P.maxHp, P.hp + 20); }
+    s.n--; if (s.n <= 0) RW.inv[i] = null;
+    tone(600, 1000, 0.1, 'sine', 0.08);
+    rwInvChanged();
+    return true;
+  }
+  function rwHoldSlot(i) {   // put an item in your hands (moves it onto the belt when it is in the backpack)
+    if (i >= RW_HOT0) { holster = false; RW.hot = i - RW_HOT0; rwHeldSwitched(); return; }
+    var s = RW.inv[i]; if (!s) return;
+    var j = -1, k;
+    for (k = 0; k < 6; k++) if (!RW.inv[RW_HOT0 + k]) { j = RW_HOT0 + k; break; }
+    if (j < 0) j = RW_HOT0 + RW.hot;
+    RW.inv[i] = RW.inv[j]; RW.inv[j] = s;
+    if (RW.isel === i) RW.isel = j;
+    holster = false; RW.hot = j - RW_HOT0;
+    rwInvChanged(); rwHeldSwitched();
+  }
+  function rwMove(a, b) {
+    if (a === b) return;
+    var A1 = RW.inv[a], B1 = RW.inv[b]; if (!A1) return;
+    var st = (RWI[A1.id] && RWI[A1.id].st) || 1;
+    if (B1 && B1.id === A1.id && st > 1) { var k = Math.min(st - B1.n, A1.n); B1.n += k; A1.n -= k; if (A1.n <= 0) RW.inv[a] = null; }
+    else { RW.inv[a] = B1; RW.inv[b] = A1; }
+    if (RW.isel === a) RW.isel = b;
+    rwInvChanged();
+  }
+  function rwQuick(i) {   // right click: backpack <-> belt
+    var s = RW.inv[i]; if (!s) return;
+    var from = i >= RW_HOT0 ? [0, RW_HOT0] : [RW_HOT0, RW_SLOTS], k, st = (RWI[s.id] && RWI[s.id].st) || 1;
+    for (k = from[0]; k < from[1] && s.n > 0 && st > 1; k++) { var o = RW.inv[k]; if (o && o.id === s.id && o.n < st) { var m = Math.min(st - o.n, s.n); o.n += m; s.n -= m; } }
+    if (s.n <= 0) RW.inv[i] = null;
+    else for (k = from[0]; k < from[1]; k++) if (!RW.inv[k]) { RW.inv[k] = s; RW.inv[i] = null; if (RW.isel === i) RW.isel = k; break; }
+    rwInvChanged();
+  }
+  function rwSplit(i) {
+    var s = RW.inv[i]; if (!s || s.n < 2) return;
+    for (var k = 0; k < RW_SLOTS; k++) if (!RW.inv[k]) { var h = Math.floor(s.n / 2); RW.inv[k] = { id: s.id, n: h }; s.n -= h; rwInvChanged(); return; }
+    banner(zt('没有空格子', 'No free slot'), 900);
+  }
+  function rwDropSlot(i, one) {
+    var s = RW.inv[i]; if (!s) return;
+    var n = one ? 1 : s.n, fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), x = P.x + fx * 1.4, z = P.z + fz * 1.4;
+    rwDropAdd([{ id: s.id, n: n }], x, z, null, 600, groundAt(x, z, P.y + 0.7));
+    s.n -= n; if (s.n <= 0) RW.inv[i] = null;
+    tone(260, 160, 0.06, 'square', 0.04);
+    rwInvChanged();
+  }
+  function rwCraft(id) {
+    var r = null; RW_CRAFT.forEach(function (q) { if (q[0] === id) r = q; });
+    if (!r) return;
+    if (!rwPay(r[1])) { tone(150, 120, 0.06, 'square', 0.04); banner(zt('材料不够', 'Not enough materials'), 1000); return; }
+    var left = rwGive(id, 1);
+    if (left > 0) { var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw); rwDropAdd([{ id: id, n: left }], P.x + fx, P.z + fz, null, 600, groundAt(P.x + fx, P.z + fz, P.y + 0.7)); banner(zt('背包满了，东西放在脚边', 'Inventory full: dropped at your feet'), 1500); }
+    rwNote(id, 1);
+    tone(500, 900, 0.12, 'triangle', 0.08);
+  }
+
+  /* ---- belt (always on screen), notices on the right, the interaction prompt ---- */
+  var RWCSS = '' +
+    '#rwHot{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:5px;pointer-events:auto}' +
+    '.rwh{width:58px;height:58px;position:relative;background:rgba(20,21,19,.62);border:1px solid rgba(236,230,214,.2);box-sizing:border-box;cursor:pointer}' +
+    '.rwh.on{border-color:#ff7a1a;background:rgba(255,122,26,.22);box-shadow:0 0 12px rgba(255,122,26,.35)}' +
+    '.rwh img{position:absolute;left:10%;top:10%;width:80%;height:80%;pointer-events:none}' +
+    '.rwh b,.rwslot b{position:absolute;right:4px;bottom:1px;font:700 14px "Barlow Condensed","Arial Narrow",sans-serif;color:#f2ecdc;text-shadow:0 1px 2px #000;pointer-events:none}' +
+    '.rwh i,.rwslot i{position:absolute;left:4px;top:2px;font:700 11px "Barlow Condensed","Arial Narrow",sans-serif;font-style:normal;color:#9d988a;pointer-events:none}' +
+    '#rwNotes{position:absolute;right:16px;bottom:110px;display:flex;flex-direction:column;align-items:flex-end;gap:4px;pointer-events:none}' +
+    '.rwnote{display:flex;align-items:center;gap:8px;background:rgba(20,21,19,.72);border-left:3px solid #8fd14f;padding:3px 12px 3px 6px;font:700 15px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6;transition:opacity .45s,transform .45s}' +
+    '.rwnote img{width:26px;height:26px}.rwnote.out{opacity:0;transform:translateX(24px)}' +
+    '#rwPrompt{position:absolute;left:0;right:0;top:60%;text-align:center;pointer-events:none}' +
+    '#rwPrompt span{display:inline-block;background:rgba(14,15,13,.78);border:1px solid rgba(255,122,26,.7);padding:6px 14px;font:600 14px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:.04em;color:#ece6d6}' +
+    '#rwInv,#rwBuild{position:absolute;inset:0;z-index:12;display:none;align-items:center;justify-content:center;background:rgba(8,9,8,.62);padding:14px;overflow:auto;color:#e6e0d0;font:600 13px/1.35 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;user-select:none;-webkit-user-select:none;--s:62px;box-sizing:border-box}' +
+    '.rwi{display:flex;gap:10px;align-items:flex-start;justify-content:center;flex-wrap:wrap;margin:auto;max-width:1200px}' +
+    '.rwp{background:rgba(32,33,30,.94);border:1px solid rgba(236,230,214,.12);padding:12px;display:flex;flex-direction:column;gap:9px;min-width:0;box-sizing:border-box}' +
+    '.rwp h3{margin:0;font:700 12px/1 "Barlow Condensed",system-ui,sans-serif;letter-spacing:.22em;color:#a39e90}' +
+    '.rwgrid{display:grid;grid-template-columns:repeat(6,var(--s));gap:4px}' +
+    '.rwslot{width:var(--s);height:var(--s);position:relative;background:rgba(236,230,214,.07);border:1px solid rgba(236,230,214,.08);box-sizing:border-box;touch-action:none;cursor:grab}' +
+    '.rwslot img{position:absolute;left:12%;top:12%;width:76%;height:76%;pointer-events:none;-webkit-user-drag:none}' +
+    '.rwslot.hb{background:rgba(236,230,214,.11)}.rwslot.held{background:rgba(255,122,26,.16)}' +
+    '.rwslot.sel{border-color:#ff7a1a;box-shadow:inset 0 0 0 1px #ff7a1a}.rwslot.ov{border-color:#ece6d6}' +
+    '.rwdrag{position:fixed;width:56px;height:56px;pointer-events:none;z-index:40;opacity:.9;transform:translate(-50%,-50%)}' +
+    '.rwstat{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center}.rwstat>span{color:#a39e90;font-weight:500}' +
+    '.rwbar{height:8px;background:rgba(0,0,0,.5);border:1px solid rgba(236,230,214,.15)}.rwbar i{display:block;height:100%}' +
+    '.rwdet{min-height:150px;display:flex;flex-direction:column;gap:8px}.rwdet .hd{display:flex;gap:10px;align-items:center}' +
+    '.rwdet .hd img{width:52px;height:52px;background:rgba(236,230,214,.07)}.rwdet b{font-size:15px}' +
+    '.rwdet p,.rwp p{margin:0;color:#b9b3a4;font-size:12.5px;line-height:1.6;font-weight:500}' +
+    '.rwacts{display:flex;flex-wrap:wrap;gap:6px}' +
+    '.rwbtn{font:600 13px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#1a0f05;background:#ff7a1a;border:0;padding:7px 12px;cursor:pointer}' +
+    '.rwbtn.alt{background:rgba(236,230,214,.1);color:#ece6d6;border:1px solid rgba(236,230,214,.2)}.rwbtn:disabled{background:rgba(236,230,214,.08);color:#77736a;cursor:default}' +
+    '.rwcraft{display:flex;flex-direction:column;gap:5px;max-height:310px;overflow:auto}' +
+    '.rwcr{display:flex;align-items:center;gap:8px;padding:5px;background:rgba(236,230,214,.04);border:1px solid rgba(236,230,214,.07)}' +
+    '.rwcr img{width:36px;height:36px;flex:0 0 36px}.rwcr div{flex:1;min-width:0}.rwcr small{display:block;color:#a39e90;font-weight:500;font-size:11.5px}' +
+    'em.no{color:#e5584a;font-style:normal}#rwInv em,#rwBuild em{font-style:normal}' +
+    '.rwfoot{width:100%;text-align:center;color:#8d887b;font-weight:500;font-size:12px}' +
+    '.rwbg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}' +
+    '.rwbp{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;background:rgba(236,230,214,.05);border:1px solid rgba(236,230,214,.12);color:#ece6d6;font:600 13px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;cursor:pointer}' +
+    '.rwbp.on{border-color:#ff7a1a;background:rgba(255,122,26,.16)}.rwbp small{color:#a39e90;font-weight:500;font-size:11.5px;text-align:center}' +
+    '@media (max-width:760px){#rwInv{--s:44px;padding:6px}.rwp{padding:8px}#rwHot{bottom:auto;top:60px}.rwh{width:42px;height:42px}#rwNotes{bottom:auto;top:110px;right:auto;left:12px;align-items:flex-start}.rwbg{grid-template-columns:repeat(3,minmax(0,1fr))}}';
+  function rwInitUi2() {
+    if (RW.hotEl) return;
+    var st = document.createElement('style'); st.textContent = RWCSS; document.head.appendChild(st);
+    var hb = document.createElement('div'); hb.id = 'rwHot'; RW.hud.appendChild(hb); RW.hotEl = hb;
+    hb.addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('.rwh') : null; if (b && state === 'playing') rwSelectHot(+b.getAttribute('data-h')); });
+    var nt = document.createElement('div'); nt.id = 'rwNotes'; RW.hud.appendChild(nt); RW.notesEl = nt;
+    var pr = document.createElement('div'); pr.id = 'rwPrompt'; pr.innerHTML = '<span></span>'; pr.style.display = 'none'; RW.hud.appendChild(pr); RW.promptEl = pr; RW.promptTxt = '';
+  }
+  var hotCache = '';
+  function rwNumHtml(s) {
+    var d = RWI[s.id];
+    if (d && d.gun !== undefined) return '<b>' + ws[d.gun].ammo + '</b>';
+    return s.n > 1 ? '<b>' + s.n + '</b>' : '';
+  }
+  function rwHotRender(force) {
+    if (!RW.hotEl) return;
+    var h = '';
+    for (var i = 0; i < 6; i++) {
+      var s = RW.inv[RW_HOT0 + i];
+      h += '<div class="rwh' + (i === RW.hot && !holster ? ' on' : '') + '" data-h="' + i + '"><i>' + (i + 1) + '</i>' + (s ? '<img src="' + rwIconUrl(s.id) + '" alt="">' + rwNumHtml(s) : '') + '</div>';
+    }
+    if (force || h !== hotCache) { hotCache = h; RW.hotEl.innerHTML = h; }
+  }
+  function rwNote(id, n) {
+    if (!RW.notesEl) return;
+    var el = document.createElement('div'); el.className = 'rwnote';
+    el.innerHTML = '<img src="' + rwIconUrl(id) + '" alt=""><span>' + (n > 0 ? '+' : '') + n + ' ' + duEsc(rwIN(id)) + '</span>';
+    RW.notesEl.appendChild(el);
+    while (RW.notesEl.children.length > 6) RW.notesEl.removeChild(RW.notesEl.firstChild);
+    setTimeout(function () { el.classList.add('out'); }, 3000);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 3500);
+  }
+  function KE() { return isTouch ? zt('点「交互」', 'Tap Use:') : '[' + keyLabel(KB.use) + ']'; }
+  function KL() { return isTouch ? zt('按住开火键', 'Hold Fire to') : zt('按住左键', 'Hold left click to'); }
+  function KL1() { return isTouch ? zt('点开火键', 'Tap Fire to') : zt('左键', 'Left click to'); }
+  function KR() { return isTouch ? zt('瞄准键', 'Aim button') : zt('右键', 'right click'); }
+
+  /* ---- things lying on the ground: gathered wood/stone/ore, crate loot, dropped items, your bag after death ---- */
+  var DROPM = null;
+  function rwDropMats() {
+    if (DROPM) return DROPM;
+    DROPM = { bark: new THREE.MeshStandardMaterial({ color: 0x6b4526, roughness: 0.95 }), cut: new THREE.MeshStandardMaterial({ color: 0xcf9d63, roughness: 0.85 }),
+      stone: new THREE.MeshStandardMaterial({ color: 0x8d8a83, roughness: 0.95, flatShading: true }), ore: new THREE.MeshStandardMaterial({ color: 0x6a6662, roughness: 0.6, metalness: 0.3, flatShading: true }),
+      spec: new THREE.MeshStandardMaterial({ color: 0xe0902e, roughness: 0.4, metalness: 0.6 }), sack: new THREE.MeshStandardMaterial({ color: 0x7a6440, roughness: 1 }), tie: new THREE.MeshStandardMaterial({ color: 0x3a2e1e, roughness: 1 }) };
+    return DROPM;
+  }
+  function rwDropModel(items) {
+    var M = rwDropMats(), g = new THREE.Group(), id = items[0].id, i;
+    function add(geo, mat, x, y, z, rx, ry, rz) { var m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0); g.add(m); return m; }
+    if (items.length === 1 && id === 'wood') {
+      var lg = gCyl(0.1, 0.1, 0.75, 7), cap = gCyl(0.085, 0.085, 0.77, 7);
+      [[-0.11, 0.1, 0], [0.11, 0.1, 0.02], [0, 0.27, 0.01]].forEach(function (p, k) { add(lg, M.bark, p[0], p[1], p[2], 0, 0.2 * k, Math.PI / 2); add(cap, M.cut, p[0], p[1], p[2], 0, 0.2 * k, Math.PI / 2); });
+    } else if (items.length === 1 && (id === 'stone' || id === 'metal' || id === 'rock')) {
+      var sg = new THREE.DodecahedronGeometry(0.15, 0);
+      for (i = 0; i < 3; i++) add(sg, id === 'metal' ? M.ore : M.stone, (i - 1) * 0.17, 0.12 + (i === 1 ? 0.08 : 0), (i % 2) * 0.08, i, i * 0.7, 0);
+      if (id === 'metal') for (i = 0; i < 4; i++) add(gBox(0.06, 0.06, 0.06), M.spec, (i - 1.5) * 0.12, 0.2, 0.1 - (i % 2) * 0.14, i, i, 0);
+    } else {
+      add(gBox(0.5, 0.36, 0.4), M.sack, 0, 0.18, 0); add(gBox(0.3, 0.12, 0.26), M.sack, 0, 0.4, 0); add(gBox(0.32, 0.04, 0.28), M.tie, 0, 0.36, 0);
+    }
+    return g;
+  }
+  function rwDropLabel(d) {
+    var c = d.cv.getContext('2d'), it = d.it;
+    c.clearRect(0, 0, 192, 64);
+    c.fillStyle = 'rgba(12,12,10,.66)'; c.fillRect(0, 2, 192, 60);
+    c.fillStyle = '#ff7a1a'; c.fillRect(0, 2, 4, 60);
+    c.drawImage(rwIconCv(d.bag ? 'bag' : it[0].id), 8, 4, 56, 56);
+    var tx = d.bag ? zt('你的背包', 'Your bag') : it.length > 1 ? zt(it.length + ' 件物品', it.length + ' items') : '×' + it[0].n;
+    c.fillStyle = '#ffe9b0'; c.textBaseline = 'middle'; c.font = '700 ' + (tx.length > 7 ? 24 : 32) + 'px "Barlow Condensed","PingFang SC","Microsoft YaHei",sans-serif';
+    c.fillText(tx, 70, 33);
+    d.spr.material.map.needsUpdate = true;
+  }
+  function rwDropAdd(items, x, z, src, ttl, y, bag) {
+    items = items.filter(function (q) { return q && q.n > 0 && RWI[q.id]; });
+    if (!items.length || !RW.group) return null;
+    if (src) for (var k = 0; k < RW.drops.length; k++) {
+      var o = RW.drops[k];
+      if (o.src === src && o.it.length === 1 && items.length === 1 && o.it[0].id === items[0].id) { o.it[0].n += items[0].n; o.t = Math.max(o.t, ttl || 300); o.pop = 1; rwDropLabel(o); return o; }
+    }
+    if (y === undefined || y === null) y = rwH(x, z);
+    var g = rwDropModel(bag ? [{ id: 'bag', n: 1 }] : items), cv = document.createElement('canvas'); cv.width = 192; cv.height = 64;
+    var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
+    spr.scale.set(1.15, 0.38, 1); spr.position.y = 1.0; g.add(spr);
+    g.position.set(x, y, z); g.rotation.y = Math.random() * 6.28; RW.group.add(g);
+    var d = { it: items, x: x, y: y, z: z, g: g, spr: spr, cv: cv, src: src, t: ttl || 300, pop: 1, bag: !!bag };
+    rwDropLabel(d); RW.drops.push(d);
+    return d;
+  }
+  function rwDropRemove(d) {
+    var i = RW.drops.indexOf(d); if (i >= 0) RW.drops.splice(i, 1);
+    if (d.g.parent) d.g.parent.remove(d.g);
+    d.spr.material.map.dispose(); d.spr.material.dispose();
+  }
+  function rwDropTick(dt) {
+    for (var i = RW.drops.length - 1; i >= 0; i--) {
+      var d = RW.drops[i];
+      d.t -= dt; if (d.t <= 0) { rwDropRemove(d); continue; }
+      var far = Math.abs(d.x - P.x) > 70 || Math.abs(d.z - P.z) > 70;
+      d.g.visible = !far; if (far) continue;
+      d.spr.position.y = 1.0 + Math.sin(gtime * 2.4 + d.x) * 0.05;
+      d.spr.material.opacity = d.t < 20 ? d.t / 20 : 1;
+      if (d.pop > 0) { d.pop = Math.max(0, d.pop - dt * 4); var s = 1 + 0.3 * Math.sin(d.pop * Math.PI); d.g.scale.set(s, s, s); }
+    }
+  }
+  function rwDropTarget() {
+    var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), best = null, bs = 1e9;
+    for (var i = 0; i < RW.drops.length; i++) {
+      var d = RW.drops[i], dx = d.x - P.x, dz = d.z - P.z, dist = Math.hypot(dx, dz);
+      if (dist > 3.2 || Math.abs(d.y - P.y) > 2.2) continue;
+      var dot = dist > 0.01 ? (dx * fx + dz * fz) / dist : 1;
+      if (dist > 1.3 && dot < 0.55) continue;
+      var sc = dist - dot * 1.5; if (sc < bs) { bs = sc; best = d; }
+    }
+    return best;
+  }
+  function rwDropName(d) { return d.bag ? zt('你的背包', 'your bag') : d.it.length > 1 ? zt(d.it.length + ' 件物品', d.it.length + ' items') : rwIN(d.it[0].id) + ' ×' + d.it[0].n; }
+  function rwDropPick(d) {
+    var got = 0;
+    d.it.forEach(function (q) { var left = rwGive(q.id, q.n), k = q.n - left; if (k > 0) { rwNote(q.id, k); got++; } q.n = left; });
+    d.it = d.it.filter(function (q) { return q.n > 0; });
+    if (!d.it.length) rwDropRemove(d); else { rwDropLabel(d); banner(zt('背包满了，剩下的还在地上', 'Inventory full: the rest is still on the ground'), 1500); }
+    if (got) tone(500, 800, 0.08, 'sine', 0.06);
+  }
+
+  /* ---- first-person hands and tools ---- */
+  var VMM = { skin: gmat(0xc99a78, 0, 0.75), skinD: gmat(0xb08463, 0, 0.8), sleeve: gmat(0x3d4636, 0, 0.92), cuff: gmat(0x262a22, 0, 0.95), wood: gmat(0x7b5531, 0, 0.8), woodD: gmat(0x5a3c22, 0, 0.85), steel: gmat(0xa3a9ae, 0.8, 0.3), steelL: gmat(0xd8dde1, 0.85, 0.25), dark: gmat(0x34363a, 0.5, 0.55), stone: gmat(0x8d8a82, 0, 0.95) };
+  VMM.stone.flatShading = true;
+  function vmBox(par, w, h, d, mat, x, y, z, ro, rx, ry, rz) { var m = new THREE.Mesh(gBox(w, h, d), mat); m.position.set(x, y, z); if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0); m.renderOrder = ro; m.frustumCulled = false; par.add(m); return m; }
+  // a closed hand (knuckles towards -z) with the forearm and sleeve running down and back towards the camera
+  function vmHand(side, base) {
+    var g = new THREE.Group(), o = base || 21;
+    vmBox(g, 0.08, 0.09, 0.062, VMM.skin, 0.004 * side, 0, 0.022, o + 2);
+    for (var i = 0; i < 4; i++) vmBox(g, 0.072, 0.0205, 0.036, i % 2 ? VMM.skinD : VMM.skin, 0, 0.033 - i * 0.022, -0.019, o + 3);
+    vmBox(g, 0.026, 0.024, 0.052, VMM.skin, -0.04 * side, 0.044, -0.002, o + 3, 0, 0, 0.3 * side);
+    var arm = new THREE.Group(); arm.position.set(0, -0.046, 0.034); arm.rotation.x = 0.95; g.add(arm);
+    vmBox(arm, 0.07, 0.07, 0.08, VMM.skin, 0, 0, 0.03, o + 1);
+    vmBox(arm, 0.098, 0.098, 0.034, VMM.cuff, 0, 0, 0.075, o + 1);
+    vmBox(arm, 0.094, 0.094, 0.5, VMM.sleeve, 0, 0, 0.33, o);
+    return g;
+  }
+  var VM = { g: new THREE.Group(), piv: new THREE.Group(), tools: {}, sw: 0, dur: 0.5, hitAt: 0.5, hitDone: false, side: 1, kind: '', shake: 0 };
+  camera.add(VM.g); VM.g.add(VM.piv); VM.g.visible = false;
+  VM.rh = vmHand(1); VM.piv.add(VM.rh);
+  VM.fr = vmHand(1); VM.fl = vmHand(-1); VM.g.add(VM.fr); VM.g.add(VM.fl);
+  (function () {
+    function T(name) { var g = new THREE.Group(); g.visible = false; VM.piv.add(g); VM.tools[name] = g; return g; }
+    var r = T('rock'), rg = new THREE.Mesh(new THREE.IcosahedronGeometry(0.075, 0), VMM.stone); rg.position.set(0, 0.05, -0.03); rg.scale.set(1, 0.85, 1.1); rg.renderOrder = 22; rg.frustumCulled = false; r.add(rg);
+    var h = T('hatchet');
+    vmBox(h, 0.026, 0.48, 0.032, VMM.wood, 0, 0.14, 0, 22);
+    vmBox(h, 0.024, 0.085, 0.13, VMM.steel, 0, 0.35, -0.05, 22); vmBox(h, 0.026, 0.11, 0.022, VMM.steelL, 0, 0.35, -0.12, 22); vmBox(h, 0.032, 0.05, 0.045, VMM.dark, 0, 0.35, 0.025, 22);
+    var p = T('pickaxe');
+    vmBox(p, 0.028, 0.58, 0.034, VMM.wood, 0, 0.19, 0, 22);
+    vmBox(p, 0.04, 0.05, 0.06, VMM.dark, 0, 0.45, 0, 22);
+    vmBox(p, 0.03, 0.035, 0.22, VMM.steel, 0, 0.44, -0.11, 22, -0.28, 0, 0); vmBox(p, 0.03, 0.035, 0.2, VMM.steel, 0, 0.44, 0.1, 22, 0.28, 0, 0);
+    vmBox(p, 0.022, 0.024, 0.05, VMM.steelL, 0, 0.405, -0.225, 22, -0.5, 0, 0);
+    var m = T('hammer');
+    vmBox(m, 0.024, 0.42, 0.03, VMM.wood, 0, 0.12, 0, 22);
+    vmBox(m, 0.048, 0.052, 0.15, VMM.steel, 0, 0.32, -0.015, 22); vmBox(m, 0.05, 0.054, 0.03, VMM.dark, 0, 0.32, 0.05, 22);
+    var pl = T('plan'), cv = document.createElement('canvas'); cv.width = 128; cv.height = 160;
+    var x = cv.getContext('2d'); x.fillStyle = '#1d4f86'; x.fillRect(0, 0, 128, 160); x.strokeStyle = 'rgba(255,255,255,.22)'; x.lineWidth = 1;
+    for (var i = 0; i <= 128; i += 12) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, 160); x.stroke(); }
+    for (i = 0; i <= 160; i += 12) { x.beginPath(); x.moveTo(0, i); x.lineTo(128, i); x.stroke(); }
+    x.strokeStyle = '#fff'; x.lineWidth = 3; x.strokeRect(24, 60, 80, 70); x.beginPath(); x.moveTo(18, 64); x.lineTo(64, 26); x.lineTo(110, 64); x.stroke(); x.strokeRect(56, 96, 18, 34);
+    x.font = 'bold 14px sans-serif'; x.fillStyle = '#fff'; x.fillText('PLAN  3m', 8, 150);
+    var sheet = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.25), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), fog: false, depthTest: false, side: THREE.DoubleSide }));
+    sheet.position.set(-0.02, 0.1, -0.06); sheet.rotation.set(-0.35, 0.15, 0.08); sheet.renderOrder = 20; sheet.frustumCulled = false; pl.add(sheet);
+  })();
+  // gun arms: every gun had two dark boxes where the hands go; swap them for real hands
+  gunObjs.forEach(function (G) {
+    var gh = []; G.g.children.forEach(function (c) { if (c.isMesh && c.material === GH) gh.push(c); });
+    gh.forEach(function (mesh) {
+      mesh.visible = false;
+      var right = mesh.position.z > -0.15, hd = vmHand(right ? 1 : -1, right ? 14 : 6);   // the front hand sits under the handguard, so the gun draws over it
+      hd.position.set(mesh.position.x + (right ? 0.012 : -0.01), mesh.position.y + (right ? 0.01 : -0.012), mesh.position.z);
+      if (right) hd.rotation.set(0.28, 0, 0.32); else hd.rotation.set(0.05, 0, -0.62);
+      G.g.add(hd);
+      if (!right) G.lh = hd;
+    });
+  });
+  function vmPose(hk) {   // per-frame first-person animation for hands / tools
+    var hands = hk === 'hands' || hk === 'item';
+    if (VM.kind !== hk) {
+      VM.kind = hk;
+      for (var k in VM.tools) VM.tools[k].visible = k === hk;
+      VM.fr.visible = VM.fl.visible = hands; VM.piv.visible = !hands; VM.rh.visible = !hands && hk !== 'plan';
+    }
+    var p = VM.sw, dw = drawT * drawT, sr = sprT, mv = Math.min(1, lowT + sprT);
+    var bobY = Math.sin(bob * 1.4) * 0.012 * (1 + sr), bobX = Math.cos(bob * 0.7) * 0.012 * (1 + sr), br = Math.sin(gtime * 1.6) * 0.004;
+    var sh = VM.shake > 0 ? (Math.random() - 0.5) * VM.shake * 0.12 : 0;
+    VM.g.position.set(bobX + sh, bobY + br - 0.32 * dw - 0.03 * sr, 0);
+    VM.g.rotation.set(-0.5 * dw, 0, 0);
+    if (hands) {
+      var pr = 0, pl = 0;
+      if (p > 0) { var ext = p < VM.hitAt ? sstep(0.05, VM.hitAt, p) : 1 - sstep(VM.hitAt, 1, p); if (VM.side > 0) pr = ext; else pl = ext; }
+      var pump = sr * Math.sin(bob * 0.7), lift = hk === 'item' ? 0.03 : 0;
+      VM.fr.position.set(0.2 - 0.09 * pr, -0.235 + 0.06 * pr + 0.05 * pump + lift, -0.43 - 0.3 * pr + 0.07 * pump);
+      VM.fr.rotation.set(0.15 + 0.35 * pr - 0.3 * sr, 0.08, -0.32 + 0.22 * pr);
+      VM.fl.position.set(-0.2 + 0.09 * pl, -0.245 + 0.06 * pl - 0.05 * pump, -0.45 - 0.3 * pl - 0.07 * pump);
+      VM.fl.rotation.set(0.15 + 0.35 * pl - 0.3 * sr, -0.08, 0.32 - 0.22 * pl);
+    } else {
+      var plan = hk === 'plan', b0 = plan ? 0.17 : 0.3, b1 = plan ? -0.27 : -0.36, b2 = plan ? -0.42 : -0.56, rest = plan ? 0.05 : -0.22;
+      var rx = rest, py = 0, pz = 0, rz = 0;
+      if (p > 0) {
+        var A1 = VM.hitAt - 0.12, a;
+        if (p < A1) { a = sstep(0, A1, p); rx = rest + (0.95 - rest) * a; py = 0.07 * a; pz = 0.05 * a; rz = -0.18 * a; }
+        else if (p < VM.hitAt + 0.04) { a = sstep(A1, VM.hitAt + 0.04, p); rx = 0.95 - 2.15 * a; py = 0.07 - 0.14 * a; pz = 0.05 - 0.22 * a; rz = -0.18 + 0.1 * a; }
+        else { a = sstep(VM.hitAt + 0.04, 1, p); rx = -1.2 + (rest + 1.2) * a; py = -0.07 * (1 - a); pz = -0.17 * (1 - a); rz = -0.08 * (1 - a); }
+      }
+      var run = sr * 0.35 + lowT * 0.1;
+      VM.piv.position.set(b0 + 0.02 * run, b1 + py - 0.05 * run + Math.sin(bob * 2.8) * 0.01 * sr, b2 + pz);
+      VM.piv.rotation.set(rx - run * 0.5, 0.15 * run, (plan ? 0 : 0.12) + rz + 0.25 * run);
+    }
+    if (VM.shake > 0) VM.shake = Math.max(0, VM.shake - 0.016);
+  }
+  function vmUpdate(dt, hk) {
+    var show = hk !== 'gun' && state !== 'over' && !(RW.on && RW.dead);
+    VM.g.visible = show;
+    if (!show) { VM.sw = 0; return; }
+    if (RW.on) { var s = rwHeldSlot(), hid = holster ? '' : s ? s.id : ''; if (hid !== RW.lastHeld) { RW.lastHeld = hid; drawT = 1; VM.sw = 0; } }
+    if (VM.sw > 0) {
+      VM.sw += dt / VM.dur;
+      if (!VM.hitDone && VM.sw >= VM.hitAt) { VM.hitDone = true; vmHit(hk); }
+      if (VM.sw >= 1) VM.sw = 0;
+    }
+    vmPose(hk);
+  }
+  function vmAction(hk, want) {
+    if (VT[hk]) {
+      if (want && VM.sw <= 0 && drawT < 0.3) { var v = VT[hk]; VM.sw = 1e-4; VM.dur = v.dur; VM.hitAt = v.hit; VM.hitDone = false; VM.side = -VM.side; tone(240, 120, 0.09, 'triangle', 0.03); }
+    } else if (hk === 'plan') { if (want && !latched) { latched = true; rwPlace(); } }
+    else if (hk === 'item') { if (want && !latched) { latched = true; rwUseSlot(RW_HOT0 + RW.hot); } }
+  }
+  function heldAlt() {   // right click / aim button with something that is not a gun
+    var hk = heldKind();
+    if (hk === 'plan') rwBuildMenu();
+    else if (hk === 'hammer') rwDemolish();
+  }
+  function vmHit(hk) {
+    if (hk === 'hammer' && RW.on) { var pc = rwPieceRay(4.5); if (pc) { rwHammerHit(pc); return; } }
+    if (vmMelee(hk)) return;
+    if (RW.on) { var n = rwFindNode(function (q) { return q.kind !== 'crate'; }); if (n) { rwGatherHit(n, hk); return; } }
+    var dir = tmpD.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize(), cp = camera.position, wt = rayWall(cp.x, cp.y, cp.z, dir.x, dir.y, dir.z, 2.4);
+    if (wt < 2.4) { burst(new THREE.Vector3(cp.x + dir.x * wt, cp.y + dir.y * wt, cp.z + dir.z * wt), 3, partMatG, 2.5); tone(150, 90, 0.05, 'square', 0.05); VM.shake = 0.12; }
+  }
+  function vmMelee(hk) {
+    var dmg = (VT[hk] ? VT[hk].dmg : 0.5) * CH.dmg, targets = [];
+    enemies.forEach(function (e) { targets.push(e.parts[0], e.parts[1]); });
+    if (duel) DU.targets(targets);
+    if (RW.on) rwTargets(targets);
+    if (!targets.length) return false;
+    var dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+    ray.set(camera.position.clone(), dir); ray.far = 2.6;
+    var hits = ray.intersectObjects(targets, false), wt = rayWall(camera.position.x, camera.position.y, camera.position.z, dir.x, dir.y, dir.z, 2.6);
+    for (var h = 0; h < hits.length; h++) {
+      var hit = hits[h], ud = hit.object.userData;
+      if (hit.distance > wt) break;
+      if (ud && ud.rp !== undefined) { rwHitPlayer(ud.rp, dmg * DU.K, !!ud.head); }
+      else if (ud && ud.remote) { if (!DU.alive) continue; DU.hit(dmg * DU.K, !!ud.head); DU.flush(cur); }
+      else if (ud && ud.enemy) {
+        var e = ud.enemy; if (e.dead) continue;
+        CO.head = false; e.hp -= dmg; e.flash = 0.08; e.cr = 'h'; if (e.rw) e.hurt = 4;
+        if (e.hp <= 0) { killEnemy(e, false); mark(true); } else { mark(false); tone(900, 700, 0.05, 'square', 0.06); }
+      } else continue;
+      burst(hit.point, 4, partMatO, 3); VM.shake = 0.18;
+      return true;
+    }
+    return false;
+  }
+  function rwGatherHit(n, hk) {
+    var hp = RW.nst[n.id]; if (hp === undefined) hp = n.max;
+    if (hp <= 0) return;
+    var item = n.kind === 'tree' ? 'wood' : n.kind === 'rock' ? 'stone' : 'metal', yv = (RW_YIELD[hk] || RW_YIELD.hands)[n.kind] || 0;
+    hp -= 1; RW.nst[n.id] = hp;
+    dSend({ t: 'Rg', id: n.id, max: n.max, k: n.kind });
+    var amt = Math.round(yv * (0.85 + Math.random() * 0.3)); if (hp <= 0) amt += yv * 2;
+    var dx = P.x - n.x, dz = P.z - n.z, dl = Math.hypot(dx, dz) || 1, ox = dx / dl, oz = dz / dl, side = (Math.random() - 0.5) * 0.8;
+    var px = n.x + ox * (n.r + 0.75) - oz * side, pz = n.z + oz * (n.r + 0.75) + ox * side;
+    if (amt > 0) rwDropAdd([{ id: item, n: amt }], px, pz, n.id, 300);
+    else banner(n.kind === 'ore' ? zt('金属矿要用镐或石块才敲得动', 'Metal ore needs a pickaxe or a rock') : zt('空手采不到东西', 'Bare hands get nothing here'), 1300);
+    var hp3 = new THREE.Vector3(n.x + ox * n.r * 0.8, Math.min(camera.position.y, n.y + 1.4), n.z + oz * n.r * 0.8);
+    burst(hp3, n.kind === 'tree' ? 6 : 5, n.kind === 'tree' ? partMatW : n.kind === 'ore' ? partMatY : partMatG, 3.5);
+    tone(n.kind === 'tree' ? 170 : 520, n.kind === 'tree' ? 110 : 300, 0.08, 'square', 0.08);
+    if (n.kind !== 'tree') tone(1400, 900, 0.04, 'triangle', 0.03);
+    VM.shake = 0.2; mark(false);
+    if (hp <= 0) { var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch); tone(120, 50, 0.4, 'sawtooth', 0.08); }
+  }
+  var partMatW = new THREE.MeshBasicMaterial({ color: 0xb98a52 });
+  function rwOpenCrate(n) {
+    var hp = RW.nst[n.id]; if (hp === undefined) hp = n.max;
+    if (hp <= 0) return;
+    RW.gatherCd = 0.4; hp -= 1; RW.nst[n.id] = hp;
+    dSend({ t: 'Rg', id: n.id, max: n.max, k: n.kind });
+    rwLoot(n);
+    if (hp <= 0) { var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch); }
+  }
+  function rwInteract() {
+    if (!RW.on || RW.dead || state !== 'playing') return false;
+    var pc = rwPieceRay(3.2);
+    if (pc && pc.k === 'dr') {
+      if (pc.o === RW.me) { dSend({ t: 'Ro', id: pc.id }); tone(260, 180, 0.08, 'square', 0.05); }
+      else { banner(zt('门锁着：只有建门的人能打开', 'Locked: only the builder can open this door'), 1400); tone(150, 120, 0.06, 'square', 0.04); }
+      return true;
+    }
+    var dp = rwDropTarget(); if (dp) { rwDropPick(dp); return true; }
+    var n = rwFindNode(function (q) { return q.kind === 'crate'; });
+    if (n && RW.gatherCd <= 0) { rwOpenCrate(n); return true; }
+    return false;
+  }
+  function rwHudHeld(hk) {
+    var s = RW.on ? rwHeldSlot() : null;
+    setText('hWeap', hk === 'hands' ? zt('空手', 'Hands') : s ? rwIN(s.id) : '');
+    setText('hAmmo', hk === 'item' && s ? '×' + s.n : hk === 'plan' ? zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]) : '—');
+    var L = isTouch ? zt('开火键', 'Fire') : zt('左键', 'LMB'), R = isTouch ? zt('瞄准键', 'Aim') : zt('右键', 'RMB');
+    setText('hRel', hk === 'hands' ? L + zt(' 出拳', ' punch') : hk === 'plan' ? L + zt(' 放置 · ', ' place · ') + R + zt(' 选部件 · ', ' parts · ') + keyLabel(KB.reload) + zt(' 旋转', ' rotate')
+      : hk === 'hammer' ? L + zt(' 升级 · ', ' upgrade · ') + R + zt(' 拆除', ' remove') : hk === 'item' ? L + zt(' 使用', ' use') : L + zt(' 挥动采集', ' swing to gather'));
+  }
+  function rwLoot(n) {
+    var near = rwMonNear(n.x, n.z), rich = !!near, r = Math.random(), items = [];
+    function rnd(a, b) { return Math.round(a + Math.random() * (b - a)); }
+    items.push({ id: Math.random() < 0.5 ? 'wood' : 'stone', n: rnd(rich ? 80 : 40, rich ? 180 : 100) });
+    if (r < 0.5) items.push({ id: 'metal', n: rnd(rich ? 30 : 15, rich ? 80 : 40) });
+    if (Math.random() < 0.35) items.push({ id: 'ammo', n: 1 });
+    if (Math.random() < 0.3) items.push({ id: 'medkit', n: 1 });
+    if (rich && Math.random() < 0.15) items.push({ id: 'armor', n: 1 });
+    if (rich && Math.random() < 0.1) { var gi = 2 + Math.floor(Math.random() * 5); items.push({ id: 'g' + gi, n: 1 }); }
+    var c = Math.round((rich ? 70 : 35) * (0.6 + Math.random() * 0.9)); coins += c;
+    var dx = P.x - n.x, dz = P.z - n.z, dl = Math.hypot(dx, dz) || 1;
+    rwDropAdd(items, n.x + dx / dl * 1.1, n.z + dz / dl * 1.1, null, 420);
+    banner(zt('补给箱：金币 +' + c + '，物品在箱子旁边', 'Crate: +' + c + ' coins, the loot is next to it'), 1600);
+    tone(700, 1100, 0.1, 'sine', 0.06);
+  }
+
+  /* ---- the Rust-style inventory screen: character on the left, backpack + belt in the middle, item + crafting on the right ---- */
+  var rwDrag = null;
+  function rwInvInit() {
+    if (RW.invEl) return;
+    var el = document.createElement('div'); el.id = 'rwInv';
+    el.innerHTML = '<div class="rwi">' +
+      '<div class="rwp" id="rwiL" style="width:220px"></div>' +
+      '<div class="rwp"><h3 id="rwiT1"></h3><div class="rwgrid" id="rwiMain"></div><h3 id="rwiT2" style="margin-top:6px"></h3><div class="rwgrid" id="rwiHot"></div></div>' +
+      '<div class="rwp" style="width:290px"><h3 id="rwiT3"></h3><div class="rwdet" id="rwiDet"></div><h3 id="rwiT4"></h3><div class="rwcraft" id="rwiCraft"></div></div>' +
+      '<div class="rwfoot" id="rwiFoot"></div></div>';
+    stage.appendChild(el); RW.invEl = el;
+    el.addEventListener('pointerdown', function (e) {
+      var sl = e.target.closest ? e.target.closest('.rwslot') : null;
+      if (!sl || e.button === 2) return;
+      var si = +sl.getAttribute('data-s');
+      if (!RW.inv[si]) { RW.isel = si; rwInvRender(); return; }
+      rwDrag = { si: si, x: e.clientX, y: e.clientY, moved: false, ghost: null };
+      e.preventDefault();
+    });
+    window.addEventListener('pointermove', function (e) {
+      if (!rwDrag) return;
+      if (!rwDrag.moved && Math.hypot(e.clientX - rwDrag.x, e.clientY - rwDrag.y) > 6) {
+        rwDrag.moved = true;
+        var s = RW.inv[rwDrag.si]; if (!s) { rwDrag = null; return; }
+        var gi = document.createElement('img'); gi.className = 'rwdrag'; gi.src = rwIconUrl(s.id); document.body.appendChild(gi); rwDrag.ghost = gi;
+      }
+      if (rwDrag.ghost) {
+        rwDrag.ghost.style.left = e.clientX + 'px'; rwDrag.ghost.style.top = e.clientY + 'px';
+        var ov = RW.invEl.querySelector('.rwslot.ov'); if (ov) ov.classList.remove('ov');
+        var tg = document.elementFromPoint(e.clientX, e.clientY), ts = tg && tg.closest ? tg.closest('.rwslot') : null; if (ts) ts.classList.add('ov');
+      }
+    });
+    window.addEventListener('pointerup', function (e) {
+      if (!rwDrag) return;
+      var dg = rwDrag; rwDrag = null;
+      if (dg.ghost) dg.ghost.parentNode.removeChild(dg.ghost);
+      if (!dg.moved) { RW.isel = dg.si; rwInvRender(); return; }
+      var tg = document.elementFromPoint(e.clientX, e.clientY), ts = tg && tg.closest ? tg.closest('.rwslot') : null;
+      if (ts) rwMove(dg.si, +ts.getAttribute('data-s'));
+      else if (tg && RW.invEl.contains(tg) && !(tg.closest && tg.closest('.rwp'))) rwDropSlot(dg.si);   // let go outside the panels: drop it on the ground
+      else rwInvRender();
+    });
+    el.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      var sl = e.target.closest ? e.target.closest('.rwslot') : null; if (sl) rwQuick(+sl.getAttribute('data-s'));
+    });
+    el.addEventListener('dblclick', function (e) {
+      var sl = e.target.closest ? e.target.closest('.rwslot') : null; if (!sl) return;
+      var si = +sl.getAttribute('data-s'), s = RW.inv[si]; if (!s) return;
+      if (RWI[s.id].use) rwUseSlot(si); else rwHoldSlot(si);
+    });
+    el.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-a],[data-c]') : null; if (!b || b.disabled) return;
+      var a = b.getAttribute('data-a'), c = b.getAttribute('data-c'), i = RW.isel;
+      if (c) { rwCraft(c); return; }
+      if (a === 'use') rwUseSlot(i); else if (a === 'hold') rwHoldSlot(i); else if (a === 'split') rwSplit(i);
+      else if (a === 'drop') rwDropSlot(i); else if (a === 'drop1') rwDropSlot(i, true); else if (a === 'close') rwUiClose();
+    });
+  }
+  function rwInvOpen() {
+    if (state !== 'playing' || RW.dead) return;
+    rwInvInit();
+    state = 'bag'; RW.ui = 'inv';
+    releaseInput();
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    if (RW.buildEl) RW.buildEl.style.display = 'none';
+    RW.invEl.style.display = 'flex';
+    if (RW.isel < 0) RW.isel = RW_HOT0 + RW.hot;
+    rwInvRender();
+    if (RW.promptEl) RW.promptEl.style.display = 'none';
+    tone(300, 420, 0.06, 'triangle', 0.04);
+  }
+  function rwUiClose(noLock) {
+    if (RW.invEl) RW.invEl.style.display = 'none';
+    if (RW.buildEl) RW.buildEl.style.display = 'none';
+    if (rwDrag && rwDrag.ghost && rwDrag.ghost.parentNode) rwDrag.ghost.parentNode.removeChild(rwDrag.ghost);
+    rwDrag = null;
+    var was = RW.ui; RW.ui = '';
+    if (state === 'bag') { state = 'playing'; if (!noLock) requestLock(); }
+    return was;
+  }
+  function rwSlotHtml(i) {
+    var s = RW.inv[i], hb = i >= RW_HOT0;
+    var cls = 'rwslot' + (hb ? ' hb' : '') + (i === RW.isel ? ' sel' : '') + (hb && i - RW_HOT0 === RW.hot && !holster ? ' held' : '');
+    return '<div class="' + cls + '" data-s="' + i + '">' + (hb ? '<i>' + (i - RW_HOT0 + 1) + '</i>' : '') + (s ? '<img src="' + rwIconUrl(s.id) + '" alt="">' + rwNumHtml(s) : '') + '</div>';
+  }
+  function rwInvRender() {
+    if (!RW.invEl) return;
+    var i, h = '';
+    $('rwiT1').textContent = zt('背包', 'INVENTORY'); $('rwiT2').textContent = zt('快捷栏（1 - 6 键切换）', 'BELT (keys 1 - 6)');
+    $('rwiT3').textContent = zt('物品', 'ITEM'); $('rwiT4').textContent = zt('制作', 'CRAFTING');
+    for (i = 0; i < RW_HOT0; i++) h += rwSlotHtml(i);
+    $('rwiMain').innerHTML = h; h = '';
+    for (i = RW_HOT0; i < RW_SLOTS; i++) h += rwSlotHtml(i);
+    $('rwiHot').innerHTML = h;
+    // character
+    var mine = 0; RW.plist.forEach(function (p) { if (p.o === RW.me) mine++; });
+    var hr = Math.max(0, P.hp / P.maxHp), ar = Math.min(1, P.armor / 100);
+    $('rwiL').innerHTML = '<h3>' + zt('角色', 'CHARACTER') + '</h3>' +
+      '<svg viewBox="0 0 120 150" width="120" height="150" style="align-self:center;opacity:.9"><circle cx="60" cy="24" r="16" fill="#4a443b"/><rect x="36" y="44" width="48" height="52" rx="6" fill="' + hex6(CH.color) + '"/>' +
+      '<rect x="20" y="46" width="14" height="44" rx="5" fill="' + hex6(CH.color) + '"/><rect x="86" y="46" width="14" height="44" rx="5" fill="' + hex6(CH.color) + '"/><rect x="40" y="98" width="17" height="46" rx="4" fill="#3a352e"/><rect x="63" y="98" width="17" height="46" rx="4" fill="#3a352e"/>' +
+      (P.armor > 0 ? '<rect x="42" y="50" width="36" height="34" rx="4" fill="none" stroke="#9aa1a8" stroke-width="3"/>' : '') + '</svg>' +
+      '<div class="rwstat"><span>' + zt('生命', 'Health') + '</span><div><div class="rwbar"><i style="width:' + (hr * 100).toFixed(0) + '%;background:' + (hr > 0.55 ? '#8fd14f' : hr > 0.25 ? '#ff7a1a' : '#e5392b') + '"></i></div>' + Math.ceil(P.hp) + ' / ' + P.maxHp + '</div>' +
+      '<span>' + zt('护甲', 'Armor') + '</span><div><div class="rwbar"><i style="width:' + (ar * 100).toFixed(0) + '%;background:#9aa1a8"></i></div>' + Math.ceil(P.armor) + '</div>' +
+      '<span>' + zt('金币', 'Coins') + '</span><div>' + coins + '</div>' +
+      '<span>' + zt('手雷', 'Grenades') + '</span><div>' + grenades + '</div>' +
+      '<span>' + zt('你的建筑', 'Your parts') + '</span><div>' + mine + '</div></div>' +
+      '<p>' + zt('金币在前哨站商店里买枪、补给，也能把木材石头卖掉换金币。', 'Spend coins at the Outpost shop on guns and supplies, or sell wood and stone there.') + '</p>';
+    // selected item
+    var s = RW.isel >= 0 ? RW.inv[RW.isel] : null, dh;
+    if (!s) dh = '<p>' + zt('点一个物品在这里查看。拖动可以移动或叠加；右键在背包和快捷栏之间快速移动；双击使用或拿在手上；拖到窗口外面就丢在地上。', 'Click an item to see it here. Drag to move or stack it; right click moves it between backpack and belt; double click uses it or puts it in your hands; drag it outside the panels to drop it.') + '</p>';
+    else {
+      var d = RWI[s.id], extra = '';
+      if (d.gun !== undefined) extra = '<p>' + tf('弹匣 {0} · 备弹 {1}', ws[d.gun].ammo, ws[d.gun].res).replace('弹匣', zt('弹匣', 'Mag')).replace('备弹', zt('备弹', 'reserve')) + ' · Lv' + wlv[d.gun] + perkIcons(d.gun) + '</p>';
+      dh = '<div class="hd"><img src="' + rwIconUrl(s.id) + '" alt=""><div><b>' + duEsc(rwIN(s.id)) + '</b><br><span style="color:#a39e90">×' + s.n + (d.st > 1 ? ' / ' + d.st : '') + '</span></div></div><p>' + duEsc(rwID(s.id)) + '</p>' + extra + '<div class="rwacts">';
+      if (d.use) dh += '<button class="rwbtn" data-a="use" type="button"' + (rwCanUseId(s.id) ? '' : ' disabled') + '>' + zt('使用', 'Use') + '</button>';
+      if (d.tool || d.gun !== undefined || d.use) dh += '<button class="rwbtn' + (d.use ? ' alt' : '') + '" data-a="hold" type="button">' + zt('拿在手上', 'Hold') + '</button>';
+      if (s.n > 1) dh += '<button class="rwbtn alt" data-a="split" type="button">' + zt('拆分', 'Split') + '</button>';
+      if (s.n > 1) dh += '<button class="rwbtn alt" data-a="drop1" type="button">' + zt('丢 1 个', 'Drop 1') + '</button>';
+      dh += '<button class="rwbtn alt" data-a="drop" type="button">' + zt('丢在地上', 'Drop') + '</button></div>';
+    }
+    $('rwiDet').innerHTML = dh;
+    // crafting
+    h = '';
+    RW_CRAFT.forEach(function (q) {
+      var ok = rwHas(q[1]);
+      h += '<div class="rwcr"><img src="' + rwIconUrl(q[0]) + '" alt=""><div>' + duEsc(rwIN(q[0])) + '<small>' + rwCostTxt(q[1], true) + '</small></div><button class="rwbtn" data-c="' + q[0] + '" type="button"' + (ok ? '' : ' disabled') + '>' + zt('制作', 'Craft') + '</button></div>';
+    });
+    $('rwiCraft').innerHTML = h;
+    $('rwiFoot').innerHTML = (isTouch ? '' : zt('Tab / ' + keyLabel(KB.bag) + ' / Esc 关闭', 'Tab / ' + keyLabel(KB.bag) + ' / Esc to close') + ' · ') + '<button class="rwbtn alt" data-a="close" type="button">' + zt('关闭背包', 'Close') + '</button>';
+  }
+
+  /* ---- building: parts, snapping, ghost preview, hammer ---- */
+  var RWB = { fd: { c: { wood: 60 }, n: ['地基', 'Foundation'] }, wl: { c: { wood: 50 }, n: ['墙', 'Wall'] }, dw: { c: { wood: 45 }, n: ['门框墙', 'Doorway'] }, wn: { c: { wood: 45 }, n: ['窗户墙', 'Window Wall'] },
+    fl: { c: { wood: 35 }, n: ['楼板', 'Floor'] }, st: { c: { wood: 60 }, n: ['楼梯', 'Stairs'] }, dr: { c: { wood: 80 }, n: ['木门', 'Door'] } };
+  var RWB_ORDER = ['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr'], RW_GRADE = [['木', 'Wood'], ['石', 'Stone'], ['金属', 'Metal']];
+  var RWB_SVG = {
+    fd: '<path d="M6 30 24 21 42 30 24 39Z" fill="#8a6a4a"/><path d="M6 30v6l18 9V39ZM42 30v6l-18 9V39Z" fill="#5a4636"/>',
+    wl: '<rect x="8" y="8" width="32" height="32" fill="#8a6a4a"/><path d="M16 8v32M24 8v32M32 8v32" stroke="#5a4636"/>',
+    dw: '<path d="M8 8h32v32H29V22H19v18H8Z" fill="#8a6a4a"/>',
+    wn: '<path d="M8 8h32v32H8ZM18 18v10h12V18Z" fill="#8a6a4a" fill-rule="evenodd"/>',
+    fl: '<path d="M6 24 24 15 42 24 24 33Z" fill="#8a6a4a"/><path d="M6 24v3l18 9v-3ZM42 24v3l-18 9v-3Z" fill="#5a4636"/>',
+    st: '<path d="M8 40V32h8v-8h8v-8h8V8h8v32Z" fill="#8a6a4a"/>',
+    dr: '<rect x="14" y="6" width="20" height="36" fill="#6a4a2a"/><circle cx="29" cy="25" r="2" fill="#e8d28a"/>'
+  };
+  function rwIsWall(k) { return k === 'wl' || k === 'dw' || k === 'wn'; }
+  function rwBuildTex(kind) {
+    var c = document.createElement('canvas'); c.width = c.height = 128;
+    var x = c.getContext('2d'), i, j;
+    if (kind === 0) {   // wooden planks
+      for (i = 0; i < 4; i++) { x.fillStyle = ['#8f673d', '#7f5830', '#94693f', '#86603a'][i]; x.fillRect(i * 32, 0, 32, 128); }
+      for (i = 0; i < 110; i++) { x.strokeStyle = 'rgba(55,34,16,' + (0.08 + Math.random() * 0.2) + ')'; x.lineWidth = 1; var gx = Math.random() * 128; x.beginPath(); x.moveTo(gx, 0); x.bezierCurveTo(gx + 3, 40, gx - 3, 90, gx + 1, 128); x.stroke(); }
+      x.fillStyle = 'rgba(30,18,8,.65)'; for (i = 0; i <= 4; i++) x.fillRect(i * 32 - 1, 0, 2, 128);
+      x.fillStyle = 'rgba(30,18,8,.5)'; x.fillRect(0, 60, 128, 3);
+      x.fillStyle = '#3a3a3a'; for (i = 0; i < 4; i++) { x.fillRect(i * 32 + 6, 54, 3, 3); x.fillRect(i * 32 + 23, 66, 3, 3); }
+    } else if (kind === 1) {   // stone blocks
+      x.fillStyle = '#5c5850'; x.fillRect(0, 0, 128, 128);
+      for (j = 0; j < 4; j++) for (i = -1; i < 3; i++) { var g = 128 + Math.random() * 30 | 0; x.fillStyle = 'rgb(' + g + ',' + (g - 4) + ',' + (g - 12) + ')'; x.fillRect(i * 64 + (j % 2) * 32 + 2, j * 32 + 2, 60, 28); }
+      for (i = 0; i < 700; i++) { x.fillStyle = 'rgba(' + (Math.random() < 0.5 ? '0,0,0' : '255,255,255') + ',' + Math.random() * 0.12 + ')'; x.fillRect(Math.random() * 128, Math.random() * 128, 2, 2); }
+    } else {   // metal sheets
+      x.fillStyle = '#6c7177'; x.fillRect(0, 0, 128, 128);
+      for (i = 0; i < 2; i++) { var gr = x.createLinearGradient(i * 64, 0, i * 64 + 64, 0); gr.addColorStop(0, 'rgba(255,255,255,.08)'); gr.addColorStop(1, 'rgba(0,0,0,.12)'); x.fillStyle = gr; x.fillRect(i * 64, 0, 64, 128); }
+      x.fillStyle = 'rgba(20,22,24,.7)'; x.fillRect(63, 0, 2, 128); x.fillRect(0, 63, 128, 2);
+      x.fillStyle = '#9aa0a6'; for (i = 0; i < 8; i++) { x.fillRect(4 + (i % 2) * 54, 6 + Math.floor(i / 2) * 32, 3, 3); x.fillRect(68 + (i % 2) * 54, 6 + Math.floor(i / 2) * 32, 3, 3); }
+      for (i = 0; i < 6; i++) { var rx = Math.random() * 120; var rg = x.createLinearGradient(0, 0, 0, 128); rg.addColorStop(0, 'rgba(140,70,30,.35)'); rg.addColorStop(1, 'rgba(140,70,30,0)'); x.fillStyle = rg; x.fillRect(rx, Math.random() * 40, 3 + Math.random() * 5, 80); }
+    }
+    var tx = new THREE.CanvasTexture(c); tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.anisotropy = 4;
+    return tx;
+  }
+  function rwTexBox(w, h, d) {   // a box whose texture keeps a 1.5 m tile size on every face
+    var g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv, nr = g.attributes.normal;
+    for (var i = 0; i < uv.count; i++) {
+      var ax = Math.abs(nr.getX(i)), ay = Math.abs(nr.getY(i)), su, sv;
+      if (ax > 0.5) { su = d; sv = h; } else if (ay > 0.5) { su = w; sv = d; } else { su = w; sv = h; }
+      uv.setXY(i, uv.getX(i) * su / 1.5, uv.getY(i) * sv / 1.5);
+    }
+    return g;
+  }
+  function rwPieceParts(k, r, dep) {   // boxes [cx, cy, cz, w, h, d, solid] relative to the part's origin
+    var L = [];
+    function W(u, y0, y1, len) { var cy = (y0 + y1) / 2, h = y1 - y0; if (r === 0) L.push([u, cy, 0, len, h, 0.2, 1]); else L.push([0, cy, u, 0.2, h, len, 1]); }
+    if (k === 'fd') { L.push([0, -dep / 2, 0, 3, dep, 3, 1]); L.push([0, -0.06, 0, 3.04, 0.12, 3.04, 0]); }
+    else if (k === 'fl') L.push([0, -0.1, 0, 3, 0.2, 3, 1]);
+    else if (k === 'wl') W(0, 0, 3, 3);
+    else if (k === 'dw') { W(-1.05, 0, 3, 0.9); W(1.05, 0, 3, 0.9); W(0, 2.2, 3, 1.2); }
+    else if (k === 'wn') { W(-1.05, 0, 3, 0.9); W(1.05, 0, 3, 0.9); W(0, 0, 1.0, 1.2); W(0, 2.0, 3, 1.2); }
+    else if (k === 'st') { var dx = [1, 0, -1, 0][r], dz = [0, 1, 0, -1][r]; for (var i = 0; i < 6; i++) { var o = -1.25 + i * 0.5, top = (i + 1) * 0.5; L.push([dx * o, top / 2, dz * o, dx ? 0.5 : 3, top, dz ? 0.5 : 3, 1]); } }
+    else if (k === 'dr') { if (r === 0) L.push([0, 1.09, 0, 1.16, 2.18, 0.08, 1]); else L.push([0, 1.09, 0, 0.08, 2.18, 1.16, 1]); }
+    return L;
+  }
+  function rwPieceGeo(k, r, dep) {
+    var pos = [], nor = [], uvs = [];
+    rwPieceParts(k, r, dep).forEach(function (q) {
+      var g = rwTexBox(q[3], q[4], q[5]); g.translate(q[0], q[1], q[2]);
+      var ng = g.toNonIndexed(), pa = ng.attributes.position.array, na = ng.attributes.normal.array, ua = ng.attributes.uv.array, i;
+      for (i = 0; i < pa.length; i++) { pos.push(pa[i]); nor.push(na[i]); }
+      for (i = 0; i < ua.length; i++) uvs.push(ua[i]);
+      g.dispose(); ng.dispose();
+    });
+    var G = new THREE.BufferGeometry();
+    G.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    G.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    G.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    G.computeBoundingSphere();
+    return G;
+  }
+  function rwFdDepth(x, z, top) {
+    var mn = 1e9;
+    for (var a = -1; a <= 1; a += 2) for (var b = -1; b <= 1; b += 2) mn = Math.min(mn, rwH(x + a * 1.45, z + b * 1.45));
+    mn = Math.min(mn, rwH(x, z));
+    return Math.max(0.5, top - mn + 0.6);
+  }
+  function rwBuildMats() {
+    if (RW.bmat) return;
+    RW.bmat = [0, 1, 2].map(function (k) { return new THREE.MeshStandardMaterial({ map: rwBuildTex(k), roughness: k === 2 ? 0.55 : 0.9, metalness: k === 2 ? 0.35 : 0 }); });
+    RW.dmat = new THREE.MeshStandardMaterial({ map: rwBuildTex(0), color: 0xb08a68, roughness: 0.85 });
+    RW.hmat = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.4, metalness: 0.7 });
+    RW.gOk = new THREE.MeshBasicMaterial({ color: 0x4fd06a, transparent: true, opacity: 0.38, depthWrite: false });
+    RW.gNo = new THREE.MeshBasicMaterial({ color: 0xe04a3a, transparent: true, opacity: 0.38, depthWrite: false });
+  }
+  function rwPieceSolid(p, on) {
+    var i;
+    if (on && !p.cb.length) {
+      p.parts.forEach(function (q) {
+        if (!q[6]) return;
+        var x = p.x + q[0], y = p.y + q[1], z = p.z + q[2], hw = q[3] / 2, hh = q[4] / 2, hd = q[5] / 2;
+        var b = { minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd, y0: y - hh, h: y + hh, rwp: 1 }, k = { minX: x - hw, maxX: x + hw, minY: y - hh, maxY: y + hh, minZ: z - hd, maxZ: z + hd };
+        boxes.push(b); blockers.push(k); p.cb.push(b); p.bl.push(k);
+      });
+    } else if (!on && p.cb.length) {
+      p.cb.forEach(function (b) { i = boxes.indexOf(b); if (i >= 0) boxes.splice(i, 1); });
+      p.bl.forEach(function (b) { i = blockers.indexOf(b); if (i >= 0) blockers.splice(i, 1); });
+      p.cb = []; p.bl = [];
+    }
+  }
+  function rwPieceAdd(a) {
+    if (!a || !RW.bgroup) return;
+    var id = a[0] | 0; if (!id || RW.pieces[id]) return;
+    var k = String(a[1]); if (!RWB[k]) return;
+    rwBuildMats();
+    var p = { id: id, k: k, x: +a[2], y: +a[3], z: +a[4], r: (a[5] | 0) & 3, g: Math.max(0, Math.min(2, a[6] | 0)), o: String(a[7] || ''), op: a[8] | 0, cb: [], bl: [], ang: 0 };
+    if (rwIsWall(k) || k === 'dr') p.r &= 1;
+    p.dep = k === 'fd' ? rwFdDepth(p.x, p.z, p.y) : 0;
+    p.parts = rwPieceParts(k, p.r, p.dep);
+    if (k === 'dr') {
+      var piv = new THREE.Group(), slab = new THREE.Mesh(rwTexBox(1.16, 2.18, 0.08), RW.dmat), knob = new THREE.Mesh(gBox(0.05, 0.05, 0.14), RW.hmat);
+      slab.position.set(0.58, 1.09, 0); knob.position.set(1.0, 1.0, 0); piv.add(slab); piv.add(knob);
+      var root = new THREE.Group(); root.add(piv); p.piv = piv;
+      if (p.r === 0) { piv.position.set(-0.58, 0, 0); } else { piv.position.set(0, 0, 0.58); piv.rotation.y = Math.PI / 2; p.base = Math.PI / 2; }
+      p.base = p.r === 0 ? 0 : Math.PI / 2; p.ang = p.op ? 1 : 0; piv.rotation.y = p.base - (p.op ? Math.PI / 2 : 0);
+      p.m = root;
+    } else p.m = new THREE.Mesh(rwPieceGeo(k, p.r, p.dep), RW.bmat[p.g]);
+    p.m.position.set(p.x, p.y, p.z);
+    RW.bgroup.add(p.m);
+    p.pk = p.parts.map(function (q) { return { minX: p.x + q[0] - q[3] / 2, maxX: p.x + q[0] + q[3] / 2, minY: p.y + q[1] - q[4] / 2, maxY: p.y + q[1] + q[4] / 2, minZ: p.z + q[2] - q[5] / 2, maxZ: p.z + q[2] + q[5] / 2 }; });
+    if (k === 'dr') { var q0 = p.pk[0]; q0.minX -= 0.3; q0.maxX += 0.3; q0.minZ -= 0.3; q0.maxZ += 0.3; }
+    if (!(k === 'dr' && p.op)) rwPieceSolid(p, true);
+    RW.pieces[id] = p; RW.plist.push(p);
+    if (k === 'fd') rwFdChanged(p);
+    if (p.o === RW.me && RW.pendB && RW.pendB.length) RW.pendB.shift();
+  }
+  function rwPieceDel(id) {
+    var p = RW.pieces[id]; if (!p) return;
+    rwPieceSolid(p, false);
+    if (p.m.parent) p.m.parent.remove(p.m);
+    if (p.m.geometry) p.m.geometry.dispose(); else p.m.traverse(function (o) { if (o.geometry && o.geometry !== gBox(0.05, 0.05, 0.14)) o.geometry.dispose(); });
+    delete RW.pieces[id];
+    var i = RW.plist.indexOf(p); if (i >= 0) RW.plist.splice(i, 1);
+    if (p.k === 'fd') rwFdChanged(p);
+    if (RW.myX[id]) { delete RW.myX[id]; var back = Math.floor((RWB[p.k].c.wood || 0) / 2); if (back > 0) { var left = rwGive('wood', back); if (back - left > 0) rwNote('wood', back - left); } }
+  }
+  function rwPieceDoor(id, op) {
+    var p = RW.pieces[id]; if (!p || p.k !== 'dr') return;
+    p.op = op ? 1 : 0;
+    rwPieceSolid(p, !p.op);
+    if (Math.hypot(p.x - P.x, p.z - P.z) < 40) tone(p.op ? 220 : 180, p.op ? 300 : 120, 0.12, 'triangle', 0.05);
+  }
+  function rwPieceGrade(id, g) {
+    var p = RW.pieces[id]; if (!p || p.k === 'dr') return;
+    p.g = Math.max(0, Math.min(2, g | 0)); p.m.material = RW.bmat[p.g];
+    if (Math.hypot(p.x - P.x, p.z - P.z) < 40) burst(new THREE.Vector3(p.x, p.y + 1.5, p.z), 8, partMatG, 3);
+  }
+  function rwPiecesLoad(list) {
+    RW.plist.slice().forEach(function (p) { rwPieceDel(p.id); });
+    RW.pieces = {}; RW.plist = [];
+    (list || []).forEach(function (a) { rwPieceAdd(a); });
+  }
+  function rwPieceTick(dt) {
+    var i, p;
+    for (i = 0; i < RW.plist.length; i++) {
+      p = RW.plist[i];
+      if (p.k === 'dr') { var tg = p.op ? 1 : 0; if (Math.abs(p.ang - tg) > 0.001) { p.ang += (tg - p.ang) * Math.min(1, dt * 9); p.piv.rotation.y = p.base - p.ang * Math.PI / 2; } }
+    }
+    RW.pcull -= dt;
+    if (RW.pcull <= 0) { RW.pcull = 0.5; for (i = 0; i < RW.plist.length; i++) { p = RW.plist[i]; p.m.visible = Math.abs(p.x - P.x) < 330 && Math.abs(p.z - P.z) < 330; } }
+  }
+  function rwRayBox(o, d, b) {
+    var t0 = 0, t1 = 1e9, oo = [o.x, o.y, o.z], dd = [d.x, d.y, d.z], mn = [b.minX, b.minY, b.minZ], mx = [b.maxX, b.maxY, b.maxZ];
+    for (var i = 0; i < 3; i++) {
+      if (Math.abs(dd[i]) < 1e-9) { if (oo[i] < mn[i] || oo[i] > mx[i]) return -1; continue; }
+      var ta = (mn[i] - oo[i]) / dd[i], tb = (mx[i] - oo[i]) / dd[i]; if (ta > tb) { var tt = ta; ta = tb; tb = tt; }
+      if (ta > t0) t0 = ta; if (tb < t1) t1 = tb; if (t0 > t1) return -1;
+    }
+    return t0;
+  }
+  function rwPieceRay(maxD) {
+    var o = camera.position, d = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion), best = null, bt = maxD;
+    for (var i = 0; i < RW.plist.length; i++) {
+      var p = RW.plist[i]; if (Math.abs(p.x - o.x) > maxD + 3 || Math.abs(p.z - o.z) > maxD + 3) continue;
+      for (var j = 0; j < p.pk.length; j++) { var tt = rwRayBox(o, d, p.pk[j]); if (tt >= 0 && tt < bt) { bt = tt; best = p; } }
+    }
+    return best;
+  }
+  function rwBuildCand() {
+    var k = RW.bsel, o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    var tw = rayWall(o.x, o.y, o.z, dir.x, dir.y, dir.z, 7), hit = tw < 7, tt = Math.min(tw, 5.5);
+    var ax = o.x + dir.x * tt, ay = o.y + dir.y * tt, az = o.z + dir.z * tt, best = null, bd = 2.6, near = [], i, p;
+    for (i = 0; i < RW.plist.length; i++) { p = RW.plist[i]; if (Math.abs(p.x - ax) < 14 && Math.abs(p.z - az) < 14 && Math.abs(p.y - ay) < 14) near.push(p); }
+    function consider(c, px, py, pz) { var dd = Math.hypot(px - ax, (py - ay) * 0.8, pz - az); if (dd < bd) { bd = dd; best = c; } }
+    near.forEach(function (p) {
+      if (k === 'fd' && p.k === 'fd') [[3, 0], [-3, 0], [0, 3], [0, -3]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: 0, snap: true }, p.x + q[0], p.y, p.z + q[1]); });
+      if (rwIsWall(k)) {
+        if (p.k === 'fd' || p.k === 'fl') [[1.5, 0, 1], [-1.5, 0, 1], [0, 1.5, 0], [0, -1.5, 0]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: q[2] }, p.x + q[0], p.y + 1.5, p.z + q[1]); });
+        if (rwIsWall(p.k)) consider({ x: p.x, y: p.y + 3, z: p.z, r: p.r }, p.x, p.y + 4.5, p.z);
+      }
+      if (k === 'fl') {
+        if (rwIsWall(p.k)) { var sx = p.r === 1 ? 1.5 : 0, sz = p.r === 0 ? 1.5 : 0; consider({ x: p.x + sx, y: p.y + 3, z: p.z + sz, r: 0 }, p.x + sx, p.y + 3, p.z + sz); consider({ x: p.x - sx, y: p.y + 3, z: p.z - sz, r: 0 }, p.x - sx, p.y + 3, p.z - sz); }
+        if (p.k === 'fl') [[3, 0], [-3, 0], [0, 3], [0, -3]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: 0 }, p.x + q[0], p.y, p.z + q[1]); });
+      }
+      if (k === 'st' && (p.k === 'fd' || p.k === 'fl')) consider({ x: p.x, y: p.y, z: p.z, r: RW.brot }, p.x, p.y + 0.6, p.z);
+      if (k === 'dr' && p.k === 'dw') consider({ x: p.x, y: p.y, z: p.z, r: p.r }, p.x, p.y + 1.1, p.z);
+    });
+    if (!best && k === 'fd' && hit && dir.y < 0) {   // free foundation: keep it in front of you, never on top of you
+      var hx = ax - P.x, hz = az - P.z, hl = Math.hypot(hx, hz);
+      if (hl < 2.4) { var ux = hl > 0.05 ? hx / hl : -Math.sin(P.yaw), uz = hl > 0.05 ? hz / hl : -Math.cos(P.yaw); ax = P.x + ux * 2.4; az = P.z + uz * 2.4; }
+      best = { x: ax, y: 0, z: az, r: 0, snap: false };
+    }
+    if (!best) return null;
+    best.k = k;
+    if (k === 'fd') {
+      var mn = 1e9, mx = -1e9;
+      for (var a = -1; a <= 1; a += 2) for (var b = -1; b <= 1; b += 2) { var h = rwH(best.x + a * 1.4, best.z + b * 1.4); mn = Math.min(mn, h); mx = Math.max(mx, h); }
+      best.tmin = mn; best.tmax = mx;
+      if (!best.snap) best.y = mx + 0.15;
+      best.dep = Math.max(0.5, best.y - mn + 0.6);
+    } else best.dep = 0;
+    best.why = rwBuildWhy(best);
+    return best;
+  }
+  function rwBuildWhy(c) {
+    var k = c.k, i, p;
+    if (Math.hypot(c.x - P.x, c.z - P.z) > 10) return zt('太远了', 'Too far away');
+    if (rwSafe(c.x, c.z)) return zt('前哨站安全区里不能建造', 'No building in the Outpost safe zone');
+    if (rwNearMon(c.x, c.z, 12)) return zt('离据点太近了', 'Too close to a monument');
+    for (i = 0; i < RW.plist.length; i++) {
+      p = RW.plist[i];
+      if (Math.abs(p.x - c.x) > 3.2 || Math.abs(p.z - c.z) > 3.2 || Math.abs(p.y - c.y) > 3.2) continue;
+      var same = Math.abs(p.x - c.x) < 0.3 && Math.abs(p.z - c.z) < 0.3 && Math.abs(p.y - c.y) < 0.3;
+      if (k === 'fd' && p.k === 'fd' && Math.abs(p.x - c.x) < 2.9 && Math.abs(p.z - c.z) < 2.9 && Math.abs(p.y - c.y) < 3) return zt('和别的地基重叠了', 'Overlaps another foundation');
+      if (same && ((rwIsWall(k) && rwIsWall(p.k)) || (k === p.k) || (k === 'fl' && p.k === 'fd'))) return zt('这里已经有了', 'Something is already here');
+    }
+    if (k === 'fd') {
+      if (c.tmin < 0.25) return zt('不能建在水里或沙滩上', 'Not in the water or on the beach');
+      if (c.y < c.tmax - 0.4) return zt('地面太高，会埋进土里', 'The ground is too high here');
+      if (c.y - c.tmin > 3.4 || (!c.snap && c.tmax - c.tmin > 2.4)) return zt('地面太陡', 'The ground is too steep');
+      var pcx = Math.floor(c.x / RW_CH), pcz = Math.floor(c.z / RW_CH);
+      for (var bz = -1; bz <= 1; bz++) for (var bx = -1; bx <= 1; bx++) {
+        var ch = RW.chunks[(pcx + bx) + ',' + (pcz + bz)]; if (!ch) continue;
+        for (i = 0; i < ch.nodes.length; i++) { var n = ch.nodes[i]; if (rwNodeAlive(n) && Math.abs(n.x - c.x) < 1.5 + n.r && Math.abs(n.z - c.z) < 1.5 + n.r) return zt('有树或石头挡着', 'A tree or rock is in the way'); }
+      }
+    }
+    var parts = rwPieceParts(k, c.r, c.dep || 1);
+    for (i = 0; i < parts.length; i++) {
+      var q = parts[i]; if (!q[6]) continue;
+      var cx = c.x + q[0], cy = c.y + q[1], cz = c.z + q[2];
+      var nx = Math.max(cx - q[3] / 2, Math.min(P.x, cx + q[3] / 2)), nz = Math.max(cz - q[5] / 2, Math.min(P.z, cz + q[5] / 2));
+      if (Math.hypot(P.x - nx, P.z - nz) < 0.42 && cy + q[4] / 2 > P.y + 0.1 && cy - q[4] / 2 < P.y + 1.8) return zt('你站在这里，会卡住自己', 'You are standing in the way');
+    }
+    if (!rwHas(RWB[k].c)) return zt('材料不够：', 'Not enough: ') + rwIN('wood') + ' ' + RWB[k].c.wood;
+    return '';
+  }
+  function rwBuildTick() {
+    var on = RW.on && heldKind() === 'plan' && state === 'playing' && !RW.dead;
+    if (!on) { if (RW.ghost) RW.ghost.visible = false; RW.bc = null; return; }
+    var c = rwBuildCand(); RW.bc = c;
+    if (!c) { if (RW.ghost) RW.ghost.visible = false; return; }
+    rwBuildMats();
+    var key = c.k + c.r + (c.k === 'fd' ? '_' + Math.round(c.dep * 4) : '');
+    RW.gcache = RW.gcache || {};
+    var geo = RW.gcache[key] || (RW.gcache[key] = rwPieceGeo(c.k, c.r, Math.round(c.dep * 4) / 4 || 1));
+    if (!RW.ghost) { RW.ghost = new THREE.Mesh(geo, RW.gOk); RW.ghost.renderOrder = 5; RW.group.add(RW.ghost); }
+    if (RW.ghost.parent !== RW.group) RW.group.add(RW.ghost);
+    RW.ghost.geometry = geo; RW.ghost.material = c.why ? RW.gNo : RW.gOk; RW.ghost.visible = true;
+    RW.ghost.position.set(c.x, c.y, c.z);
+  }
+  function rwPlace() {
+    var c = RW.bc;
+    if (!c) { banner(RW.bsel === 'fd' ? zt('对着地面放地基', 'Aim at the ground to place a foundation') : RW.bsel === 'dr' ? zt('门要装在门框墙上', 'Doors go into a doorway') : RW.bsel === 'st' ? zt('楼梯要放在地基或楼板上', 'Stairs go on a foundation or floor') : RW.bsel === 'fl' ? zt('楼板要搭在墙顶上', 'Floors sit on top of walls') : zt('墙要放在地基或楼板的边上', 'Walls go on the edge of a foundation or floor'), 1400); tone(150, 120, 0.06, 'square', 0.04); return; }
+    if (c.why) { banner(c.why, 1300); tone(150, 120, 0.06, 'square', 0.04); return; }
+    if (!rwPay(RWB[c.k].c)) return;
+    var R = function (v) { return Math.round(v * 100) / 100; };
+    dSend({ t: 'Rb', k: c.k, x: R(c.x), y: R(c.y), z: R(c.z), r: c.r });
+    RW.pendB = RW.pendB || []; RW.pendB.push(c.k);
+    tone(330, 220, 0.09, 'square', 0.07); tone(660, 500, 0.05, 'triangle', 0.04);
+    burst(new THREE.Vector3(c.x, c.y + 0.4, c.z), 6, partMatW, 3);
+  }
+  function rwUpCost(k, g) { var base = RWB[k].c.wood || 50; return g === 1 ? { stone: Math.round(base * 1.5) } : { metal: Math.round(base * 0.8) }; }
+  function rwHammerHit(p) {
+    burst(new THREE.Vector3(p.x, p.y + 1.2, p.z), 4, partMatG, 2.5); VM.shake = 0.15; tone(600, 400, 0.05, 'square', 0.06);
+    if (p.o !== RW.me) { banner(zt('这不是你的建筑', 'This is not yours'), 1200); return; }
+    if (p.k === 'dr') { banner(zt('门不能升级', 'Doors cannot be upgraded'), 1200); return; }
+    if (p.g >= 2) { banner(zt('已经是金属了', 'Already metal'), 1200); return; }
+    var cost = rwUpCost(p.k, p.g + 1);
+    if (!rwPay(cost)) { banner(zt('升级需要 ', 'Upgrade needs ') + Object.keys(cost).map(function (kk) { return rwIN(kk) + ' ' + cost[kk]; }).join(', '), 1500); return; }
+    dSend({ t: 'Ru', id: p.id, g: p.g + 1 });
+    tone(400, 900, 0.15, 'triangle', 0.07);
+  }
+  function rwDemolish() {
+    var p = rwPieceRay(5);
+    if (!p) return;
+    if (p.o !== RW.me) { banner(zt('这不是你的建筑', 'This is not yours'), 1200); return; }
+    var nm = zt(RWB[p.k].n[0], RWB[p.k].n[1]);
+    if (RW.dconf === p.id && gtime - RW.dconfT < 2.5) { RW.myX[p.id] = 1; dSend({ t: 'Rx', id: p.id }); RW.dconf = 0; tone(200, 80, 0.2, 'sawtooth', 0.07); }
+    else { RW.dconf = p.id; RW.dconfT = gtime; banner(zt('再按一次右键，拆除这个' + nm, 'Right click again to remove this ' + nm), 1800); }
+  }
+  function rwBuildMenu() {
+    if (state !== 'playing') return;
+    if (!RW.buildEl) {
+      var el = document.createElement('div'); el.id = 'rwBuild'; stage.appendChild(el); RW.buildEl = el;
+      el.addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('[data-k]') : null;
+        if (b) { RW.bsel = b.getAttribute('data-k'); tone(500, 700, 0.05, 'square', 0.04); }
+        if (b || e.target === el || (e.target.closest && e.target.closest('[data-x]'))) rwUiClose();
+      });
+    }
+    var h = '<div class="rwp" style="max-width:560px;width:100%"><h3>' + zt('建筑图纸 · 选择部件', 'BUILDING PLAN · PICK A PART') + '</h3><div class="rwbg">';
+    RWB_ORDER.forEach(function (k) {
+      h += '<button class="rwbp' + (k === RW.bsel ? ' on' : '') + '" data-k="' + k + '" type="button"><svg viewBox="0 0 48 48" width="48" height="48">' + RWB_SVG[k] + '</svg>' + zt(RWB[k].n[0], RWB[k].n[1]) + '<small>' + rwCostTxt(RWB[k].c, true) + '</small></button>';
+    });
+    h += '</div><p>' + zt('地基放在平地上，旁边的地基会自动对齐；墙放在地基或楼板的边上；楼板搭在墙顶上；门装进门框墙。' + keyLabel(KB.reload) + ' 旋转楼梯。拿锤子：左键升级（石头、金属更好看也更结实的样子），右键拆除自己的建筑。门只有建门的人能开关。', 'Foundations go on fairly flat ground and snap to each other; walls go on foundation or floor edges; floors sit on top of walls; doors go into doorways. ' + keyLabel(KB.reload) + ' turns stairs. With the hammer: left click upgrades to stone or metal, right click removes your own parts. Only the builder can open a door.') + '</p>' +
+      '<button class="rwbtn alt" data-x="1" type="button">' + zt('关闭', 'Close') + '</button></div>';
+    RW.buildEl.innerHTML = h;
+    state = 'bag'; RW.ui = 'build'; releaseInput();
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    RW.buildEl.style.display = 'flex';
+    if (RW.promptEl) RW.promptEl.style.display = 'none';
+  }
+
+  /* ---- prompt line in the middle of the screen ---- */
+  function rwPromptTick() {
+    if (!RW.promptEl) return;
+    var txt = '';
+    if (state === 'playing' && !RW.dead) {
+      var hk = heldKind(), pc = rwPieceRay(3.2);
+      if (pc && pc.k === 'dr') txt = pc.o === RW.me ? KE() + ' ' + (pc.op ? zt('关门', 'Close the door') : zt('开门', 'Open the door')) : zt('这扇门锁着（不是你的）', 'Locked door (not yours)');
+      if (!txt) { var dp = rwDropTarget(); if (dp) txt = KE() + ' ' + zt('捡起 ', 'Pick up ') + rwDropName(dp) + zt('（不捡就留在地上，过一会儿消失）', ' (or leave it: it vanishes after a while)'); }
+      if (!txt) { var cr = rwFindNode(function (q) { return q.kind === 'crate'; }); if (cr) txt = KE() + ' ' + zt('打开补给箱', 'Open the crate'); }
+      if (!txt && hk === 'plan') { var c = RW.bc, nm = zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]); txt = nm + ' · ' + rwIN('wood') + ' ' + RWB[RW.bsel].c.wood + ' (' + rwCount('wood') + ')' + (c && c.why ? ' · ' + c.why : c ? ' · ' + KL1() + zt(' 放置', ' place') : '') + ' · ' + KR() + zt(' 换部件', ' parts'); }
+      if (!txt && hk === 'hammer' && pc) txt = zt(RWB[pc.k].n[0], RWB[pc.k].n[1]) + ' · ' + zt(RW_GRADE[pc.g][0], RW_GRADE[pc.g][1]) + (pc.o === RW.me ? (pc.g < 2 && pc.k !== 'dr' ? ' · ' + KL1() + zt(' 升级', ' upgrade') + '（' + Object.keys(rwUpCost(pc.k, pc.g + 1)).map(function (kk) { return rwIN(kk) + ' ' + rwUpCost(pc.k, pc.g + 1)[kk]; }).join('') + '）' : '') + ' · ' + KR() + zt(' 拆除', ' remove') : ' · ' + zt('别人的', "someone else's"));
+      if (!txt && VT[hk] && hk !== 'hammer') { var n = rwFindNode(function (q) { return q.kind !== 'crate'; }); if (n) txt = KL() + ' ' + (n.kind === 'tree' ? zt('砍树，得到木材', 'chop: wood') : n.kind === 'rock' ? zt('敲石头，得到石头', 'mine: stone') : zt('开采，得到金属矿', 'mine: metal ore')); }
+    }
+    if (txt !== RW.promptTxt) { RW.promptTxt = txt; RW.promptEl.firstChild.textContent = txt; RW.promptEl.style.display = txt ? 'block' : 'none'; }
+  }
+
+  /* ---- grass: instanced tufts that sway in the wind, only near the player ---- */
+  var GRASS = { cells: {}, geo: null, mat: null, uT: { value: 0 }, cell: 16, rad: 3 };
+  function rwGrassInit() {
+    if (GRASS.geo) return;
+    var pos = [], col = [], nor = [], rg = seeded(77);
+    for (var b = 0; b < 7; b++) {
+      var a = b / 7 * Math.PI * 2 + rg() * 0.6, r0 = rg() * 0.14, cx = Math.cos(a) * r0, cz = Math.sin(a) * r0, wa = a + Math.PI / 2 + (rg() - 0.5) * 0.8;
+      var w = 0.03 + rg() * 0.022, h = 0.55 + rg() * 0.5, lean = 0.08 + rg() * 0.2, px = Math.cos(wa) * w, pz = Math.sin(wa) * w;
+      var A = [cx - px, 0, cz - pz], B = [cx + px, 0, cz + pz], C = [cx + Math.cos(a) * lean, h, cz + Math.sin(a) * lean];
+      [[A, B, C], [B, A, C]].forEach(function (tr) { tr.forEach(function (v, vi) { pos.push(v[0], v[1], v[2]); var s = vi === 2 ? 1 : 0.42; col.push(s, s, s); nor.push(0, 1, 0); }); });
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeBoundingSphere();
+    GRASS.geo = g;
+    GRASS.mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    GRASS.mat.onBeforeCompile = function (sh) {
+      sh.uniforms.uT = GRASS.uT;
+      sh.vertexShader = 'uniform float uT;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+        '#include <begin_vertex>\n#ifdef USE_INSTANCING\n  float swG = sin(uT * 1.7 + instanceMatrix[3][0] * 0.23 + instanceMatrix[3][2] * 0.19) + 0.45 * sin(uT * 3.3 + instanceMatrix[3][0] * 0.61 - instanceMatrix[3][2] * 0.4);\n  transformed.x += swG * 0.09 * position.y;\n  transformed.z += swG * 0.05 * position.y;\n#endif\n');
+    };
+  }
+  function rwGrassCell(cx, cz) {
+    var S = GRASS.cell, dens = SET.res === 0 ? 0.3 : SET.res === 1 ? 0.6 : 1, N = Math.round(620 * dens);
+    var mesh = new THREE.InstancedMesh(GRASS.geo, GRASS.mat, N), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color(), c3 = [0, 0, 0];
+    var rg = seeded(hashStr('gr' + cx + '_' + cz + RW.seed)), n = 0, fds = rwFdNear(cx * S, cz * S, cx * S + S, cz * S + S);
+    for (var i = 0; i < N * 1.8 && n < N; i++) {
+      var x = cx * S + rg() * S, z = cz * S + rg() * S, h = rwH(x, z);
+      if (h < 1.25 || h > 33) continue;
+      if (fds.length && rwFdAt(fds, x, z, 0.35)) continue;   // no grass growing up through floors
+      var sl = Math.abs(rwH(x + 1, z) - h) + Math.abs(rwH(x, z + 1) - h); if (sl > 0.8) continue;
+      if (rwMonW(x, z) > 0.12) continue;
+      if (rg() > 0.35 + rwFbm(x / 23, z / 23, RW.s + 91, 2) * 1.05) continue;   // patchy meadows
+      rwTerrainColor(x, z, h, sl * 0.5, c3);
+      var dry = rg() < 0.07, v = (rg() - 0.5) * 0.08;
+      if (dry) col.setRGB(0.78 + v, 0.68 + v, 0.34); else col.setRGB(c3[0] * 1.15 + v * 0.6, c3[1] * 1.3 + v, c3[2] * 0.95);
+      e.set(0, rg() * 6.28, 0); q.setFromEuler(e);
+      var sc = 0.7 + rg() * 0.65; s.set(sc, sc * (0.55 + rg() * 0.65), sc); p.set(x, h - 0.04, z);
+      m4.compose(p, q, s); mesh.setMatrixAt(n, m4); mesh.setColorAt(n, col); n++;
+    }
+    mesh.count = n; mesh.frustumCulled = false;
+    mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    RW.group.add(mesh);
+    return mesh;
+  }
+  function rwGrassTick() {
+    if (!GRASS.geo || !RW.group) return;
+    GRASS.uT.value = gtime;
+    var S = GRASS.cell, pcx = Math.floor(P.x / S), pcz = Math.floor(P.z / S), R = GRASS.rad, need = [], i, j, k;
+    for (j = -R; j <= R; j++) for (i = -R; i <= R; i++) { if (i * i + j * j > R * R + 1) continue; k = (pcx + i) + ',' + (pcz + j); if (!GRASS.cells[k]) need.push([i * i + j * j, pcx + i, pcz + j, k]); }
+    need.sort(function (a, b) { return a[0] - b[0]; });
+    for (i = 0; i < need.length && i < 2; i++) GRASS.cells[need[i][3]] = { cx: need[i][1], cz: need[i][2], m: rwGrassCell(need[i][1], need[i][2]) };
+    for (k in GRASS.cells) {
+      var c = GRASS.cells[k], dx = c.cx - pcx, dz = c.cz - pcz;
+      if (dx * dx + dz * dz > (R + 1.5) * (R + 1.5)) { if (c.m.parent) c.m.parent.remove(c.m); if (c.m.dispose) c.m.dispose(); delete GRASS.cells[k]; }
+    }
+  }
+  function rwFdAt(list, x, z, pad) { for (var i = 0; i < list.length; i++) { var p = list[i]; if (Math.abs(p.x - x) < 1.5 + pad && Math.abs(p.z - z) < 1.5 + pad) return true; } return false; }
+  function rwFdNear(x0, z0, x1, z1) { var o = []; for (var i = 0; i < RW.plist.length; i++) { var p = RW.plist[i]; if (p.k === 'fd' && p.x > x0 - 4 && p.x < x1 + 4 && p.z > z0 - 4 && p.z < z1 + 4) o.push(p); } return o; }
+  function rwFdChanged(p) {   // a foundation came or went: regrow the grass and bushes around it
+    if (RW.tearing) return;
+    var S = GRASS.cell, seen = {}, a, b;
+    for (a = -1; a <= 1; a += 2) for (b = -1; b <= 1; b += 2) {
+      var gk = Math.floor((p.x + a * 2.2) / S) + ',' + Math.floor((p.z + b * 2.2) / S), c = GRASS.cells[gk];
+      if (c) { if (c.m.parent) c.m.parent.remove(c.m); if (c.m.dispose) c.m.dispose(); delete GRASS.cells[gk]; }
+      var ck = Math.floor((p.x + a * 3.6) / RW_CH) + ',' + Math.floor((p.z + b * 3.6) / RW_CH);
+      if (RW.chunks[ck] && !seen[ck]) { seen[ck] = 1; rwRebuildDecor(RW.chunks[ck]); }
+    }
+  }
+  function rwGrassClear() { for (var k in GRASS.cells) { var c = GRASS.cells[k]; if (c.m.parent) c.m.parent.remove(c.m); if (c.m.dispose) c.m.dispose(); } GRASS.cells = {}; }
+
+  /* ---- nicer low-poly scenery pieces (merged into each chunk's decor mesh) ---- */
+  function rwFrustumB(B, x, y, z, r0, r1, h, seg, col, cap) {
+    var b = [], tp = [], i;
+    for (i = 0; i <= seg; i++) { var a = i / seg * Math.PI * 2; b.push([x + Math.cos(a) * r0, y, z + Math.sin(a) * r0]); tp.push([x + Math.cos(a) * r1, y + h, z + Math.sin(a) * r1]); }
+    for (i = 0; i < seg; i++) { var sh = 0.88 + ((i * 7) % 4) * 0.05; rwQuad(B, b[i + 1], b[i], tp[i], tp[i + 1], [col[0] * sh, col[1] * sh, col[2] * sh]); }
+    if (cap) { var c = [x, y + h, z], cc = cap === true ? [col[0] * 1.6, col[1] * 1.6, col[2] * 1.5] : cap; for (i = 0; i < seg; i++) rwTri(B, tp[i + 1], tp[i], c, cc); }
+  }
+  function rwConeB2(B, x, y, z, r, h, seg, col, rg) {   // ragged, slightly drooping conifer layer with an underside
+    var rim = [], i, ap = [x + (rg() - 0.5) * 0.1, y + h, z + (rg() - 0.5) * 0.1], under = [x, y + h * 0.28, z];
+    for (i = 0; i <= seg; i++) {
+      if (i === seg) { rim.push(rim[0]); continue; }
+      var a = i / seg * Math.PI * 2 + rg() * 0.25, rr = r * (0.82 + rg() * 0.3);
+      rim.push([x + Math.cos(a) * rr, y - rg() * 0.3, z + Math.sin(a) * rr]);
+    }
+    for (i = 0; i < seg; i++) {
+      var sh = 0.84 + ((i * 5) % 4) * 0.07;
+      rwTri(B, rim[i + 1], rim[i], ap, [col[0] * sh, col[1] * sh, col[2] * sh]);
+      rwTri(B, rim[i], rim[i + 1], under, [col[0] * 0.55, col[1] * 0.6, col[2] * 0.55]);
+    }
+  }
+  function rwBlobB(B, x, y, z, rx, ry, rz, col, rg, jit) {   // lumpy ball: leaves, bushes, boulders
+    var LAT = 4, LON = 7, P2 = [], i, j;
+    jit = jit === undefined ? 0.18 : jit;
+    for (j = 0; j <= LAT; j++) {
+      var ph = j / LAT * Math.PI, row = [];
+      for (i = 0; i <= LON; i++) {
+        if (i === LON) { row.push(row[0]); continue; }
+        var th = i / LON * Math.PI * 2 + (j % 2) * 0.4, k = (j === 0 || j === LAT) ? 1 : 1 + (rg() - 0.5) * 2 * jit;
+        row.push([x + Math.sin(ph) * Math.cos(th) * rx * k, y + Math.cos(ph) * ry * (j === 0 || j === LAT ? 1 : 1 + (rg() - 0.5) * jit), z + Math.sin(ph) * Math.sin(th) * rz * k]);
+      }
+      P2.push(row);
+    }
+    for (j = 0; j < LAT; j++) for (i = 0; i < LON; i++) {
+      var ny = Math.cos((j + 0.5) / LAT * Math.PI), sh = 0.72 + 0.32 * (ny * 0.5 + 0.5) + ((i * 3 + j) % 3) * 0.03;
+      rwQuad(B, P2[j + 1][i + 1], P2[j + 1][i], P2[j][i], P2[j][i + 1], [Math.min(1, col[0] * sh), Math.min(1, col[1] * sh), Math.min(1, col[2] * sh)]);
+    }
+  }
+  function rwLimbB(B, a, b, r, col) {
+    var nx = b[0] - a[0], ny = b[1] - a[1], nz = b[2] - a[2], nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    var ux = ny * 0 - nz * 1, uy = nz * 0 - nx * 0, uz = nx * 1 - ny * 0, ul = Math.hypot(ux, uy, uz);
+    if (ul < 1e-3) { ux = 1; uy = 0; uz = 0; ul = 1; } ux /= ul; uy /= ul; uz /= ul;
+    var vx = uy * nz - uz * ny, vy = uz * nx - ux * nz, vz = ux * ny - uy * nx;
+    var ra = [], rb = [], i;
+    for (i = 0; i <= 5; i++) { var t2 = i / 5 * Math.PI * 2, cu = Math.cos(t2), sv = Math.sin(t2);
+      ra.push([a[0] + (ux * cu + vx * sv) * r, a[1] + (uy * cu + vy * sv) * r, a[2] + (uz * cu + vz * sv) * r]);
+      rb.push([b[0] + (ux * cu + vx * sv) * r * 0.7, b[1] + (uy * cu + vy * sv) * r * 0.7, b[2] + (uz * cu + vz * sv) * r * 0.7]); }
+    for (i = 0; i < 5; i++) rwQuad(B, ra[i + 1], ra[i], rb[i], rb[i + 1], col);
+  }
+  function rwClutterB(B, ch) {   // bushes, small stones, fallen logs and flowers: decoration only, you walk through them
+    var rg = seeded(hashStr('cl' + ch.cx + '_' + ch.cz + RW.seed)), S = RW_CH, i, k, fds = rwFdNear(ch.cx * S, ch.cz * S, ch.cx * S + S, ch.cz * S + S);
+    for (i = 0; i < 34; i++) {
+      var x = ch.cx * S + rg() * S, z = ch.cz * S + rg() * S, h = rwH(x, z), ty = rg();
+      if (h < 1.3 || h > 36 || rwMonW(x, z) > 0.1) continue;
+      if (fds.length && rwFdAt(fds, x, z, 2)) continue;
+      if (ty < 0.5) { var bc = rwGreen(rg() * 0.6), nb = 2 + Math.floor(rg() * 2), bs = 0.45 + rg() * 0.45; for (k = 0; k < nb; k++) rwBlobB(B, x + (rg() - 0.5) * bs * 1.4, h + bs * 0.55, z + (rg() - 0.5) * bs * 1.4, bs, bs * 0.75, bs, [bc[0] * 0.85, bc[1] * 0.9, bc[2] * 0.85], rg, 0.22); }
+      else if (ty < 0.74) { var rs = 0.22 + rg() * 0.35, gc = 0.42 + rg() * 0.12; rwBlobB(B, x, h + rs * 0.2, z, rs, rs * 0.6, rs * 0.85, [gc, gc * 0.98, gc * 0.94], rg, 0.25); }
+      else if (ty < 0.86) { var la = rg() * 6.28, ll = 1.6 + rg() * 1.6; rwLimbB(B, [x, h + 0.16, z], [x + Math.cos(la) * ll, h + 0.13, z + Math.sin(la) * ll], 0.17, [0.35, 0.25, 0.15]); }
+      else { var fc = [[0.95, 0.92, 0.85], [0.95, 0.82, 0.25], [0.7, 0.5, 0.85], [0.9, 0.4, 0.35]][Math.floor(rg() * 4)]; for (k = 0; k < 6; k++) { var fx = x + (rg() - 0.5) * 1.6, fz = z + (rg() - 0.5) * 1.6, fh = rwH(fx, fz); rwBoxB(B, fx, fh, fz, 0.025, 0.32, 0.025, [0.25, 0.45, 0.2]); rwBoxB(B, fx, fh + 0.32, fz, 0.1, 0.06, 0.1, fc); } }
+    }
+  }
+  function rwDetailTex() {   // fine grey speckle multiplied over the terrain colours
+    var c = document.createElement('canvas'); c.width = c.height = 256;
+    var x = c.getContext('2d'), img = x.createImageData(256, 256), d = img.data, i;
+    for (i = 0; i < 256 * 256; i++) { var v = 214 + Math.random() * 41; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; }
+    x.putImageData(img, 0, 0);
+    for (i = 0; i < 1100; i++) { var g = 140 + Math.random() * 100 | 0; x.fillStyle = 'rgba(' + g + ',' + g + ',' + g + ',.35)'; x.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2.5, 1 + Math.random() * 4); }
+    var t2 = new THREE.CanvasTexture(c); t2.wrapS = t2.wrapT = THREE.RepeatWrapping;
+    try { t2.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
+    return t2;
+  }
+  function rwSky() {
+    var R = 850, sg = new THREE.SphereGeometry(R, 28, 14), pa = sg.attributes.position, cols = [];
+    for (var i = 0; i < pa.count; i++) {
+      var y = Math.max(0, pa.getY(i) / R), k = Math.pow(y, 0.55);
+      cols.push(0.8 + (0.34 - 0.8) * k, 0.88 + (0.57 - 0.88) * k, 0.93 + (0.83 - 0.93) * k);
+    }
+    sg.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    var m = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+    m.renderOrder = -1; m.frustumCulled = false;
+    return m;
+  }
+
+  /* ---- outpost shop: sell what you gathered ---- */
+  var RW_SELL = [['wood', 8], ['stone', 12], ['metal', 30]];
+  function rwSellHtml() {
+    var h = '<div class="shrow"><div><b>' + zt('收购', 'Sell') + '</b><small>' + zt('前哨站收购你采集的材料，每次卖 100 个。', 'The Outpost buys what you gather, 100 at a time.') + '</small></div></div>';
+    RW_SELL.forEach(function (q, i) {
+      var have = rwCount(q[0]);
+      h += '<div class="shrow"><div><b>' + rwIN(q[0]) + '<em>×' + have + '</em></b><small>' + zt('100 个换 ' + q[1] + ' 金币', '100 for ' + q[1] + ' coins') + '</small></div><button type="button" class="buy" data-k="sell" data-i="' + i + '"' + (have >= 100 ? '' : ' disabled') + '>+' + q[1] + '</button></div>';
+    });
+    return h;
+  }
+  function rwSell(i) { var q = RW_SELL[i]; if (!q || !rwTake(q[0], 100)) return; coins += q[1]; tone(700, 1000, 0.1, 'sine', 0.08); }
+
+  /* ---- per frame, called from rwTick ---- */
+  function rwTick2(dt) {
+    if (RW.sky) RW.sky.position.copy(camera.position);
+    rwDropTick(dt);
+    rwGrassTick();
+    rwPieceTick(dt);
+    rwBuildTick();
+    rwPromptTick();
+    RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); }
+  }
+  function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag only you can see
+    var items = [];
+    RW.inv.forEach(function (s) { if (s) items.push({ id: s.id, n: s.n }); });
+    if (items.length) rwDropAdd(items, P.x, P.z, null, 900, P.y, true);
+    rwInvClear(); rwSyncOwned(); rwHotRender(true);
+  }
+
+  EN['收购'] = 'Sell';
 
   /* ---------- loop ---------- */
   var last = performance.now();
