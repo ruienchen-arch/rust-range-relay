@@ -40,23 +40,30 @@ function worldSeed() {
   if (!db.world) { db.world = { seed: buildSeed || playerSeed || ('w' + crypto.randomBytes(4).toString('hex')) }; saveDb(); }   // reuse the island the buildings were made on
   return process.env.WORLD_SEED || db.world.seed;
 }
+const AUTH_QUIET = 6000;   // the authority's game must send something at least this often (it sends ~20 times a second while playing)
 function electAuthority() {
-  let best = 0;
-  for (const id of world.clients.keys()) if (!best || id < best) best = id;
+  let best = 0, live = 0; const now = Date.now();
+  for (const [id, o] of world.clients) { if (!best || id < best) best = id; if (now - (o.last || 0) < AUTH_QUIET && (!live || id < live)) live = id; }
+  if (live) best = live;
   if (best !== world.auth) { world.auth = best; for (const o of world.clients.values()) o.send(JSON.stringify({ op: 'authority', id: best })); }
 }
 function worldJoin(c, m) {
   checkBuildSeed(); checkPlayerSeed();
+  { const u0 = readToken(m.token), g0 = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
+    const ow = u0 ? 'u:' + u0 : g0 ? 'k:' + crypto.createHash('sha256').update(g0).digest('hex').slice(0, 16) : '';
+    if (ow) for (const o of [...world.clients.values()]) if (o.owner === ow) { o.close(); onClose(o); }   // back from the lobby: drop the old (maybe half-dead) connection
+  }
   const peers = [...world.clients.keys()], names = {};
   for (const o of world.clients.values()) names[o.id] = o.name || '';
   c.world = true; c.room = { code: 'WORLD', duel: false, clients: world.clients }; c.id = world.nextId++; c.x = 0; c.z = 0; c.hasPos = false;
   const user = readToken(m.token), gk = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
   c.owner = user ? 'u:' + user : gk ? 'k:' + crypto.createHash('sha256').update(gk).digest('hex').slice(0, 16) : 'c:' + c.id;   // who owns what this player builds
   c.name = user ? db.users[user].name : guestName(gk || ('id' + c.id + Date.now()));   // players who are not logged in get a random name (the same one every time in this browser)
+  c.last = Date.now();
   world.clients.set(c.id, c);
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
-  if (!world.auth) world.auth = c.id;
+  if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).last || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub) }));
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
   chatPush({ t: 'RJ', n: c.name, j: 1 });
@@ -456,7 +463,7 @@ function parse(c) {
     const data = Buffer.from(b.subarray(off + 4, off + 4 + len));
     for (let i = 0; i < data.length; i++) data[i] ^= mask[i & 3];
     c.buf = b.subarray(off + 4 + len);
-    if (op === 0x8) { c.close(); return; }
+    if (op === 0x8) { c.close(); onClose(c); return; }
     if (op === 0x9) { c.socket.write(frame(0xA, data)); continue; }
     if (op === 0xA) { c.alive = true; continue; }
     if (op === 0x1 || op === 0x0) {
@@ -479,6 +486,7 @@ function newCode() {
 const J = (o) => JSON.stringify(o);
 
 function onMessage(c, text) {
+  c.last = Date.now();
   if (!c.room) {                       // first message: create or join
     let m; try { m = JSON.parse(text); } catch (e) { return; }
     if (!m || typeof m.op !== 'string') return;
@@ -559,7 +567,11 @@ function onClose(c) {
 }
 
 // keep connections alive (free hosts drop idle sockets) and clear dead ones
-const clientsAll = () => { const l = []; for (const r of rooms.values()) for (const c of r.clients.values()) l.push(c); return l; };
+const clientsAll = () => { const l = [...world.clients.values()]; for (const r of rooms.values()) for (const c of r.clients.values()) l.push(c); return l; };   // the wild too (it used to be missed)
+setInterval(() => {   // the authority went quiet (closed tab, lost connection, hidden tab): hand spawning to someone who is playing
+  const a = world.clients.get(world.auth);
+  if (world.clients.size && (!a || Date.now() - (a.last || 0) > AUTH_QUIET)) electAuthority();
+}, 2000).unref();
 setInterval(() => {
   for (const c of clientsAll()) {
     if (!c.alive) { c.socket.destroy(); continue; }
