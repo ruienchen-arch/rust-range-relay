@@ -2911,7 +2911,7 @@ Object.assign(EN, {
         if (ud && ud.rp !== undefined) {
           var rpk = 'P' + ud.rp; if (seen.indexOf(rpk) >= 0) continue;
           seen.push(rpk);
-          rwHitPlayer(ud.rp, (ud.head ? d.head : d.dmg) * CH.dmg * st.dmg * DU.K, !!ud.head);
+          rwHitPlayer(ud.rp, (ud.head ? d.head : d.dmg) * CH.dmg * st.dmg * DU.K, !!ud.head, 'g' + cur);
           end = hit.point.clone(); hitAny = true; burst(hit.point, 3, partMatO, 4);
           if (left-- <= 0) { stopped = true; break; }
           continue;
@@ -3419,9 +3419,11 @@ Object.assign(EN, {
   /* ---------- input ---------- */
   document.addEventListener('keydown', function (e) {
     var c = e.code;
+    if (RW && RW.chatOn) return;   // typing in the chat box
     if ([KB.jump, 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(c) >= 0 && state === 'playing') e.preventDefault();
     keys[c] = true;
     if (state === 'playing') {
+      if (RW.on && (c === 'Enter' || c === 'NumpadEnter') && !e.repeat) { e.preventDefault(); keys[c] = false; rwChatOpen(); return; }
       if (c === KB.reload) reload();
       if (c === KB.pause) pause();
       if (c === KB.use && inShop) openShop();
@@ -5224,9 +5226,9 @@ Object.assign(EN, {
       var h = p.rem.userData.hit; for (var k = 0; k < h.length; k++) arr.push(h[k]);
     }
   }
-  function rwHitPlayer(id, dmg, head) {
+  function rwHitPlayer(id, dmg, head, w) {
     var now = performance.now();
-    dSend({ t: 'Rd', d: Math.min(150, Math.round(dmg * 10) / 10), h: head ? 1 : 0, to: id });
+    dSend({ t: 'Rd', d: Math.min(150, Math.round(dmg * 10) / 10), h: head ? 1 : 0, w: w || '', to: id });
     RW.lastHit = now;
   }
   function rwTakeHit(d, from) {
@@ -5237,6 +5239,7 @@ Object.assign(EN, {
   function rwDie() {
     if (RW.dead) return;
     RW.dead = true; RW.deadT = 0; releaseInput(); rwUiClose(true); rwDropOnDeath();
+    rwDeathReport();
     if (RW.attacker && gtime - RW.attackT < 15) dSend({ t: 'Rk', to: RW.attacker });
     RW.attacker = 0;
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
@@ -5313,16 +5316,16 @@ Object.assign(EN, {
       e.g.rotation.y = Math.atan2(dx, dz);
       if (ty === 'rusher' || ty === 'tank' || ty === 'bomber') {
         mv = dd > 1.3 ? 1 : 0; e.melee = (e.melee || 0) - dt;
-        if (ty === 'bomber') { if (dd < 2.3) { e.dead = true; scene.remove(e.g); var ix = enemies.indexOf(e); if (ix >= 0) enemies.splice(ix, 1); if (e.slot) { e.slot.e = null; e.slot.t = gtime + 90; } explode(pos.x, pos.y + 1, pos.z, 4, 34, false); return true; } }
-        else if (dd < (ty === 'tank' ? 2.3 : 1.7) && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'tank' ? 1.2 : 0.8; dmgTP(TP, ty === 'tank' ? 22 : 12); }
+        if (ty === 'bomber') { if (dd < 2.3) { e.dead = true; scene.remove(e.g); var ix = enemies.indexOf(e); if (ix >= 0) enemies.splice(ix, 1); if (e.slot) { e.slot.e = null; e.slot.t = gtime + 90; } rwNpcHurtMe(TP, 'bomber'); explode(pos.x, pos.y + 1, pos.z, 4, 34, false); return true; } }
+        else if (dd < (ty === 'tank' ? 2.3 : 1.7) && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'tank' ? 1.2 : 0.8; rwNpcHurtMe(TP, ty); dmgTP(TP, ty === 'tank' ? 22 : 12); }
       } else {
         var near = ty === 'sniper' ? 24 : 7, far = ty === 'sniper' ? 42 : 15;
         if (dd > far) mv = 1; else if (dd < near) mv = -0.6;
         e.cd = (e.cd === undefined ? 1 : e.cd) - dt;
         if (ty === 'sniper') {
-          if (e.charge > 0) { e.charge -= dt; mv = 0; if (e.charge <= 0) { fireBolt(pos.x, pos.y + 1.7, pos.z, 38, 24, 0, boltMatC, 0.1); tone(900, 200, 0.2, 'sawtooth', 0.09); } }
+          if (e.charge > 0) { e.charge -= dt; mv = 0; if (e.charge <= 0) { rwNpcHurtMe(TP, ty); fireBolt(pos.x, pos.y + 1.7, pos.z, 38, 24, 0, boltMatC, 0.1); tone(900, 200, 0.2, 'sawtooth', 0.09); } }
           else if (e.cd <= 0 && dd < 75) { e.charge = 0.8; e.cd = 3.8 + Math.random(); tone(500, 1200, 0.7, 'sine', 0.05); }
-        } else if (e.cd <= 0 && dd < 34) { e.cd = 1.5 + Math.random() * 1.1; fireBolt(pos.x, pos.y + 1.3, pos.z, 15, 9, 0); tone(300, 180, 0.15, 'square', 0.05); }
+        } else if (e.cd <= 0 && dd < 34) { e.cd = 1.5 + Math.random() * 1.1; rwNpcHurtMe(TP, ty); fireBolt(pos.x, pos.y + 1.3, pos.z, 15, 9, 0); tone(300, 180, 0.15, 'square', 0.05); }
       }
     } else {
       var tx = home > m.r * 0.75 ? m.x - pos.x : (e.wx === undefined ? 0 : e.wx - pos.x), tz = home > m.r * 0.75 ? m.z - pos.z : (e.wz === undefined ? 0 : e.wz - pos.z), tl = Math.hypot(tx, tz);
@@ -5341,7 +5344,8 @@ Object.assign(EN, {
   function rwMsg(m) {
     switch (m.t) {
       case 'Rs': rwSetNode(String(m.id), +m.hp); break;
-      case 'Rd': rwTakeHit(+m.d, m.i | 0); break;
+      case 'Rd': RW.attW = String(m.w || ''); RW.attH = m.h | 0; rwTakeHit(+m.d, m.i | 0); break;
+      case 'RM': case 'RJ': case 'RK': rwChatAdd(m); break;
       case 'Rb': if (m.p) rwPieceAdd(m.p); break;
       case 'Rp': rwPieceHp(m.id | 0, +m.hp); break;
       case 'Rl': { var fp = RW.pieces[m.id | 0]; if (fp) { fp.op = m.o | 0; rwFurnaceLit(fp); } break; }
@@ -5380,7 +5384,7 @@ Object.assign(EN, {
     rwSetAuth(m.auth | 0);
     RW.online = (m.peers ? m.peers.length : 0) + 1;
     RW.me = String(m.me || '');
-    rwBuildWorld(); rwPiecesLoad(m.builds); rwStart();
+    rwBuildWorld(); rwPiecesLoad(m.builds); rwStart(); rwChatStart(m.chat);
   }
 
   /* ---- building the world and starting to play ---- */
@@ -5442,7 +5446,7 @@ Object.assign(EN, {
   function rwTeardown() {
     if (!RW.built && !RW.on) return;
     RW.on = false; RW.dead = false; RW.mapOpen = false;
-    rwUiClose(true); holster = false; $('banner').classList.remove('rwb');
+    rwUiClose(true); rwChatClose(); holster = false; $('banner').classList.remove('rwb');
     if (RW.hud) RW.hud.style.display = 'none';
     if (RW.mapEl) RW.mapEl.style.display = 'none';
     rwTeardownWorld();
@@ -5482,7 +5486,7 @@ Object.assign(EN, {
     d.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:6;display:none;font:600 13px/1.35 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6;text-shadow:0 1px 2px #000';
     d.innerHTML = '<div id="rwInfo" style="position:absolute;right:12px;top:170px;text-align:right;white-space:pre"></div>' +
       '<canvas id="rwMini" width="150" height="150" style="position:absolute;right:12px;top:12px;border:2px solid rgba(255,255,255,.4);border-radius:50%;background:#0b1a22"></canvas>' +
-      '<div id="rwBtns" style="position:absolute;right:12px;top:236px;display:flex;gap:8px;pointer-events:auto"><button id="rwMapBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('地图 M', 'Map M') + '</button><button id="rwInvBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('背包 Tab', 'Bag Tab') + '</button><button id="rwUseBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('交互 E', 'Use E') + '</button></div>';
+      '<div id="rwBtns" style="position:absolute;right:12px;top:236px;display:flex;gap:8px;pointer-events:auto"><button id="rwMapBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('地图 M', 'Map M') + '</button><button id="rwInvBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('背包 Tab', 'Bag Tab') + '</button><button id="rwChatBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('聊天', 'Chat') + '</button><button id="rwUseBtn" type="button" style="background:#000a;color:#ece6d6;border:1px solid #fff5;border-radius:8px;padding:6px 10px;font:inherit">' + zt('交互 E', 'Use E') + '</button></div>';
     st.appendChild(d); RW.hud = d;
     var mp = document.createElement('div'); mp.id = 'rwMap';
     mp.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;z-index:8;display:none;background:rgba(5,12,16,.82);align-items:center;justify-content:center;flex-direction:column;color:#ece6d6;font:600 14px system-ui,"PingFang SC","Microsoft YaHei",sans-serif';
@@ -5492,6 +5496,7 @@ Object.assign(EN, {
     $('rwMapBtn').addEventListener('click', function () { rwToggleMap(!RW.mapOpen); });
     $('rwUseBtn').addEventListener('click', function () { rwInteract(); });
     $('rwInvBtn').addEventListener('click', function () { if (state === 'playing') openBag(); else if (state === 'bag') closeBag(); });
+    $('rwChatBtn').addEventListener('click', function () { rwChatOpen(); });
   }
   function rwToggleMap(on) {
     RW.mapOpen = !!on; RW.mapEl.style.display = on ? 'flex' : 'none';
@@ -5526,12 +5531,7 @@ Object.assign(EN, {
       var s = big ? 7 : 4; ctx.fillRect(x - s / 2, z - s / 2, s, s);
       if (big || span < 500) { ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; var nm = zt(RW_NAMES[m.k][0], RW_NAMES[m.k][1]); ctx.strokeText(nm, x, z - s - 2); ctx.fillText(nm, x, z - s - 2); }
     });
-    RW.roster.forEach(function (r) {
-      if (r.id === CO.id) return;
-      var x = X(r.x), z = Z(r.z); if (x < -10 || z < -10 || x > W + 10 || z > W + 10) return;
-      ctx.fillStyle = '#ffd23a'; ctx.beginPath(); ctx.arc(x, z, big ? 5 : 3, 0, 6.3); ctx.fill();
-      if (big) { var pp = CO.peers[r.id], nm = pp ? coopPeerName(pp) : zt('玩家 ', 'Player ') + r.id; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; ctx.strokeText(nm, x, z - 8); ctx.fillText(nm, x, z - 8); }
-    });
+    // other players are not shown on the map
     rwMDraw(ctx, X, Z, big);
     var mx = X(P.x), mz = Z(P.z); ctx.save(); ctx.translate(mx, mz); ctx.rotate(-P.yaw);
     ctx.fillStyle = '#ff5a2a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); var a = big ? 9 : 6; ctx.moveTo(0, -a); ctx.lineTo(a * 0.7, a * 0.8); ctx.lineTo(0, a * 0.4); ctx.lineTo(-a * 0.7, a * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
@@ -5540,7 +5540,7 @@ Object.assign(EN, {
     if (!RW.mapCv) return;
     var cv = $('rwBig'), ctx = cv.getContext('2d');
     rwDrawLayer(ctx, cv.width, -RW.half, -RW.half, RW.half * 2, true);
-    $('rwLegend').textContent = zt('红点：有敌人的据点 · 黄点：其他玩家 · 绿点：安全区 · 点击或按 M 关闭', 'Red: camps · Yellow: players · Green: safe zone · click or press M to close') + '  ·  ' + zt('在线 ', 'Online ') + RW.online;
+    $('rwLegend').textContent = zt('红点：有敌人的据点 · 绿点：安全区 · 地图上看不到其他玩家 · 点击或按 M 关闭', 'Red: camps · Green: safe zone · other players are not shown · click or press M to close') + '  ·  ' + zt('在线 ', 'Online ') + RW.online;
   }
   function rwUpdateUi() {
     if (!RW.hud) return;
@@ -6694,7 +6694,7 @@ Object.assign(EN, {
     for (var h = 0; h < hits.length; h++) {
       var hit = hits[h], ud = hit.object.userData;
       if (hit.distance > wt) break;
-      if (ud && ud.rp !== undefined) { rwHitPlayer(ud.rp, dmg * DU.K, !!ud.head); }
+      if (ud && ud.rp !== undefined) { rwHitPlayer(ud.rp, dmg * DU.K, !!ud.head, hk); }
       else if (ud && ud.remote) { if (!DU.alive) continue; DU.hit(dmg * DU.K, !!ud.head); DU.flush(cur); }
       else if (ud && ud.enemy) {
         var e = ud.enemy; if (e.dead) continue;
@@ -7622,7 +7622,7 @@ Object.assign(EN, {
       : [[keyLabel(KB.forward) + keyLabel(KB.left) + keyLabel(KB.back) + keyLabel(KB.right), zt('移动，' + keyLabel(KB.sprint) + ' 冲刺', 'Move, ' + keyLabel(KB.sprint) + ' sprints')], ['← ↑ → ↓', zt('转动视角', 'Look around')],
          [keyLabel(KB.fire), zt('挥动工具 / 开火 / 放置', 'Swing / shoot / place')], [keyLabel(KB.aim), zt('瞄准 / 选建筑部件 / 拆除', 'Aim / parts / remove')],
          [keyLabel(KB.use), zt('捡起 · 开箱 · 开门', 'Pick up · crates · doors')], [keyLabel(KB.drop), zt('丢掉手里的东西', 'Drop what you hold')],
-         ['Tab', zt('背包与制作', 'Inventory & crafting')], ['1 – 6', zt('切换快捷栏', 'Switch belt slot')], ['X', zt('空手', 'Empty hands')], ['M', zt('全岛地图', 'Island map')]];
+         ['Tab', zt('背包与制作', 'Inventory & crafting')], ['1 – 6', zt('切换快捷栏', 'Switch belt slot')], ['X', zt('空手', 'Empty hands')], ['M', zt('全岛地图', 'Island map')], ['Enter', zt('全图聊天', 'World chat')]];
     var h = '<div class="we">THE WILD<span>' + zt('在线 ', 'ONLINE ') + RW.online + '</span></div><h2>' + zt('荒野世界', 'The Wild') + '</h2>' +
       '<p>' + zt('手里只有一块石头。砍树采石、打猎、用熔炉炼金属，搭起有领地柜和储物箱的房子，放个睡袋当重生点；带上炸药去抄别人的家。左边是任务。', 'You start with a rock. Gather, hunt, smelt metal, build a base with a tool cupboard and storage, drop a sleeping bag, and bring explosives to raid others. Missions are on the left.') + '</p><div class="wk">';
     keys.forEach(function (k) { h += '<div><kbd>' + duEsc(k[0]) + '</kbd>' + duEsc(k[1]) + '</div>'; });
@@ -7841,7 +7841,7 @@ Object.assign(EN, {
     else if (angry) {
       ux = dx / dd; uz = dz / dd; mv = dd > 1.4 ? 1 : 0; e.g.rotation.y = Math.atan2(dx, dz);
       e.melee = (e.melee || 0) - dt;
-      if (dd < 1.8 && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'boar' ? 1.1 : 0.9; dmgTP(TP, ty === 'boar' ? 12 : 10); tone(ty === 'wolf' ? 500 : 180, ty === 'wolf' ? 300 : 90, 0.12, 'sawtooth', 0.06); }
+      if (dd < 1.8 && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'boar' ? 1.1 : 0.9; rwNpcHurtMe(TP, ty); dmgTP(TP, ty === 'boar' ? 12 : 10); tone(ty === 'wolf' ? 500 : 180, ty === 'wolf' ? 300 : 90, 0.12, 'sawtooth', 0.06); }
     } else {
       e.wt = (e.wt || 0) - dt;
       if (e.wt <= 0) { e.wt = 4 + Math.random() * 6; var wa = Math.random() * 6.28, wd = Math.random() * m.r * 0.7; e.wx = m.x + Math.cos(wa) * wd; e.wz = m.z + Math.sin(wa) * wd; }
@@ -7932,6 +7932,78 @@ Object.assign(EN, {
     tone(500, 700, 0.06, 'triangle', 0.05);
     var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch);
   }
+
+  /* ---- world chat and kill feed (left side) ---- */
+  var RWC = { el: null, list: null, inp: null, lines: [] };
+  var RWCSS3 = '' +
+    '#rwChat{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:118px;width:min(390px,62vw);pointer-events:none;font:600 13px/1.45 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6;text-shadow:0 1px 2px #000}' +
+    '#rwChat .cl{display:flex;flex-direction:column;gap:2px;max-height:210px;overflow:hidden;justify-content:flex-end}' +
+    '#rwChat .cm{background:rgba(14,15,13,.55);padding:3px 9px;border-left:2px solid rgba(236,230,214,.25);transition:opacity 1.2s;word-break:break-word}' +
+    '#rwChat .cm.k{border-left-color:#e5392b}#rwChat .cm.s{color:#a39e90;font-weight:500;border-left-color:transparent}#rwChat .cm.me{border-left-color:#8fd14f}' +
+    '#rwChat .cm b{color:#ffb36b;font-weight:700}#rwChat .cm b.v{color:#ff8b80}#rwChat .cm img{width:24px;height:24px;vertical-align:middle;margin:-4px 5px 0}#rwChat .cm i{font-style:normal;color:#ff5a3a;font-weight:700}' +
+    '#rwChat .cm.old{opacity:0}#rwChat.open .cm.old{opacity:1}#rwChat.open .cl{max-height:330px}' +
+    '#rwChatIn{display:none;margin-top:6px;pointer-events:auto;width:100%;box-sizing:border-box;padding:8px 10px;background:rgba(14,15,13,.9);border:1px solid rgba(255,122,26,.75);color:#ece6d6;font:inherit;text-shadow:none;outline:none}' +
+    '#rwChat.open #rwChatIn{display:block}#rwChat .ch{margin-top:4px;font:500 11px system-ui,sans-serif;color:#8d887b}#rwChat.open .ch{display:none}' +
+    '@media (max-width:760px){#rwChat{bottom:150px;width:58vw}#rwChat .cl{max-height:130px}}';
+  function rwChatInit() {
+    if (RWC.el || !RW.hud) return;
+    var st = document.createElement('style'); st.textContent = RWCSS3; document.head.appendChild(st);
+    var el = document.createElement('div'); el.id = 'rwChat';
+    el.innerHTML = '<div class="cl"></div><input id="rwChatIn" type="text" maxlength="140" autocomplete="off" spellcheck="false"><div class="ch"></div>';
+    RW.hud.appendChild(el); RWC.el = el; RWC.list = el.querySelector('.cl'); RWC.inp = el.querySelector('input');
+    RWC.inp.addEventListener('keydown', function (e) {
+      e.stopPropagation();
+      if (e.key === 'Enter') { var v = RWC.inp.value.trim(); if (v) dSend({ t: 'Rm', m: v.slice(0, 140) }); rwChatClose(); e.preventDefault(); }
+      else if (e.key === 'Escape') { rwChatClose(); e.preventDefault(); }
+    });
+    RWC.inp.addEventListener('keyup', function (e) { e.stopPropagation(); });
+    RWC.inp.addEventListener('blur', function () { if (RW.chatOn) setTimeout(rwChatClose, 0); });
+  }
+  function rwChatHint() { if (RWC.el) RWC.el.querySelector('.ch').textContent = isTouch ? '' : zt('Enter 聊天', 'Enter to chat'); }
+  function rwChatOpen() {
+    if (!RWC.el || RW.chatOn || state !== 'playing') return;
+    RW.chatOn = true; keys = {}; releaseInput();
+    RWC.el.classList.add('open'); RWC.inp.value = ''; RWC.inp.placeholder = zt('说点什么……（Enter 发送，Esc 取消）', 'Say something… (Enter sends, Esc cancels)');
+    setTimeout(function () { RWC.inp.focus(); }, 0);
+  }
+  function rwChatClose() {
+    if (!RW.chatOn) return;
+    RW.chatOn = false; RWC.el.classList.remove('open'); keys = {};
+    try { RWC.inp.blur(); } catch (e) {}
+  }
+  var RW_NPCN = { rusher: ['突击者', 'a rusher'], gunner: ['射手', 'a gunner'], tank: ['装甲兵', 'an armored infected'], sniper: ['狙击手', 'a sniper'], bomber: ['自爆兵', 'a bomber'], deer: ['鹿', 'a deer'], boar: ['野猪', 'a boar'], wolf: ['狼', 'a wolf'], blast: ['爆炸', 'an explosion'] };
+  function rwChatAdd(m) {
+    if (!RWC.list) return;
+    var me = CO.myName, cls = 'cm', h = '';
+    if (m.t === 'RM') {
+      if (m.s) { cls += ' s'; h = zt('发得太快了，歇一下', 'Slow down a little'); }
+      else { if (m.n === me) cls += ' me'; h = '<b>' + duEsc(m.n || '?') + '</b>: ' + duEsc(m.m || ''); }
+    } else if (m.t === 'RJ') { cls += ' s'; h = duEsc(m.n || '?') + (m.j ? zt(' 进入了荒野', ' entered the wild') : zt(' 离开了', ' left')); }
+    else if (m.t === 'RK') {
+      cls += ' k';
+      if (m.a) h = '<b>' + duEsc(m.a) + '</b>' + (m.w ? '<img src="' + rwIconUrl(m.w === 'hands' ? 'rock' : m.w) + '" alt="">' : zt(' 击杀了 ', ' killed ')) + (m.h ? '<i>' + zt('爆头 ', 'HEADSHOT ') + '</i>' : '') + '<b class="v">' + duEsc(m.v) + '</b>';
+      else { var nm = RW_NPCN[m.by]; h = '<b class="v">' + duEsc(m.v) + '</b>' + (nm ? zt(' 被' + nm[0] + '杀死了', ' was killed by ' + nm[1]) : zt(' 死了', ' died')); }
+    } else return;
+    var d = document.createElement('div'); d.className = cls; d.innerHTML = h;
+    RWC.list.appendChild(d);
+    while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
+    setTimeout(function () { d.classList.add('old'); }, m.old ? 0 : 20000);
+  }
+  function rwChatStart(hist) {
+    rwChatInit(); rwChatHint();
+    if (RWC.list) RWC.list.innerHTML = '';
+    (hist || []).forEach(function (m) { m.old = true; rwChatAdd(m); });
+    var d = document.createElement('div'); d.className = 'cm s'; d.innerHTML = zt('你在荒野里的名字：', 'Your name in the wild: ') + '<b>' + duEsc(CO.myName || '?') + '</b>' + (ACC.token ? '' : zt('（没登录，随机名字）', ' (not logged in: random name)'));
+    RWC.list.appendChild(d); setTimeout(function () { d.classList.add('old'); }, 20000);
+  }
+  function rwDeathReport() {   // tell everybody who or what killed you
+    var o = { t: 'Re' };
+    if (RW.attacker && gtime - RW.attackT < 15) { o.a = RW.attacker; o.w = RW.attW || ''; o.h = RW.attH ? 1 : 0; }
+    else if (RW.lastNpc && gtime - (RW.lastNpcT || 0) < 6) o.by = RW.lastNpc;
+    else { var ne = null, nd = 7; enemies.forEach(function (e) { var d = Math.hypot(e.g.position.x - P.x, e.g.position.z - P.z); if (d < nd) { nd = d; ne = e; } }); if (ne) o.by = ne.type; }
+    dSend(o);
+  }
+  function rwNpcHurtMe(TP, ty) { if (TP === P) { RW.lastNpc = ty; RW.lastNpcT = gtime; } }
 
   EN['收购'] = 'Sell';
 

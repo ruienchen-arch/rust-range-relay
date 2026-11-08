@@ -50,16 +50,36 @@ function worldJoin(c, m) {
   const peers = [...world.clients.keys()], names = {};
   for (const o of world.clients.values()) names[o.id] = o.name || '';
   c.world = true; c.room = { code: 'WORLD', duel: false, clients: world.clients }; c.id = world.nextId++; c.x = 0; c.z = 0; c.hasPos = false;
-  c.name = whoIs(m);
   const user = readToken(m.token), gk = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
   c.owner = user ? 'u:' + user : gk ? 'k:' + crypto.createHash('sha256').update(gk).digest('hex').slice(0, 16) : 'c:' + c.id;   // who owns what this player builds
+  c.name = user ? db.users[user].name : guestName(gk || ('id' + c.id + Date.now()));   // players who are not logged in get a random name (the same one every time in this browser)
   world.clients.set(c.id, c);
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
   if (!world.auth) world.auth = c.id;
-  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, builds: [...builds.values()].map(pub) }));
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, chat: chatLog, builds: [...builds.values()].map(pub) }));
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
+  chatPush({ t: 'RJ', n: c.name, j: 1 });
   electAuthority();
+}
+// ---- chat and kill feed for the whole world ----
+const chatLog = [];   // the last 30 lines, sent to newcomers
+function chatPush(o) { chatLog.push(o); if (chatLog.length > 30) chatLog.shift(); worldAll(JSON.stringify(o)); }
+const G_ADJ = ['Silent', 'Rusty', 'Wild', 'Lone', 'Swift', 'Grim', 'Lucky', 'Feral', 'Iron', 'Ashen', 'Frozen', 'Sly', 'Brave', 'Hungry', 'Shadow', 'Stone'];
+const G_NOUN = ['Wolf', 'Raven', 'Boar', 'Fox', 'Bear', 'Hawk', 'Stag', 'Viper', 'Badger', 'Owl', 'Lynx', 'Crow', 'Moose', 'Otter', 'Hare', 'Shark'];
+function guestName(seed) { const h = crypto.createHash('sha256').update('guest:' + seed).digest(); return G_ADJ[h[0] % 16] + G_NOUN[h[1] % 16] + (10 + h[2] % 90); }
+function worldChat(c, m) {
+  const txt = String(m.m == null ? '' : m.m).replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  if (!txt) return;
+  const now = Date.now(); c.ch = (c.ch || []).filter((t) => now - t < 8000);
+  if (c.ch.length >= 5) { c.send(JSON.stringify({ t: 'RM', s: 1, m: 'slow' })); return; }
+  c.ch.push(now);
+  chatPush({ t: 'RM', n: c.name, i: c.id, m: txt });
+}
+function worldDeath(c, m) {   // the victim reports who or what killed them
+  const now = Date.now(); if (now - (c.dt || 0) < 3000) return; c.dt = now;
+  const k = world.clients.get(m.a | 0), w = String(m.w || ''), by = String(m.by || '');
+  chatPush({ t: 'RK', v: c.name, a: k && k !== c ? k.name : '', w: /^(g[0-9]|rock|hatchet|pickaxe|hammer|hands)$/.test(w) ? w : '', h: m.h ? 1 : 0, by: /^[a-z]{2,8}$/.test(by) ? by : '' });
 }
 function worldGather(c, m) {
   const id = String(m.id || ''), kind = String(m.k || '');
@@ -82,9 +102,7 @@ setInterval(() => {   // trees and rocks grow back, crates get refilled
 }, 5000).unref();
 setInterval(() => {   // everybody's position, for the live map
   if (!world.clients.size) return;
-  const p = [];
-  for (const o of world.clients.values()) if (o.hasPos) p.push([o.id, Math.round(o.x), Math.round(o.z)]);
-  const out = JSON.stringify({ op: 'roster', p, n: world.clients.size });
+  const out = JSON.stringify({ op: 'roster', p: [], n: world.clients.size });   // player positions are not shared on the map
   for (const o of world.clients.values()) o.send(out, true);
 }, 1500).unref();
 
@@ -465,6 +483,8 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Ro') { worldDoor(c, m); return; }
   if (c.world && m.t === 'Ru') { worldUpgrade(c, m); return; }
   if (c.world && m.t === 'Rq') { worldRepair(c, m); return; }
+  if (c.world && m.t === 'Rm') { worldChat(c, m); return; }
+  if (c.world && m.t === 'Re') { worldDeath(c, m); return; }
   if (c.world && m.t === 'Rh') { worldDamage(c, m); return; }
   if (c.world && m.t === 'Ra') { worldAuth(c, m); return; }
   if (c.world && (m.t === 'Bq' || m.t === 'Bp' || m.t === 'Bt' || m.t === 'Bl' || m.t === 'Bc')) { worldCont(c, m); return; }
@@ -498,7 +518,7 @@ function onClose(c) {
   const room = c.room; if (!room) return;
   room.clients.delete(c.id);
   for (const o of room.clients.values()) o.send(J({ op: 'peer-left', id: c.id }));
-  if (c.world) { if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
+  if (c.world) { chatPush({ t: 'RJ', n: c.name, j: 0 }); if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
   if (c.id === 1) {                    // the host left: the room is over
     for (const o of room.clients.values()) o.close();
     rooms.delete(room.code);
