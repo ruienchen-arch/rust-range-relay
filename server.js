@@ -189,6 +189,7 @@ const num = (v, lim) => (Number.isFinite(+v) && Math.abs(+v) <= lim ? Math.round
 function cleanSave(s) {
   if (!s || typeof s !== 'object' || !Array.isArray(s.inv) || s.inv.length !== 30) return null;
   const o = { v: 1, t: int(s.t, 0, 9e15), hot: int(s.hot, 0, 5), coins: int(s.coins, 0, 1e9), gr: int(s.gr, 0, 9), inv: [] };
+  if (Array.isArray(s.mk)) o.mk = s.mk.filter((m) => Array.isArray(m) && num(m[0], WORLD_SIZE * 2) !== null && num(m[1], WORLD_SIZE * 2) !== null).slice(0, 6).map((m) => [Math.round(+m[0]), Math.round(+m[1])]);   // map markers
   for (const it of s.inv) o.inv.push(Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1 ? [it[0], int(it[1], 1, 100000)] : 0);
   if (s.dead) { o.dead = 1; return o; }
   o.hp = int(s.hp, 1, 1000); o.ar = int(s.ar, 0, 100);
