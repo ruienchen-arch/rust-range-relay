@@ -35,7 +35,7 @@ const rooms = new Map();
 const WORLD_SIZE = +process.env.WORLD_SIZE || 1500;
 const INTEREST = 420;
 const world = { clients: new Map(), nextId: 1, auth: 0, nodes: new Map() };
-const RESPAWN_MS = { tree: 600000, rock: 600000, ore: 900000, crate: 900000 };
+const RESPAWN_MS = { tree: 600000, rock: 600000, ore: 900000, crate: 900000, hemp: 300000 };
 function worldSeed() {
   if (!db.world) { db.world = { seed: 'w' + crypto.randomBytes(4).toString('hex') }; saveDb(); }
   return process.env.WORLD_SEED || db.world.seed;
@@ -57,7 +57,7 @@ function worldJoin(c, m) {
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
   if (!world.auth) world.auth = c.id;
-  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, builds: [...builds.values()] }));
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, builds: [...builds.values()].map(pub) }));
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
   electAuthority();
 }
@@ -105,17 +105,32 @@ function saveDb() {
 }
 saveDb();   // writes the secret on first start
 // ---------- player-built structures in the wild ----------
-// Each part is [id, kind, x, y, z, rot, grade, owner, open]. Kinds: fd foundation, wl wall, dw doorway, wn window wall, fl floor,
-// st stairs, dr door. Only the owner may remove, upgrade or open/close a part. Same disk caveat as accounts.json.
+// Each part is [id, kind, x, y, z, rot, grade, owner, open/lit, hp, extra].
+// Building kinds: fd foundation, wl wall, dw doorway, wn window wall, fl floor, st stairs, dr door.
+// Deployables: bx storage box, fu furnace, tc tool cupboard, sb sleeping bag.
+// extra: tc -> {a:[authorised owners]}, bx -> {s:[18 slots]}, fu -> {s:[fuel, input, frags, cooked], t:tick}.
+// Same disk caveat as accounts.json.
 const BUILD_FILE = path.join(DATA_DIR, 'world.json');
-const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr']);
+const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr', 'bx', 'fu', 'tc', 'sb']);
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
+const TC_RANGE = 25;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|g[0-9])$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
+function maxHp(k, g) { return k === 'dr' ? 200 : k === 'bx' ? 150 : k === 'fu' || k === 'tc' ? 300 : k === 'sb' ? 60 : [250, 500, 1000][g | 0] || 250; }
+function fixRec(a) {   // fill in fields that older saves do not have
+  while (a.length < 11) a.push(0);
+  if (!(a[9] > 0)) a[9] = maxHp(a[1], a[6]);
+  if (a[1] === 'tc' && !(a[10] && Array.isArray(a[10].a))) a[10] = { a: [a[7]] };
+  if (a[1] === 'bx' && !(a[10] && Array.isArray(a[10].s))) a[10] = { s: new Array(18).fill(null) };
+  if (a[1] === 'fu' && !(a[10] && Array.isArray(a[10].s))) a[10] = { s: [null, null, null, null], t: 0 };
+  return a;
+}
+const pub = (a) => [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[1] === 'tc' ? a[10] : 0];   // container contents stay on the server
 try {
   const w = JSON.parse(fs.readFileSync(BUILD_FILE, 'utf8'));
   buildSeed = String(w.seed || ''); buildSeq = +w.seq || 0;
-  (w.b || []).forEach((a) => { if (Array.isArray(a) && a.length >= 9 && BUILD_KINDS.has(a[1])) { builds.set(a[0], a); if (a[0] > buildSeq) buildSeq = a[0]; } });
+  (w.b || []).forEach((a) => { if (Array.isArray(a) && a.length >= 9 && BUILD_KINDS.has(a[1])) { builds.set(a[0], fixRec(a)); if (a[0] > buildSeq) buildSeq = a[0]; } });
 } catch (e) {}
 function writeBuilds() {
   try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(BUILD_FILE + '.tmp', JSON.stringify({ seed: buildSeed, seq: buildSeq, b: [...builds.values()] })); fs.renameSync(BUILD_FILE + '.tmp', BUILD_FILE); }
@@ -128,6 +143,14 @@ function checkBuildSeed() {   // a new island (new seed) starts with no building
 }
 function worldAll(s) { for (const o of world.clients.values()) o.send(s); }
 const isWallish = (k) => k === 'wl' || k === 'dw' || k === 'wn';
+function authedAt(owner, x, z) {   // false when an unfriendly tool cupboard covers x,z
+  for (const a of builds.values()) if (a[1] === 'tc' && Math.hypot(a[2] - x, a[4] - z) < TC_RANGE && a[10].a.indexOf(owner) < 0) return false;
+  return true;
+}
+function coveredBy(owner, x, z) {   // true when a tool cupboard that lists owner covers x,z
+  for (const a of builds.values()) if (a[1] === 'tc' && Math.hypot(a[2] - x, a[4] - z) < TC_RANGE && a[10].a.indexOf(owner) >= 0) return true;
+  return false;
+}
 function worldBuild(c, m) {
   const k = String(m.k || ''), x = +m.x, y = +m.y, z = +m.z, r = (m.r | 0) & 3;
   const no = () => c.send(JSON.stringify({ t: 'Rr', k: BUILD_KINDS.has(k) ? k : '' }));
@@ -135,7 +158,7 @@ function worldBuild(c, m) {
   c.bh = (c.bh || []).filter((t) => now - t < 10000);
   if (c.bh.length >= 40) return no();                              // at most 40 parts per 10 s
   if (!BUILD_KINDS.has(k) || ![x, y, z].every(Number.isFinite) || Math.abs(x) > WORLD_SIZE || Math.abs(z) > WORLD_SIZE || y < -40 || y > 400) return no();
-  if (builds.size >= MAX_BUILDS) return no();
+  if (builds.size >= MAX_BUILDS || !authedAt(c.owner, x, z)) return no();
   let mine = 0;
   for (const a of builds.values()) {
     if (a[7] === c.owner) mine++;
@@ -144,27 +167,112 @@ function worldBuild(c, m) {
   if (mine >= MAX_PER_OWNER) return no();
   c.bh.push(now);
   const R = (v) => Math.round(v * 100) / 100;
-  const a = [++buildSeq, k, R(x), R(y), R(z), (isWallish(k) || k === 'dr') ? r & 1 : r, 0, c.owner, 0];
+  const a = fixRec([++buildSeq, k, R(x), R(y), R(z), (isWallish(k) || k === 'dr') ? r & 1 : r, 0, c.owner, 0]);
   builds.set(a[0], a); saveBuilds();
-  worldAll(JSON.stringify({ t: 'Rb', p: a }));
+  worldAll(JSON.stringify({ t: 'Rb', p: pub(a) }));
+}
+function dropPart(a, by) {   // a part is gone: doors in a doorway go with it, a destroyed container spills for the raider
+  const gone = [a[0]]; builds.delete(a[0]);
+  if (a[1] === 'dw') for (const b of builds.values()) if (b[1] === 'dr' && Math.abs(b[2] - a[2]) < 0.25 && Math.abs(b[4] - a[4]) < 0.25 && Math.abs(b[3] - a[3]) < 0.25) { builds.delete(b[0]); gone.push(b[0]); }
+  if (by && (a[1] === 'bx' || a[1] === 'fu')) { const it = a[10].s.filter(Boolean); if (it.length) by.send(JSON.stringify({ t: 'RD', at: [a[2], a[3], a[4]], it })); }
+  saveBuilds();
+  gone.forEach((id) => worldAll(JSON.stringify({ t: 'Rx', id })));
+  for (const o of world.clients.values()) if (o.open && gone.indexOf(o.open) >= 0) o.open = 0;
 }
 function worldRemove(c, m) {
   const a = builds.get(m.id | 0); if (!a || a[7] !== c.owner) return;
-  const gone = [a[0]]; builds.delete(a[0]);
-  if (a[1] === 'dw') for (const b of builds.values()) if (b[1] === 'dr' && Math.abs(b[2] - a[2]) < 0.25 && Math.abs(b[4] - a[4]) < 0.25 && Math.abs(b[3] - a[3]) < 0.25) { builds.delete(b[0]); gone.push(b[0]); }
-  saveBuilds();
-  gone.forEach((id) => worldAll(JSON.stringify({ t: 'Rx', id })));
+  if ((a[1] === 'bx' || a[1] === 'fu') && a[10].s.some(Boolean)) { c.send(JSON.stringify({ t: 'RN', id: a[0] })); return; }   // empty it first
+  dropPart(a, null);
 }
 function worldDoor(c, m) {
-  const a = builds.get(m.id | 0); if (!a || a[1] !== 'dr' || a[7] !== c.owner) return;
+  const a = builds.get(m.id | 0); if (!a || a[1] !== 'dr' || (a[7] !== c.owner && !coveredBy(c.owner, a[2], a[4]))) return;
   a[8] = a[8] ? 0 : 1; saveBuilds();
   worldAll(JSON.stringify({ t: 'Ro', id: a[0], o: a[8] }));
 }
 function worldUpgrade(c, m) {
-  const a = builds.get(m.id | 0), g = m.g | 0; if (!a || a[1] === 'dr' || a[7] !== c.owner || g < 1 || g > 2 || g <= a[6]) return;
-  a[6] = g; saveBuilds();
+  const a = builds.get(m.id | 0), g = m.g | 0; if (!a || a[1] === 'dr' || BUILD_KINDS.has(a[1]) && ['bx', 'fu', 'tc', 'sb'].indexOf(a[1]) >= 0 || a[7] !== c.owner || g < 1 || g > 2 || g <= a[6]) return;
+  a[6] = g; a[9] = maxHp(a[1], g); saveBuilds();
   worldAll(JSON.stringify({ t: 'Ru', id: a[0], g }));
 }
+function worldRepair(c, m) {
+  const a = builds.get(m.id | 0); if (!a || (a[7] !== c.owner && !coveredBy(c.owner, a[2], a[4]))) return;
+  a[9] = Math.min(maxHp(a[1], a[6]), a[9] + 60); saveBuilds();
+  worldAll(JSON.stringify({ t: 'Rp', id: a[0], hp: a[9] }));
+}
+function worldDamage(c, m) {   // explosions: the thrower reports which parts it hit and how hard
+  if (!Array.isArray(m.a) || m.a.length > 60) return;
+  const now = Date.now();
+  c.dh = (c.dh || []).filter((t) => now - t < 1000);
+  if (c.dh.length >= 8) return;
+  c.dh.push(now);
+  m.a.forEach((q) => {
+    if (!Array.isArray(q)) return;
+    const a = builds.get(q[0] | 0), d = Math.min(1200, Math.max(0, +q[1] || 0)); if (!a || !d) return;
+    a[9] -= d;
+    if (a[9] <= 0) dropPart(a, c);
+    else { saveBuilds(); worldAll(JSON.stringify({ t: 'Rp', id: a[0], hp: Math.round(a[9]) })); }
+  });
+}
+function worldAuth(c, m) {   // tool cupboard: whoever can reach it can add or remove themselves
+  const a = builds.get(m.id | 0); if (!a || a[1] !== 'tc') return;
+  const L = a[10].a, i = L.indexOf(c.owner);
+  if (i >= 0) L.splice(i, 1); else L.push(c.owner);
+  saveBuilds();
+  worldAll(JSON.stringify({ t: 'RA', id: a[0], a: L }));
+}
+// ---- storage boxes and furnaces ----
+const FU_IN = { metal: 'frags', meat: 'cooked' };
+function contView(c, a) { c.send(JSON.stringify({ t: 'RV', id: a[0], k: a[1], s: a[10].s, lit: a[8] })); }
+function contWatchers(a) { for (const o of world.clients.values()) if (o.open === a[0]) contView(o, a); }
+function contOk(c, a) { return a && (a[1] === 'bx' || a[1] === 'fu') && c.hasPos && Math.hypot(c.x - a[2], c.z - a[4]) < 12; }
+function worldCont(c, m) {
+  const a = builds.get(m.id | 0);
+  if (m.t === 'Bc') { c.open = 0; return; }
+  if (!contOk(c, a)) { if (m.t === 'Bp') c.send(JSON.stringify({ t: 'RR', it: m.it, n: m.n })); return; }
+  const S = a[10].s;
+  if (m.t === 'Bq') { c.open = a[0]; contView(c, a); return; }
+  if (m.t === 'Bp') {   // put n of an item in
+    const it = String(m.it || ''), n0 = Math.min(10000, Math.max(0, m.n | 0)); let n = n0;
+    if (!ITEM_RE.test(it) || !n) return;
+    if (a[1] === 'bx') {
+      for (let i = 0; i < S.length && n > 0; i++) if (S[i] && S[i][0] === it && S[i][1] < 1000) { const k = Math.min(n, 1000 - S[i][1]); S[i][1] += k; n -= k; }
+      for (let i = 0; i < S.length && n > 0; i++) if (!S[i]) { const k = Math.min(n, 1000); S[i] = [it, k]; n -= k; }
+    } else {
+      const slot = it === 'wood' ? 0 : FU_IN[it] ? 1 : -1;
+      if (slot >= 0 && (!S[slot] || S[slot][0] === it)) { const have = S[slot] ? S[slot][1] : 0, k = Math.min(n, 1000 - have); if (k > 0) { S[slot] = [it, have + k]; n -= k; } }
+    }
+    if (n > 0) c.send(JSON.stringify({ t: 'RR', it, n }));
+    if (n < n0) { saveBuilds(); contWatchers(a); }
+    return;
+  }
+  if (m.t === 'Bt') {   // take a whole slot out
+    const i = m.s | 0; if (i < 0 || i >= S.length || !S[i]) return;
+    const q = S[i]; S[i] = null; saveBuilds();
+    c.send(JSON.stringify({ t: 'RG', it: q[0], n: q[1] }));
+    contWatchers(a);
+    return;
+  }
+  if (m.t === 'Bl' && a[1] === 'fu') {   // light / put out the furnace
+    if (!a[8] && !(S[0] && S[0][1] > 0)) return;
+    a[8] = a[8] ? 0 : 1; saveBuilds();
+    worldAll(JSON.stringify({ t: 'Rl', id: a[0], o: a[8] }));
+    contWatchers(a);
+  }
+}
+setInterval(() => {   // furnaces: 1 ore or raw meat per second, 1 wood every 2 seconds
+  for (const a of builds.values()) {
+    if (a[1] !== 'fu' || !a[8]) continue;
+    const S = a[10].s; a[10].t = (a[10].t || 0) + 1;
+    if (S[1] && S[1][1] > 0) {
+      const out = FU_IN[S[1][0]], oi = out === 'frags' ? 2 : 3;
+      S[1][1]--; if (!S[1][1]) S[1] = null;
+      if (S[oi] && S[oi][0] === out) S[oi][1]++; else if (!S[oi]) S[oi] = [out, 1];
+    }
+    if (a[10].t % 2 === 0 && S[0]) { S[0][1]--; if (!S[0][1]) S[0] = null; }
+    if (!S[0]) { a[8] = 0; worldAll(JSON.stringify({ t: 'Rl', id: a[0], o: 0 })); }
+    contWatchers(a); saveBuilds();
+  }
+}, 1000).unref();
 function flushOnExit() { if (buildT) { clearTimeout(buildT); buildT = null; writeBuilds(); } if (saveT) { clearTimeout(saveT); saveT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) {} } }
 process.on('SIGTERM', () => { flushOnExit(); process.exit(0); });
 process.on('SIGINT', () => { flushOnExit(); process.exit(0); });
@@ -356,6 +464,10 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Rx') { worldRemove(c, m); return; }
   if (c.world && m.t === 'Ro') { worldDoor(c, m); return; }
   if (c.world && m.t === 'Ru') { worldUpgrade(c, m); return; }
+  if (c.world && m.t === 'Rq') { worldRepair(c, m); return; }
+  if (c.world && m.t === 'Rh') { worldDamage(c, m); return; }
+  if (c.world && m.t === 'Ra') { worldAuth(c, m); return; }
+  if (c.world && (m.t === 'Bq' || m.t === 'Bp' || m.t === 'Bt' || m.t === 'Bl' || m.t === 'Bc')) { worldCont(c, m); return; }
   const to = m.to; delete m.to;
   m.i = c.id;
   const out = J(m);

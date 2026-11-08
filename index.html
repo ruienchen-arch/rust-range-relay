@@ -399,7 +399,7 @@ button:focus-visible { box-shadow: 0 0 0 3px rgba(255,122,26,.55); }
   var stage = $('stage'), canvas = $('gl');
   /* ---------- user settings (saved separately from game prefs) ---------- */
   var SET_DEF = { sens: 1, ads: 1, fov: 75, invertY: false, fps: 0, showFps: false, res: 2 };
-  var KB_DEF = { bag: 'KeyB', forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft', jump: 'Space', reload: 'KeyR', aim: 'KeyQ', grenade: 'KeyG', use: 'KeyE', fire: 'KeyF', pause: 'KeyP' };
+  var KB_DEF = { bag: 'KeyB', forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft', jump: 'Space', reload: 'KeyR', aim: 'KeyC', grenade: 'KeyG', use: 'KeyE', fire: 'KeyF', pause: 'KeyP', drop: 'KeyQ' };
   var SET = {}, KB = {};
   (function () {
     var k, sv = null;
@@ -409,6 +409,7 @@ button:focus-visible { box-shadow: 0 0 0 3px rgba(255,122,26,.55); }
     if (sv && typeof sv === 'object') {
       for (k in SET_DEF) if (sv.set && typeof sv.set[k] === typeof SET_DEF[k]) SET[k] = sv.set[k];
       for (k in KB_DEF) if (sv.kb && typeof sv.kb[k] === 'string') KB[k] = sv.kb[k];
+      if (sv.kb && !sv.kb.drop && KB.aim === 'KeyQ') KB.aim = 'KeyC';   // Q became the drop key
     }
     SET.sens = Math.max(0.2, Math.min(3, SET.sens)); SET.ads = Math.max(0.2, Math.min(2, SET.ads)); SET.fov = Math.max(60, Math.min(110, SET.fov));
   })();
@@ -2224,6 +2225,7 @@ Object.assign(EN, {
       rig.rotation.x = 0.16 * A.sm;
       return;
     }
+    if (A.quad) { A.quad[0].rotation.x = A.quad[3].rotation.x = sw * 0.8; A.quad[1].rotation.x = A.quad[2].rotation.x = -sw * 0.8; rig.position.y = Math.abs(Math.sin(A.ph)) * 0.05 * A.sm; return; }
     if (A.legL) { A.legL.rotation.x = sw * 0.75; A.legR.rotation.x = -sw * 0.75; }
     if (A.armL) A.armL.rotation.x = A.aim[0] ? A.base[0] : A.base[0] - sw * 0.7;
     if (A.armR) A.armR.rotation.x = A.aim[1] ? A.base[1] : A.base[1] + sw * 0.7;
@@ -2243,7 +2245,8 @@ Object.assign(EN, {
     function pivot(x, y, z) { var p = new THREE.Group(); p.position.set(x, y, z); rig.add(p); return p; }
     var body, head, spin = null;
     var A = { rig: rig, init: false, lx: 0, lz: 0, sm: 0, ph: Math.random() * 6, lean: 0.18, legL: null, legR: null, armL: null, armR: null, aim: [false, false], base: [-0.1, -0.1], pulse: null, drone: false, rotors: [] };
-    if (type === 'drone') {
+    if (T.animal) { var ab = rwAnimalBuild(type, rig, A); body = ab.body; head = ab.head; bodyMat = ab.mats[0]; darkMat = ab.mats[1]; plateMat = ab.mats[2]; }
+    else if (type === 'drone') {
       A.drone = true;
       body = mesh(gSph(0.38, 12), bodyMat, 0, 0, 0); body.scale.y = 0.75;
       head = mesh(gSph(0.17, 8), eyeMat, 0, -0.02, 0.32);
@@ -2397,6 +2400,7 @@ Object.assign(EN, {
     if (coop && !coopG() && !byPlayer) { for (var gi = 0; gi < CO.list.length; gi++) { var gp = CO.list[gi]; if (!gp.seen || gp.hp <= 0) continue; var gd = Math.hypot(gp.rt.x - x, gp.rt.y + 1 - y, gp.rt.z - z); if (gd < r) coopHurt(gp.id, Math.round(dmg * (1 - gd / r))); } }
     var pd = Math.hypot(P.x - x, P.y + 1 - y, P.z - z);
     if (pd < r) damage(Math.round(dmg * (1 - pd / r) * (byPlayer ? 0.6 : 1)));
+    if (RW.on && byPlayer && !RW.noBlast) rwBlastBuild(x, y, z, r >= 7 ? 4 : 3, r >= 7 ? 280 : 30);   // rockets hurt buildings, grenades barely
   }
   function pickType() {
     var pool = [['rusher', 5]], w = (siege ? wave + 2 : wave) + DF.tier;
@@ -2461,7 +2465,7 @@ Object.assign(EN, {
   function killEnemy(e, headshot) {
     if (e.slot) { e.slot.e = null; e.slot.t = gtime + 90; }
     if (e.dead) return;
-    if (e.ghost) { e.dead = true; CO.dead[e.gid] = gtime; coopDropGhost(e, true); tone(220, 50, 0.25, 'sawtooth', 0.12); return; }
+    if (e.ghost) { e.dead = true; CO.dead[e.gid] = gtime; coopDropGhost(e, true); tone(220, 50, 0.25, 'sawtooth', 0.12); if (e.T && e.T.animal) rwAnimalLoot(e); rwMKill(e, headshot); return; }
     e.dead = true;
     var p = e.g.position.clone(); p.y += 1.2;
     burst(p, e.type === 'boss' ? 40 : 14, partMatO, 6);
@@ -2471,7 +2475,7 @@ Object.assign(EN, {
     if (ix >= 0) enemies.splice(ix, 1);
     var _pts = Math.round((e.T.score + (headshot ? 50 : 0)) * DF.score), _cn = Math.round((e.T.coin + (headshot ? 5 : 0)) * DF.coin);
     var _kp = coop ? CO.peers[e.cr] : null;
-    if (_kp) { _kp.gs += _pts; _kp.gk++; dSend({ t: 'Ck', c: _cn, to: _kp.id }); } else { score += _pts; coins += _cn; CO.hk++; }
+    if (_kp) { _kp.gs += _pts; _kp.gk++; dSend({ t: 'Ck', c: _cn, to: _kp.id }); } else { score += _pts; coins += _cn; CO.hk++; if (RW.on && e.T && e.T.animal) rwAnimalLoot(e); rwMKill(e, headshot); }
     
     if (PK.w >= 0) perkKill(PK.w, e, headshot);
     if (mode === 'rush') timeLeft = Math.min(180, timeLeft + 1);
@@ -3105,19 +3109,19 @@ Object.assign(EN, {
     var K = keyLabel;
     return '<dl class="keys">' +
       '<dt>' + K(KB.forward) + ' ' + K(KB.left) + ' ' + K(KB.back) + ' ' + K(KB.right) + '</dt><dd>' + zt('移动，', 'Move, ') + K(KB.sprint) + zt(' 冲刺', ' to sprint') + '</dd>' +
-      '<dt>' + zt('鼠标', 'Mouse') + '</dt><dd>' + zt('左键开火，右键或 ', 'Left click fires, right click or ') + K(KB.aim) + zt(' 瞄准', ' aims') + '</dd>' +
+      '<dt>' + K(KB.fire) + ' / ' + K(KB.aim) + '</dt><dd>' + zt('开火 / 瞄准（也可以用鼠标左右键）', 'Fire / aim (mouse buttons work too)') + '</dd>' +
       '<dt>1-8 / ' + zt('滚轮', 'wheel') + '</dt><dd>' + zt('切换已购买的武器', 'Switch between owned weapons') + '</dd>' +
       '<dt>' + K(KB.reload) + ' / ' + K(KB.jump) + '</dt><dd>' + zt('换弹 / 跳跃', 'Reload / jump') + '</dd>' +
       '<dt>' + K(KB.grenade) + ' / ' + K(KB.use) + '</dt><dd>' + zt('投手雷 / 在商店里打开柜台', 'Throw grenade / open the counter in the shop') + '</dd>' +
       '<dt>' + K(KB.bag) + '</dt><dd>' + zt('打开背包，使用买到的恢复品、护甲等', 'Open the backpack and use medkits, armor, etc.') + '</dd>' +
-      '<dt>' + zt('方向键', 'Arrow keys') + '</dt><dd>' + zt('没锁定鼠标时用来转向', 'Turn when the mouse is not locked') + '</dd>' +
+      '<dt>' + zt('方向键', 'Arrow keys') + '</dt><dd>' + zt('转动视角（不用鼠标也能玩）', 'Look around (no mouse needed)') + '</dd>' +
       '<dt>Esc / ' + K(KB.pause) + '</dt><dd>' + zt('暂停', 'Pause') + '</dd></dl>';
   }
 
   var KB_ACTIONS = [
     ['forward', '前进', 'Forward'], ['back', '后退', 'Back'], ['left', '向左', 'Left'], ['right', '向右', 'Right'],
-    ['jump', '跳跃', 'Jump'], ['sprint', '冲刺', 'Sprint'], ['reload', '换弹', 'Reload'], ['aim', '瞄准（切换）', 'Aim (toggle)'],
-    ['grenade', '投手雷', 'Grenade'], ['bag', '背包', 'Backpack'], ['use', '商店 / 互动', 'Shop / Use'], ['fire', '开火（备用键）', 'Fire (alt key)'], ['pause', '暂停', 'Pause']
+    ['jump', '跳跃', 'Jump'], ['sprint', '冲刺', 'Sprint'], ['reload', '换弹', 'Reload'], ['aim', '瞄准 / 选建筑部件 / 拆除', 'Aim / building parts / remove'],
+    ['grenade', '投手雷', 'Grenade'], ['bag', '背包', 'Backpack'], ['use', '商店 / 互动', 'Shop / Use'], ['fire', '开火 / 挥动 / 放置', 'Fire / swing / place'], ['drop', '丢弃手里的东西', 'Drop held item'], ['pause', '暂停', 'Pause']
   ];
   var RESERVED = /^(Escape|Digit[1-8]|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|MetaLeft|MetaRight|ContextMenu)$/;
   var settingsBack = 'menu', rebinding = null;
@@ -3426,7 +3430,8 @@ Object.assign(EN, {
       if (c === KB.bag || (RW.on && c === 'Tab')) { e.preventDefault(); openBag(); }
       if (c === KB.grenade) throwGrenade();
       if (c === KB.fire) { firing = true; firePress = true; }
-      if (c === KB.aim) { if (heldKind() !== 'gun') heldAlt(); else aiming = !aiming && W.reload <= 0; }
+      if (RW.on && c === KB.drop) rwDropHeld();
+      else if (c === KB.aim) { if (heldKind() !== 'gun') heldAlt(); else aiming = !aiming && W.reload <= 0; }
       if (c === 'KeyX' && !e.repeat) { var xb = false; for (var kk in KB) if (KB[kk] === 'KeyX') xb = true; if (!xb) toggleHolster(); }
       if (RW.on) { if (/^Digit[1-6]$/.test(c)) rwSelectHot(+c.slice(5) - 1); }
       else if (/^Digit[1-8]$/.test(c)) setWeapon(+c.slice(5) - 1);
@@ -3434,6 +3439,10 @@ Object.assign(EN, {
     else if (state === 'shop' && (c === KB.use || c === 'Escape')) closeShop();
     else if (state === 'bag') {
       if (c === KB.bag || c === 'Escape' || (RW.on && c === 'Tab')) { e.preventDefault(); closeBag(); }
+      else if (RW.on && RW.ui === 'inv' && /^Arrow/.test(c)) { e.preventDefault(); rwInvNav(c); }
+      else if (RW.on && RW.ui === 'inv' && (c === 'Enter' || c === KB.use || c === KB.fire)) rwInvEnter();
+      else if (RW.on && RW.ui === 'inv' && c === KB.reload && RW.cont) rwContLight();
+      else if (RW.on && RW.ui === 'inv' && c === KB.drop) { var qs = RW.ihov >= 0 && RW.inv[RW.ihov] ? RW.ihov : RW.isel; if (qs >= 0) rwDropSlot(qs); }
       else if (!RW.on && /^Digit[1-5]$/.test(c)) useItem(BAG_ORDER[+c.slice(5) - 1]);
     }
   });
@@ -3628,7 +3637,7 @@ Object.assign(EN, {
       var hasSc = G.sc.visible, fk = hasSc ? Math.min(1, camera.fov / baseFov) : 1;   // with a scope the gun keeps its on-screen size while the view zooms
       var adsX = 0, adsY = hasSc ? -G.topY : G.base[1] + 0.06, adsZ = G.base[2];   // with a scope the sight axis sits dead centre on the screen
       var raise = Math.sin(Math.PI * Math.min(1, aimT)) * 0.05, dw = drawT * drawT;
-      G.g.position.set((G.base[0] * (1 - aimT) + adsX * aimT + G.pose.px) * fk, (G.base[1] * (1 - aimT) + adsY * aimT + G.pose.py + Math.sin(bob * 1.4) * 0.006 * (1 - aimT * 0.7) + raise * 0.5 - 0.3 * dw) * fk, (G.base[2] * (1 - aimT) + adsZ * aimT + rk * 0.06) * fk);
+      G.g.position.set((G.base[0] * vmAx() * (1 - aimT) + adsX * aimT + G.pose.px) * fk, (G.base[1] * (1 - aimT) + adsY * aimT + G.pose.py + Math.sin(bob * 1.4) * 0.006 * (1 - aimT * 0.7) + raise * 0.5 - 0.3 * dw) * fk, (G.base[2] * (1 - aimT) + adsZ * aimT + rk * 0.06) * fk);
       G.g.scale.setScalar(fk);
       G.g.rotation.x = rk * 0.05 + G.pose.rx + raise - 0.7 * dw; G.g.rotation.z = G.pose.rz;
       var lo = lowT * (1 - aimT), sr2 = sprT * (1 - aimT), rl = W.reload > 0 ? 0.3 : 1;
@@ -3943,7 +3952,8 @@ Object.assign(EN, {
       var n = nades[i], p = n.m.position, ox = p.x, oz = p.z;
       n.vy -= 20 * dt;
       p.x += n.vx * dt; p.y += n.vy * dt; p.z += n.vz * dt;
-      if (p.y < 0.13) { p.y = 0.13; n.vy = -n.vy * 0.4; n.vx *= 0.7; n.vz *= 0.7; }
+      var ngy = RW.on ? rwH(p.x, p.z) + 0.13 : 0.13;
+      if (p.y < ngy) { p.y = ngy; n.vy = -n.vy * 0.4; n.vx *= 0.7; n.vz *= 0.7; }
       if (insideBox(p.x, p.y, p.z) || Math.abs(p.x) > A - 0.3 || Math.abs(p.z) > A - 0.3) { p.x = ox; p.z = oz; n.vx *= -0.3; n.vz *= -0.3; }
       n.fuse -= dt;
       if (n.fuse <= 0) { scene.remove(n.m); nades.splice(i, 1); explode(p.x, p.y, p.z, 5.5, 10, true); }
@@ -4849,6 +4859,7 @@ Object.assign(EN, {
       if (best) { RW.mons.push({ k: s[0], x: best.x, z: best.z, r: s[1], R: s[1] + 80, R2: (s[1] + 80) * (s[1] + 80), y: 0, camp: [], rs: [], npcs: 0, meshes: [] }); }
     });
     for (var i = 0; i < RW.mons.length; i++) if (RW.mons[i].k === 'outpost') { RW.safe = { x: RW.mons[i].x, z: RW.mons[i].z, r: RW.mons[i].r }; }
+    rwPlanHerds();
   }
   function rwSpawnPoint() {
     var rg = Math.random, H = RW.half, k, x, z, side;
@@ -4942,13 +4953,17 @@ Object.assign(EN, {
       if (dead) { rwBlobB(B, n.x, n.y, n.z, 0.55, 0.22, 0.5, [0.3, 0.28, 0.27], rg, 0.25); return; }
       rwBlobB(B, n.x, n.y + 0.3 * sc, n.z, 1.3 * sc, 1.0 * sc, 1.2 * sc, [0.4, 0.38, 0.37], rg, 0.26);
       for (i = 0; i < 7; i++) { var oa = rg() * 6.28, oy = rg() * 0.9 * sc; rwBlobB(B, n.x + Math.cos(oa) * 1.05 * sc, n.y + 0.35 * sc + oy, n.z + Math.sin(oa) * 1.0 * sc, 0.2, 0.16, 0.2, i % 2 ? [0.92, 0.52, 0.18] : [0.96, 0.84, 0.28], rg, 0.2); }
+    } else if (n.kind === 'hemp') {
+      if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.05, 0.15, 0.05, [0.3, 0.4, 0.2]); return; }
+      for (i = 0; i < 3; i++) { var hx = n.x + (rg() - 0.5) * 0.3, hz = n.z + (rg() - 0.5) * 0.3, hh = 1.1 + rg() * 0.5; rwBoxB(B, hx, n.y, hz, 0.05, hh, 0.05, [0.35, 0.5, 0.2]);
+        for (var lf = 0; lf < 3; lf++) rwBlobB(B, hx, n.y + hh * (0.45 + lf * 0.22), hz, 0.26 - lf * 0.05, 0.07, 0.26 - lf * 0.05, [0.3, 0.62, 0.22], rg, 0.35); }
     } else if (n.kind === 'crate') {
       if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.9, 0.14, 0.9, [0.28, 0.3, 0.22]); return; }
       rwBoxB(B, n.x, n.y, n.z, 1.0, 0.85, 1.0, [0.3, 0.38, 0.24]); rwBoxB(B, n.x, n.y + 0.85, n.z, 1.06, 0.1, 1.06, [0.22, 0.28, 0.18]);
       rwBoxB(B, n.x, n.y + 0.3, n.z, 1.04, 0.14, 1.04, [0.9, 0.75, 0.15]);
     }
   }
-  var RW_NODE = { tree: { max: 8, r: 0.5, coin: 3, last: 6, what: ['木材', 'Wood'] }, rock: { max: 8, r: 1.5, coin: 4, last: 8, what: ['石头', 'Stone'] }, ore: { max: 9, r: 1.3, coin: 7, last: 14, what: ['金属矿', 'Metal ore'] }, crate: { max: 1, r: 0.7, coin: 0, last: 0, what: ['补给箱', 'Supply crate'] } };
+  var RW_NODE = { tree: { max: 8, r: 0.5, coin: 3, last: 6, what: ['木材', 'Wood'] }, rock: { max: 8, r: 1.5, coin: 4, last: 8, what: ['石头', 'Stone'] }, ore: { max: 9, r: 1.3, coin: 7, last: 14, what: ['金属矿', 'Metal ore'] }, crate: { max: 1, r: 0.7, coin: 0, last: 0, what: ['补给箱', 'Supply crate'] }, hemp: { max: 1, r: 0.25, coin: 0, last: 0, what: ['麻', 'Hemp'] } };
   function rwNodeAlive(n) { var h = RW.nst[n.id]; return h === undefined || h > 0; }
   function rwGenNodes(cx, cz) {
     var rg = seeded(hashStr('rwn' + cx + '_' + cz + RW.seed)), out = [], S = RW_CH, x0 = cx * S, z0 = cz * S, i, x, z, h;
@@ -4980,6 +4995,13 @@ Object.assign(EN, {
       if (rg() > pc) continue;
       h = rwH(x, z); if (h < 0.6 || h > 45 || rwNearMon(x, z, 6) || !slopeOk(x, z, h, 1.2)) continue;
       add('crate', x, z, h, 1, rg());
+    }
+    var rh = seeded(hashStr('rwh' + cx + '_' + cz + RW.seed));   // hemp: its own random stream, added last, so the other nodes keep their ids
+    for (i = 0; i < 3; i++) {
+      x = x0 + rh() * S; z = z0 + rh() * S;
+      if (rh() > 0.4) continue;
+      h = rwH(x, z); if (h < 1.5 || h > 28 || rwNearMon(x, z, 10) || !slopeOk(x, z, h, 1.2)) continue;
+      out.push({ id: cx + '_' + cz + '_' + (100 + i), kind: 'hemp', x: x, z: z, y: h, r: 0.25, max: 1, sc: 1, v: rh() });
     }
     return out;
   }
@@ -5071,7 +5093,7 @@ Object.assign(EN, {
     for (b = -1; b <= 1; b++) for (a = -1; a <= 1; a++) {
       var ch = RW.chunks[(pcx + a) + ',' + (pcz + b)]; if (!ch) continue;
       for (k = 0; k < ch.nodes.length; k++) {
-        var n = ch.nodes[k]; if (!rwNodeAlive(n)) continue;
+        var n = ch.nodes[k]; if (!rwNodeAlive(n) || n.kind === 'hemp') continue;
         var dx = p.x - n.x, dz = p.z - n.z, rr = n.r + r, d2 = dx * dx + dz * dz;
         if (d2 < rr * rr) { var d = Math.sqrt(d2) || 0.001; p.x = n.x + dx / d * rr; p.z = n.z + dz / d * rr; }
       }
@@ -5219,17 +5241,19 @@ Object.assign(EN, {
     RW.attacker = 0;
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
     var h = duHead('RUST', '荒野世界', zt('你倒下了', 'You died'));
-    h += '<p>' + zt('死亡会丢掉一半金币；身上的东西都留在倒下的地方（一个只有你看得见的背包，15 分钟后消失），跑回去还能捡。', 'Dying costs half your coins. Everything you carried stays where you fell, in a bag only you can see (gone after 15 minutes): run back for it.') + '</p><button class="go" id="rwRespawn" type="button" disabled>' + zt('重生', 'Respawn') + '</button><button class="ghost" id="rwLobby" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
+    h += '<p>' + zt('死亡会丢掉一半金币；身上的东西都留在倒下的地方（一个只有你看得见的背包，15 分钟后消失），跑回去还能捡。', 'Dying costs half your coins. Everything you carried stays where you fell, in a bag only you can see (gone after 15 minutes): run back for it.') + '</p>' + rwBagButtons() + '<button class="go" id="rwRespawn" type="button" disabled>' + zt('在海岸随机重生', 'Respawn on the coast') + '</button><button class="ghost" id="rwLobby" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
     duCard(h, function () {});
     $('rwLobby').addEventListener('click', function () { DU.leave(false); });
-    setTimeout(function () { var b = $('rwRespawn'); if (b) { b.disabled = false; b.addEventListener('click', rwRespawn); } }, 2500);
+    setTimeout(function () { var b = $('rwRespawn'); if (b) { b.disabled = false; b.addEventListener('click', function () { rwRespawn(); }); } }, 2500);
+    Array.prototype.forEach.call(document.querySelectorAll('.rwbagbtn'), function (bt) { bt.addEventListener('click', function () { var bp = RW.pieces[+bt.getAttribute('data-bag')]; if (bp) rwRespawn(bp); }); });
   }
-  function rwRespawn() {
+  function rwRespawn(bag) {
     var sp = rwSpawnPoint();
+    if (bag && bag.k === 'sb') { sp = [bag.x + 0.8, bag.z + 0.8, groundAt(bag.x + 0.8, bag.z + 0.8, bag.y + 1)]; RW.bagCd[bag.id] = gtime + 60; }
     P.hp = P.maxHp; P.armor = 0; P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; RW.px = P.x; RW.pz = P.z;
     resetLoadout(); resetInv(); coins = Math.floor(coins * 0.5); grenades = 1; adrenT = 0; W.cd = 0; W.reload = 0; aiming = false; updateSlots(); rwInvReset(false);
     RW.dead = false; $('menu').hidden = true; requestLock();
-    banner(zt('你在海岸重生了', 'You respawned on the coast'), 1500);
+    banner(bag ? zt('你在睡袋重生了', 'You respawned at your sleeping bag') : zt('你在海岸重生了', 'You respawned on the coast'), 1500);
   }
 
   /* ---- infected camps (the authority runs them, everybody else sees them as ghosts) ---- */
@@ -5256,7 +5280,7 @@ Object.assign(EN, {
   function rwNpcTick(dt) {
     RW.spawnT -= dt; if (RW.spawnT > 0) return;
     RW.spawnT = 1.2;
-    RW.mons.forEach(function (m) {
+    RW.mons.concat(RW.herds || []).forEach(function (m) {
       if (!m.camp.length) return;
       if (!rwPlayersNear(m.x, m.z, m.r + 220)) { if (m.slots && !rwPlayersNear(m.x, m.z, m.r + 320)) rwDespawnCamp(m); return; }
       if (!m.slots) m.slots = m.camp.map(function (t) { return { type: t, e: null, t: 0 }; });
@@ -5268,6 +5292,7 @@ Object.assign(EN, {
     });
   }
   function rwNpcStep(e, dt) {   // returns true when the enemy was removed
+    if (e.T && e.T.animal) return rwAnimalStep(e, dt);
     var pos = e.g.position, m = e.camp, ty = e.type;
     e.t += dt; animEnemy(e, dt);
     if (e.slow > 0) e.slow -= dt;
@@ -5318,10 +5343,18 @@ Object.assign(EN, {
       case 'Rs': rwSetNode(String(m.id), +m.hp); break;
       case 'Rd': rwTakeHit(+m.d, m.i | 0); break;
       case 'Rb': if (m.p) rwPieceAdd(m.p); break;
+      case 'Rp': rwPieceHp(m.id | 0, +m.hp); break;
+      case 'Rl': { var fp = RW.pieces[m.id | 0]; if (fp) { fp.op = m.o | 0; rwFurnaceLit(fp); } break; }
+      case 'RA': { var tp = RW.pieces[m.id | 0]; if (tp && Array.isArray(m.a)) { var was = (tp.auth || []).indexOf(RW.me) >= 0; tp.auth = m.a.map(String); var now = tp.auth.indexOf(RW.me) >= 0; if (was !== now && Math.hypot(tp.x - P.x, tp.z - P.z) < 8) banner(now ? zt('已在领地柜上授权：25 米内可以建造、开门', 'Authorised: you can build and open doors within 25 m') : zt('已取消授权', 'Authorisation removed'), 1800); } break; }
+      case 'RV': rwContView(m); break;
+      case 'RR': { var lf = rwGive(String(m.it), m.n | 0); if (lf > 0) rwDropAdd([{ id: String(m.it), n: lf }], P.x, P.z, null, 600, P.y); banner(zt('放不下，还给你了', 'No room: returned to you'), 1100); break; }
+      case 'RG': { var lg = rwGive(String(m.it), m.n | 0), tk = (m.n | 0) - lg; if (tk > 0) rwNote(String(m.it), tk); if (lg > 0) { rwDropAdd([{ id: String(m.it), n: lg }], P.x, P.z, null, 600, P.y); banner(zt('背包满了，放在脚边', 'Inventory full: dropped at your feet'), 1300); } break; }
+      case 'RD': if (m.at && m.it) rwDropAdd(m.it.map(function (q) { return { id: String(q[0]), n: q[1] | 0 }; }), +m.at[0], +m.at[2], null, 600, +m.at[1]); break;
+      case 'RN': banner(zt('先把里面的东西拿空才能拆', 'Empty it before removing it'), 1400); delete RW.myX[m.id | 0]; break;
       case 'Rx': rwPieceDel(m.id | 0); break;
       case 'Ro': rwPieceDoor(m.id | 0, m.o | 0); break;
       case 'Ru': rwPieceGrade(m.id | 0, m.g | 0); break;
-      case 'Rr': { var bc = RWB[m.k]; if (bc) { for (var ck in bc.c) rwGive(ck, bc.c[ck]); banner(zt('这里不能建造（被占用了）', 'Could not build there (taken)'), 1400); } break; }
+      case 'Rr': { var bc = RWB[m.k]; if (RWD[m.k]) rwGive(RWD[m.k], 1); else if (bc) { for (var ck in bc.c) rwGive(ck, bc.c[ck]); banner(zt('这里不能建造（被占用了）', 'Could not build there (taken)'), 1400); } break; }
       case 'Rk': { var vic = coins; coins += 80; banner(zt('击杀玩家 +80', 'Player kill +80'), 1500); tone(900, 1300, 0.12, 'sine', 0.07); break; }
     }
   }
@@ -5333,7 +5366,7 @@ Object.assign(EN, {
     CO.role = DU.role = host ? 'host' : 'guest';
     if (host !== was) {
       enemies.forEach(function (e) { scene.remove(e.g); }); enemies = []; CO.ghosts = {}; CO.dead = {}; CO.pend = [];
-      RW.mons.forEach(function (m) { m.slots = null; });
+      RW.mons.concat(RW.herds || []).forEach(function (m) { m.slots = null; });
       if (host) banner(zt('你现在负责运行世界里的敌人', 'You now run the infected for this world'), 2200);
     }
   }
@@ -5403,13 +5436,13 @@ Object.assign(EN, {
     rwInitUi(); rwInitUi2(); RW.hud.style.display = 'block'; rwHotRender(true); $('bagHud').hidden = true;
     state = 'playing'; $('menu').hidden = true; $('hud').hidden = false; $('cross').hidden = false;
     requestLock(); tone(200, 400, 0.1, 'square', 0.05);
-    banner(zt('欢迎来到荒野世界 · 左键挥石块采集 · Tab 背包 · E 捡东西', 'Welcome to the wild · swing the rock to gather · Tab inventory · E picks up'), 4200);
+    $('banner').classList.add('rwb'); rwMStart(); rwWelcomeShow();
     RW.safeNow = false; RW.cullT = 0;
   }
   function rwTeardown() {
     if (!RW.built && !RW.on) return;
     RW.on = false; RW.dead = false; RW.mapOpen = false;
-    rwUiClose(true); holster = false;
+    rwUiClose(true); holster = false; $('banner').classList.remove('rwb');
     if (RW.hud) RW.hud.style.display = 'none';
     if (RW.mapEl) RW.mapEl.style.display = 'none';
     rwTeardownWorld();
@@ -5499,6 +5532,7 @@ Object.assign(EN, {
       ctx.fillStyle = '#ffd23a'; ctx.beginPath(); ctx.arc(x, z, big ? 5 : 3, 0, 6.3); ctx.fill();
       if (big) { var pp = CO.peers[r.id], nm = pp ? coopPeerName(pp) : zt('玩家 ', 'Player ') + r.id; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; ctx.strokeText(nm, x, z - 8); ctx.fillText(nm, x, z - 8); }
     });
+    rwMDraw(ctx, X, Z, big);
     var mx = X(P.x), mz = Z(P.z); ctx.save(); ctx.translate(mx, mz); ctx.rotate(-P.yaw);
     ctx.fillStyle = '#ff5a2a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); var a = big ? 9 : 6; ctx.moveTo(0, -a); ctx.lineTo(a * 0.7, a * 0.8); ctx.lineTo(0, a * 0.4); ctx.lineTo(-a * 0.7, a * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
   }
@@ -5541,7 +5575,7 @@ Object.assign(EN, {
   function rwPauseMenu() {
     releaseInput();
     var h = duHead('PAUSED', '已暂停', zt('荒野世界', 'The wild'));
-    h += '<p>' + zt('世界不会暂停，其他玩家和敌人都在继续。左键挥动工具采集，Tab 打开背包和制作，M 地图，E 捡东西、开箱、开门，X 空手。', 'The world keeps running. Swing a tool to gather, Tab opens inventory and crafting, M the map, E picks up, opens crates and doors, X holsters.') + '</p>';
+    h += '<p>' + zt('世界不会暂停，其他玩家和敌人都在继续。' + keyLabel(KB.fire) + ' 挥动工具采集或开火，' + keyLabel(KB.aim) + ' 瞄准，方向键转视角，Tab 背包和制作，M 地图，' + keyLabel(KB.use) + ' 捡东西、开箱、开门，' + keyLabel(KB.drop) + ' 丢掉手里的东西，X 空手。', 'The world keeps running. ' + keyLabel(KB.fire) + ' swings or shoots, ' + keyLabel(KB.aim) + ' aims, arrow keys look around, Tab inventory and crafting, M map, ' + keyLabel(KB.use) + ' picks up and opens crates and doors, ' + keyLabel(KB.drop) + ' drops what you hold, X holsters.') + '</p>';
     h += '<button class="go" id="duResume" type="button">' + zt('继续', 'Resume') + '</button><button class="ghost" id="duQuit" type="button">' + zt('返回大厅（玩其他模式）', 'Back to the lobby (other modes)') + '</button>';
     duCard(h, rwPauseMenu);
     $('duResume').addEventListener('click', function () { $('menu').hidden = true; requestLock(); });
@@ -6067,7 +6101,9 @@ Object.assign(EN, {
   };
   WDEF.forEach(function (w, i) { RWI['g' + i] = { gun: i, st: 1 }; });
   function rwIN(id) { var d = RWI[id]; if (!d) return id; return d.gun !== undefined ? t(WDEF[d.gun].name) : zt(d.n[0], d.n[1]); }
-  function rwID(id) { var d = RWI[id]; if (!d) return ''; if (d.gun !== undefined) { var w = WDEF[d.gun]; return t(w.desc) + tf(' 弹匣 {0}', w.mag) + t(w.auto ? '，连发' : '，单发'); } return zt(d.d[0], d.d[1]); }
+  function rwID(id) { var d = RWI[id]; if (!d) return '';
+    if (id === 'plan') return zt('拿在手上建房子：' + KF() + ' 放置，' + KA() + ' 选部件，' + keyLabel(KB.reload) + ' 旋转楼梯。', 'Hold it to build: ' + KF() + ' places, ' + KA() + ' picks a part, ' + keyLabel(KB.reload) + ' turns stairs.');
+    if (id === 'hammer') return zt(KF() + ' 把看着的建筑升级（木 → 石 → 金属），连按两下 ' + KA() + ' 拆除自己的建筑（返还一半木材）。', KF() + ' upgrades the part you look at (wood → stone → metal). Press ' + KA() + ' twice to remove your own part (half the wood back).'); if (d.gun !== undefined) { var w = WDEF[d.gun]; return t(w.desc) + tf(' 弹匣 {0}', w.mag) + t(w.auto ? '，连发' : '，单发'); } return zt(d.d[0], d.d[1]); }
   // swing timing (seconds), when in the swing the hit lands, melee damage (in enemy hp units)
   var VT = { hands: { dur: 0.42, hit: 0.42, dmg: 0.5 }, rock: { dur: 0.78, hit: 0.56, dmg: 0.9 }, hatchet: { dur: 0.62, hit: 0.55, dmg: 1.4 }, pickaxe: { dur: 0.86, hit: 0.56, dmg: 1.6 }, hammer: { dur: 0.6, hit: 0.55, dmg: 1 } };
   var RW_YIELD = { hands: { tree: 2, rock: 1, ore: 0 }, rock: { tree: 5, rock: 5, ore: 2 }, hatchet: { tree: 14, rock: 2, ore: 1 }, pickaxe: { tree: 3, rock: 12, ore: 8 }, hammer: { tree: 2, rock: 2, ore: 1 } };
@@ -6128,6 +6164,37 @@ Object.assign(EN, {
       for (i = 0; i < 4; i++) { x.fillStyle = '#c99a3a'; x.fillRect(14 + i * 10, 12, 7, 18); x.fillStyle = '#8a6a2a'; x.beginPath(); x.arc(17.5 + i * 10, 12, 3.5, Math.PI, 0); x.fill(); }
     } else if (id === 'vital') {
       x.fillStyle = '#d8342a'; x.beginPath(); x.moveTo(32, 54); x.bezierCurveTo(4, 34, 10, 10, 32, 22); x.bezierCurveTo(54, 10, 60, 34, 32, 54); x.fill();
+    } else if (id === 'frags') {
+      [[10, 44, 22, 30, 30, 48], [26, 50, 34, 26, 46, 52], [36, 40, 50, 22, 56, 46], [16, 30, 30, 14, 36, 34]].forEach(function (q, k) { poly([[q[0], q[1]], [q[2], q[3]], [q[4], q[5]]], ['#8f969c', '#6f767c', '#a7aeb4', '#7d848a'][k], '#2b2d30', 2); });
+    } else if (id === 'cloth') {
+      for (i = 0; i < 3; i++) { x.fillStyle = ['#c9b48a', '#b8a276', '#d6c49c'][i]; x.fillRect(10, 40 - i * 11, 44, 10); x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(10, 47 - i * 11, 44, 3); }
+      x.strokeStyle = '#6a5a3a'; x.lineWidth = 2; x.strokeRect(10, 18, 44, 32);
+    } else if (id === 'meat' || id === 'cooked') {
+      x.fillStyle = id === 'meat' ? '#c8443a' : '#7a3e1e'; x.beginPath(); x.ellipse(28, 34, 19, 15, -0.4, 0, 7); x.fill();
+      x.fillStyle = id === 'meat' ? '#f0d0c0' : '#c98a52'; x.beginPath(); x.ellipse(26, 34, 8, 6, -0.4, 0, 7); x.fill();
+      x.fillStyle = '#efe6d4'; x.fillRect(42, 20, 14, 6); x.beginPath(); x.arc(56, 20, 4, 0, 7); x.arc(56, 27, 4, 0, 7); x.fill();
+    } else if (id === 'bandage') {
+      x.fillStyle = '#ece6d6'; x.beginPath(); x.arc(30, 34, 17, 0, 7); x.fill(); x.fillStyle = '#c9c0ac'; x.beginPath(); x.arc(30, 34, 7, 0, 7); x.fill();
+      x.fillStyle = '#ece6d6'; x.fillRect(30, 44, 26, 8); x.fillStyle = '#d8342a'; x.fillRect(20, 26, 4, 10);
+    } else if (id === 'satchel') {
+      poly([[12, 26], [50, 26], [54, 54], [8, 54]], '#6a5434', '#2b2214', 2.5); x.fillStyle = '#4a3a24'; x.fillRect(12, 26, 38, 8);
+      x.strokeStyle = '#2b2214'; x.lineWidth = 3; x.beginPath(); x.moveTo(32, 26); x.quadraticCurveTo(40, 8, 52, 12); x.stroke(); x.fillStyle = '#ff7a1a'; x.beginPath(); x.arc(52, 12, 4, 0, 7); x.fill();
+    } else if (id === 'c4') {
+      x.fillStyle = '#6a6f74'; x.fillRect(8, 20, 48, 28); x.fillStyle = '#c9b48a'; for (i = 0; i < 3; i++) x.fillRect(10 + i * 15, 22, 13, 24);
+      x.fillStyle = '#1c1e20'; x.fillRect(22, 28, 20, 10); x.fillStyle = '#ff3a2a'; x.font = 'bold 9px monospace'; x.fillText('0:08', 23, 36);
+      x.strokeStyle = '#d8342a'; x.lineWidth = 2; x.beginPath(); x.moveTo(12, 20); x.lineTo(20, 12); x.moveTo(50, 20); x.lineTo(56, 12); x.stroke();
+    } else if (id === 'box') {
+      x.fillStyle = '#8a6239'; x.fillRect(8, 22, 48, 32); x.fillStyle = '#5a3c22'; x.fillRect(8, 22, 48, 7); x.fillRect(8, 22, 5, 32); x.fillRect(51, 22, 5, 32);
+      x.fillStyle = '#9aa1a8'; x.fillRect(28, 30, 8, 6); x.strokeStyle = 'rgba(0,0,0,.25)'; x.lineWidth = 1; for (i = 0; i < 3; i++) { x.beginPath(); x.moveTo(13, 38 + i * 6); x.lineTo(51, 38 + i * 6); x.stroke(); }
+    } else if (id === 'furnace') {
+      x.fillStyle = '#7d7a72'; x.fillRect(12, 18, 40, 38); x.fillStyle = '#6a675f'; x.fillRect(36, 6, 10, 14);
+      x.fillStyle = '#1c1612'; x.fillRect(20, 34, 24, 16); x.fillStyle = '#ff8a2a'; x.beginPath(); x.moveTo(24, 50); x.lineTo(32, 36); x.lineTo(40, 50); x.fill(); x.fillStyle = '#ffd23a'; x.beginPath(); x.moveTo(28, 50); x.lineTo(32, 42); x.lineTo(36, 50); x.fill();
+    } else if (id === 'tc') {
+      x.fillStyle = '#8a6239'; x.fillRect(16, 6, 32, 52); x.fillStyle = '#5a3c22'; x.fillRect(19, 24, 26, 3); x.fillRect(19, 40, 26, 3);
+      x.fillStyle = '#c0392b'; x.fillRect(20, 10, 24, 9); x.fillStyle = '#9aa1a8'; x.fillRect(22, 30, 4, 9); x.fillRect(30, 31, 12, 4);
+    } else if (id === 'sbag') {
+      x.fillStyle = '#3e4a2c'; x.beginPath(); x.ellipse(32, 38, 24, 14, 0, 0, 7); x.fill(); x.strokeStyle = '#26301a'; x.lineWidth = 2; x.beginPath(); x.ellipse(32, 38, 15, 8, 0, 0, 7); x.stroke();
+      x.fillStyle = '#8a8460'; x.fillRect(26, 22, 14, 8); x.strokeStyle = '#8a6a3a'; x.lineWidth = 3; x.beginPath(); x.moveTo(20, 30); x.lineTo(20, 46); x.moveTo(44, 30); x.lineTo(44, 46); x.stroke();
     } else if (id === 'bag') {
       poly([[14, 24], [50, 24], [56, 56], [8, 56]], '#7a6440', '#33281a', 2.5); poly([[22, 24], [26, 12], [38, 12], [42, 24]], '#5e4c30');
     } else if (d.gun !== undefined) {
@@ -6201,6 +6268,7 @@ Object.assign(EN, {
     var d = RWI[s.id]; if (!d) return 'hands';
     if (d.gun !== undefined) return 'gun';
     if (d.tool) return d.tool;
+    if (d.dep) return 'dep';
     return 'item';
   }
   function rwSelectHot(i) {
@@ -6232,9 +6300,27 @@ Object.assign(EN, {
     if (id === 'adren') return adrenT < 25;
     if (id === 'ammo') { for (var i = 0; i < WDEF.length; i++) if (owned[i] && ws[i].res < WDEF[i].maxRes) return true; return false; }
     if (id === 'vital') return vit < 3;
+    if (id === 'meat' || id === 'cooked' || id === 'bandage') return P.hp < P.maxHp;
     return false;
   }
+  var RW_RES_TOOL = { wood: 'plan', stone: 'hammer', metal: 'hammer' };
+  function rwGoBuild(res) {   // wood -> building plan in your hands; stone / metal -> hammer (to upgrade parts). Makes the tool if you have none.
+    var tool = RW_RES_TOOL[res], cost = tool === 'plan' ? { wood: 20 } : { wood: 30 }, k, idx = -1;
+    for (k = 0; k < RW_SLOTS; k++) if (RW.inv[k] && RW.inv[k].id === tool) { idx = k; break; }
+    if (idx < 0) {
+      if (!rwPay(cost)) { banner(zt('先攒 ' + cost.wood + ' 木材，做一个' + rwIN(tool), 'Collect ' + cost.wood + ' wood first to make a ' + rwIN(tool)), 1800); tone(150, 120, 0.06, 'square', 0.04); return false; }
+      rwGive(tool, 1); rwNote(tool, 1);
+      for (k = 0; k < RW_SLOTS; k++) if (RW.inv[k] && RW.inv[k].id === tool) { idx = k; break; }
+      if (idx < 0) return false;
+    }
+    if (RW.ui) rwUiClose();
+    rwHoldSlot(idx);
+    banner(tool === 'plan' ? zt('木材用来建房子：拿着建筑图纸，' + KF() + ' 放置，' + KA() + ' 选部件', 'Wood is for building: hold the plan, ' + KF() + ' places, ' + KA() + ' picks a part')
+      : zt('石头和金属矿用来升级建筑：拿着锤子，对着你的建筑按 ' + KF(), 'Stone and ore upgrade buildings: hold the hammer, look at your part and press ' + KF()), 2600);
+    return true;
+  }
   function rwUseSlot(i) {
+    var s0 = RW.inv[i]; if (s0 && RW_RES_TOOL[s0.id]) return rwGoBuild(s0.id);
     var s = RW.inv[i]; if (!s || !RWI[s.id] || !RWI[s.id].use) return false;
     var id = s.id;
     if (!rwCanUseId(id)) { tone(150, 120, 0.06, 'square', 0.04); banner(id === 'medkit' ? zt('生命是满的', 'Health is full') : id === 'armor' ? zt('护甲已满', 'Armor is full') : id === 'ammo' ? zt('备弹都是满的', 'Reserve ammo is full') : zt('现在用不了', 'Cannot use that now'), 1000); return false; }
@@ -6243,6 +6329,7 @@ Object.assign(EN, {
     else if (id === 'adren') adrenT = 30;
     else if (id === 'ammo') addAmmo(2);
     else if (id === 'vital') { vit++; P.maxHp += 20; P.hp = Math.min(P.maxHp, P.hp + 20); }
+    else if (id === 'meat' || id === 'cooked' || id === 'bandage') P.hp = Math.min(P.maxHp, P.hp + (id === 'meat' ? 5 : id === 'cooked' ? 25 : 15));
     s.n--; if (s.n <= 0) RW.inv[i] = null;
     tone(600, 1000, 0.1, 'sine', 0.08);
     rwInvChanged();
@@ -6379,9 +6466,11 @@ Object.assign(EN, {
     setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 3500);
   }
   function KE() { return isTouch ? zt('点「交互」', 'Tap Use:') : '[' + keyLabel(KB.use) + ']'; }
-  function KL() { return isTouch ? zt('按住开火键', 'Hold Fire to') : zt('按住左键', 'Hold left click to'); }
-  function KL1() { return isTouch ? zt('点开火键', 'Tap Fire to') : zt('左键', 'Left click to'); }
-  function KR() { return isTouch ? zt('瞄准键', 'Aim button') : zt('右键', 'right click'); }
+  function KF() { return isTouch ? zt('开火键', 'Fire') : keyLabel(KB.fire); }   // default controls are keyboard only: F = fire / swing / place, C = aim / parts / remove
+  function KA() { return isTouch ? zt('瞄准键', 'Aim') : keyLabel(KB.aim); }
+  function KL() { return isTouch ? zt('按住开火键', 'Hold Fire to') : zt('按住 ' + KF(), 'Hold ' + KF() + ' to'); }
+  function KL1() { return isTouch ? zt('点开火键', 'Tap Fire to') : zt('按 ' + KF(), 'Press ' + KF() + ' to'); }
+  function KR() { return KA(); }
 
   /* ---- things lying on the ground: gathered wood/stone/ore, crate loot, dropped items, your bag after death ---- */
   var DROPM = null;
@@ -6525,14 +6614,15 @@ Object.assign(EN, {
       if (!right) G.lh = hd;
     });
   });
+  function vmAx() { return Math.max(0.25, Math.min(1, camera.aspect / 1.6)); }   // narrow / upright screens cut the sides off, so held things move inwards
   function vmPose(hk) {   // per-frame first-person animation for hands / tools
-    var hands = hk === 'hands' || hk === 'item';
+    var hands = hk === 'hands' || hk === 'item' || hk === 'dep' || hk === 'bomb';
     if (VM.kind !== hk) {
       VM.kind = hk;
       for (var k in VM.tools) VM.tools[k].visible = k === hk;
       VM.fr.visible = VM.fl.visible = hands; VM.piv.visible = !hands; VM.rh.visible = !hands && hk !== 'plan';
     }
-    var p = VM.sw, dw = drawT * drawT, sr = sprT, mv = Math.min(1, lowT + sprT);
+    var p = VM.sw, dw = drawT * drawT, sr = sprT, mv = Math.min(1, lowT + sprT), ax = vmAx();
     var bobY = Math.sin(bob * 1.4) * 0.012 * (1 + sr), bobX = Math.cos(bob * 0.7) * 0.012 * (1 + sr), br = Math.sin(gtime * 1.6) * 0.004;
     var sh = VM.shake > 0 ? (Math.random() - 0.5) * VM.shake * 0.12 : 0;
     VM.g.position.set(bobX + sh, bobY + br - 0.32 * dw - 0.03 * sr, 0);
@@ -6540,10 +6630,10 @@ Object.assign(EN, {
     if (hands) {
       var pr = 0, pl = 0;
       if (p > 0) { var ext = p < VM.hitAt ? sstep(0.05, VM.hitAt, p) : 1 - sstep(VM.hitAt, 1, p); if (VM.side > 0) pr = ext; else pl = ext; }
-      var pump = sr * Math.sin(bob * 0.7), lift = hk === 'item' ? 0.03 : 0;
-      VM.fr.position.set(0.2 - 0.09 * pr, -0.175 + 0.06 * pr + 0.05 * pump + lift, -0.43 - 0.3 * pr + 0.07 * pump);
+      var pump = sr * Math.sin(bob * 0.7), lift = hk !== 'hands' ? 0.03 : 0;
+      VM.fr.position.set((0.2 - 0.09 * pr) * Math.max(0.55, ax), -0.175 + 0.06 * pr + 0.05 * pump + lift, -0.43 - 0.3 * pr + 0.07 * pump);
       VM.fr.rotation.set(0.15 + 0.35 * pr - 0.3 * sr, 0.08, -0.32 + 0.22 * pr);
-      VM.fl.position.set(-0.2 + 0.09 * pl, -0.185 + 0.06 * pl - 0.05 * pump, -0.45 - 0.3 * pl - 0.07 * pump);
+      VM.fl.position.set((-0.2 + 0.09 * pl) * Math.max(0.55, ax), -0.185 + 0.06 * pl - 0.05 * pump, -0.45 - 0.3 * pl - 0.07 * pump);
       VM.fl.rotation.set(0.15 + 0.35 * pl - 0.3 * sr, -0.08, 0.32 - 0.22 * pl);
     } else {
       var plan = hk === 'plan', b0 = plan ? 0.17 : 0.3, b1 = plan ? -0.27 : -0.36, b2 = plan ? -0.42 : -0.56, rest = plan ? 0.05 : -0.22;
@@ -6555,7 +6645,7 @@ Object.assign(EN, {
         else { a = sstep(VM.hitAt + 0.04, 1, p); rx = -1.2 + (rest + 1.2) * a; py = -0.07 * (1 - a); pz = -0.17 * (1 - a); rz = -0.08 * (1 - a); }
       }
       var run = sr * 0.35 + lowT * 0.1;
-      VM.piv.position.set(b0 + 0.02 * run, b1 + py - 0.05 * run + Math.sin(bob * 2.8) * 0.01 * sr, b2 + pz);
+      VM.piv.position.set((b0 + 0.02 * run) * ax, b1 + py - 0.05 * run + Math.sin(bob * 2.8) * 0.01 * sr, b2 + pz);
       VM.piv.rotation.set(rx - run * 0.5, 0.15 * run, (plan ? 0 : 0.12) + rz + 0.25 * run);
     }
     if (VM.shake > 0) VM.shake = Math.max(0, VM.shake - 0.016);
@@ -6577,6 +6667,8 @@ Object.assign(EN, {
       if (want && VM.sw <= 0 && drawT < 0.3) { var v = VT[hk]; VM.sw = 1e-4; VM.dur = v.dur; VM.hitAt = v.hit; VM.hitDone = false; VM.side = -VM.side; tone(240, 120, 0.09, 'triangle', 0.03); }
     } else if (hk === 'plan') { if (want && !latched) { latched = true; rwPlace(); } }
     else if (hk === 'item') { if (want && !latched) { latched = true; rwUseSlot(RW_HOT0 + RW.hot); } }
+    else if (hk === 'dep') { if (want && !latched) { latched = true; rwPlaceDep(); } }
+    else if (hk === 'bomb') { if (want && !latched) { latched = true; rwThrowBomb(); } }
   }
   function heldAlt() {   // right click / aim button with something that is not a gun
     var hk = heldKind();
@@ -6586,7 +6678,7 @@ Object.assign(EN, {
   function vmHit(hk) {
     if (hk === 'hammer' && RW.on) { var pc = rwPieceRay(4.5); if (pc) { rwHammerHit(pc); return; } }
     if (vmMelee(hk)) return;
-    if (RW.on) { var n = rwFindNode(function (q) { return q.kind !== 'crate'; }); if (n) { rwGatherHit(n, hk); return; } }
+    if (RW.on) { var n = rwFindNode(function (q) { return q.kind !== 'crate' && q.kind !== 'hemp'; }); if (n) { rwGatherHit(n, hk); return; } }
     var dir = tmpD.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize(), cp = camera.position, wt = rayWall(cp.x, cp.y, cp.z, dir.x, dir.y, dir.z, 2.4);
     if (wt < 2.4) { burst(new THREE.Vector3(cp.x + dir.x * wt, cp.y + dir.y * wt, cp.z + dir.z * wt), 3, partMatG, 2.5); tone(150, 90, 0.05, 'square', 0.05); VM.shake = 0.12; }
   }
@@ -6645,11 +6737,14 @@ Object.assign(EN, {
     if (!RW.on || RW.dead || state !== 'playing') return false;
     var pc = rwPieceRay(3.2);
     if (pc && pc.k === 'dr') {
-      if (pc.o === RW.me) { dSend({ t: 'Ro', id: pc.id }); tone(260, 180, 0.08, 'square', 0.05); }
-      else { banner(zt('门锁着：只有建门的人能打开', 'Locked: only the builder can open this door'), 1400); tone(150, 120, 0.06, 'square', 0.04); }
+      if (rwCanDoor(pc)) { dSend({ t: 'Ro', id: pc.id }); tone(260, 180, 0.08, 'square', 0.05); }
+      else { banner(zt('门锁着：只有建门的人或在领地柜上授权的人能打开', 'Locked: only the builder or people authorised on the tool cupboard can open it'), 1600); tone(150, 120, 0.06, 'square', 0.04); }
       return true;
     }
+    if (pc && (pc.k === 'bx' || pc.k === 'fu')) { rwContOpen(pc); return true; }
+    if (pc && pc.k === 'tc') { dSend({ t: 'Ra', id: pc.id }); tone(500, 700, 0.08, 'triangle', 0.05); return true; }
     var dp = rwDropTarget(); if (dp) { rwDropPick(dp); return true; }
+    var hm = rwFindNode(function (q) { return q.kind === 'hemp'; }); if (hm) { rwPickHemp(hm); return true; }
     var n = rwFindNode(function (q) { return q.kind === 'crate'; });
     if (n && RW.gatherCd <= 0) { rwOpenCrate(n); return true; }
     return false;
@@ -6657,10 +6752,11 @@ Object.assign(EN, {
   function rwHudHeld(hk) {
     var s = RW.on ? rwHeldSlot() : null;
     setText('hWeap', hk === 'hands' ? zt('空手', 'Hands') : s ? rwIN(s.id) : '');
-    setText('hAmmo', hk === 'item' && s ? '×' + s.n : hk === 'plan' ? zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]) : '—');
-    var L = isTouch ? zt('开火键', 'Fire') : zt('左键', 'LMB'), R = isTouch ? zt('瞄准键', 'Aim') : zt('右键', 'RMB');
+    var res = hk === 'item' && s && RW_RES_TOOL[s.id];
+    setText('hAmmo', (hk === 'item' || hk === 'dep' || hk === 'bomb') && s ? '×' + s.n : hk === 'plan' ? zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]) : '—');
+    var L = KF(), R = KA();
     setText('hRel', hk === 'hands' ? L + zt(' 出拳', ' punch') : hk === 'plan' ? L + zt(' 放置 · ', ' place · ') + R + zt(' 选部件 · ', ' parts · ') + keyLabel(KB.reload) + zt(' 旋转', ' rotate')
-      : hk === 'hammer' ? L + zt(' 升级 · ', ' upgrade · ') + R + zt(' 拆除', ' remove') : hk === 'item' ? L + zt(' 使用', ' use') : L + zt(' 挥动采集', ' swing to gather'));
+      : hk === 'hammer' ? L + zt(' 修理 / 升级 · ', ' repair / upgrade · ') + R + zt(' 拆除', ' remove') : hk === 'dep' ? L + zt(' 放下', ' place') : hk === 'bomb' ? L + zt(' 扔出去', ' throw') : res ? L + (s.id === 'wood' ? zt(' 拿出建筑图纸去建房子', ' take out the building plan') : zt(' 拿出锤子升级建筑', ' take out the hammer')) : hk === 'item' ? L + zt(' 使用', ' use') : L + zt(' 挥动采集', ' swing to gather'));
   }
   function rwLoot(n) {
     var near = rwMonNear(n.x, n.z), rich = !!near, r = Math.random(), items = [];
@@ -6692,6 +6788,7 @@ Object.assign(EN, {
     el.addEventListener('pointerdown', function (e) {
       var sl = e.target.closest ? e.target.closest('.rwslot') : null;
       if (!sl || e.button === 2) return;
+      if (sl.hasAttribute('data-cs')) { rwContTake(+sl.getAttribute('data-cs')); e.preventDefault(); return; }
       var si = +sl.getAttribute('data-s');
       if (!RW.inv[si]) { RW.isel = si; rwInvRender(); return; }
       rwDrag = { si: si, x: e.clientX, y: e.clientY, moved: false, ghost: null };
@@ -6716,10 +6813,13 @@ Object.assign(EN, {
       if (dg.ghost) dg.ghost.parentNode.removeChild(dg.ghost);
       if (!dg.moved) { RW.isel = dg.si; rwInvRender(); return; }
       var tg = document.elementFromPoint(e.clientX, e.clientY), ts = tg && tg.closest ? tg.closest('.rwslot') : null;
-      if (ts) rwMove(dg.si, +ts.getAttribute('data-s'));
+      if (RW.cont && tg && tg.closest && tg.closest('#rwiCraft')) rwContPut(dg.si);
+      else if (ts && ts.hasAttribute('data-s')) rwMove(dg.si, +ts.getAttribute('data-s'));
       else if (tg && RW.invEl.contains(tg) && !(tg.closest && tg.closest('.rwp'))) rwDropSlot(dg.si);   // let go outside the panels: drop it on the ground
       else rwInvRender();
     });
+    RW.ihov = -1;
+    el.addEventListener('pointerover', function (e) { var sl = e.target.closest ? e.target.closest('.rwslot') : null; RW.ihov = sl ? +sl.getAttribute('data-s') : -1; });
     el.addEventListener('contextmenu', function (e) {
       e.preventDefault();
       var sl = e.target.closest ? e.target.closest('.rwslot') : null; if (sl) rwQuick(+sl.getAttribute('data-s'));
@@ -6727,7 +6827,7 @@ Object.assign(EN, {
     el.addEventListener('dblclick', function (e) {
       var sl = e.target.closest ? e.target.closest('.rwslot') : null; if (!sl) return;
       var si = +sl.getAttribute('data-s'), s = RW.inv[si]; if (!s) return;
-      if (RWI[s.id].use) rwUseSlot(si); else rwHoldSlot(si);
+      if (RWI[s.id].use || RW_RES_TOOL[s.id]) rwUseSlot(si); else rwHoldSlot(si);
     });
     el.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('[data-a],[data-c]') : null; if (!b || b.disabled) return;
@@ -6735,7 +6835,27 @@ Object.assign(EN, {
       if (c) { rwCraft(c); return; }
       if (a === 'use') rwUseSlot(i); else if (a === 'hold') rwHoldSlot(i); else if (a === 'split') rwSplit(i);
       else if (a === 'drop') rwDropSlot(i); else if (a === 'drop1') rwDropSlot(i, true); else if (a === 'close') rwUiClose();
+      else if (a === 'put') rwContPut(i); else if (a === 'light') rwContLight();
     });
+  }
+  function rwInvEnter() {   // Enter / Use / Fire inside the inventory
+    if (RW.cont && RW.cfoc >= 0) { rwContTake(RW.cfoc); return; }
+    var es = RW.inv[RW.isel]; if (!es) return;
+    if (RW.cont && RW.cont.s) { rwContPut(RW.isel); return; }
+    if (RWI[es.id].use || RW_RES_TOOL[es.id]) rwUseSlot(RW.isel); else rwHoldSlot(RW.isel);
+  }
+  function rwInvNav(c) {   // arrow keys move the selection: 4 backpack rows + the belt row (and into an open box / furnace on the right)
+    if (RW.cont && RW.cont.s && RW.cfoc >= 0) {
+      var nC = RW.cont.s.length, cols = RW.cont.k === 'fu' ? 4 : 6, cr = Math.floor(RW.cfoc / cols), cc = RW.cfoc % cols, rows = Math.ceil(nC / cols);
+      if (c === 'ArrowLeft') { if (cc === 0) { RW.cfoc = -1; rwInvRender(); return; } cc--; }
+      else if (c === 'ArrowRight') cc = Math.min(cols - 1, cc + 1); else if (c === 'ArrowUp') cr = (cr + rows - 1) % rows; else if (c === 'ArrowDown') cr = (cr + 1) % rows;
+      RW.cfoc = Math.min(nC - 1, cr * cols + cc); rwInvRender(); return;
+    }
+    if (RW.cont && RW.cont.s && c === 'ArrowRight') { var ci = RW.isel < 0 ? 0 : RW.isel < RW_HOT0 ? RW.isel % 6 : RW.isel - RW_HOT0; if (ci === 5) { RW.cfoc = 0; rwInvRender(); return; } }
+    var i = RW.isel < 0 ? RW_HOT0 + RW.hot : RW.isel, row = i < RW_HOT0 ? Math.floor(i / 6) : 4, col = i < RW_HOT0 ? i % 6 : i - RW_HOT0;
+    if (c === 'ArrowLeft') col = (col + 5) % 6; else if (c === 'ArrowRight') col = (col + 1) % 6; else if (c === 'ArrowUp') row = (row + 4) % 5; else if (c === 'ArrowDown') row = (row + 1) % 5;
+    RW.isel = row < 4 ? row * 6 + col : RW_HOT0 + col; RW.ihov = -1;
+    rwInvRender();
   }
   function rwInvOpen() {
     if (state !== 'playing' || RW.dead) return;
@@ -6751,6 +6871,7 @@ Object.assign(EN, {
     tone(300, 420, 0.06, 'triangle', 0.04);
   }
   function rwUiClose(noLock) {
+    rwContClose();
     if (RW.invEl) RW.invEl.style.display = 'none';
     if (RW.buildEl) RW.buildEl.style.display = 'none';
     if (rwDrag && rwDrag.ghost && rwDrag.ghost.parentNode) rwDrag.ghost.parentNode.removeChild(rwDrag.ghost);
@@ -6788,26 +6909,33 @@ Object.assign(EN, {
       '<p>' + zt('金币在前哨站商店里买枪、补给，也能把木材石头卖掉换金币。', 'Spend coins at the Outpost shop on guns and supplies, or sell wood and stone there.') + '</p>';
     // selected item
     var s = RW.isel >= 0 ? RW.inv[RW.isel] : null, dh;
-    if (!s) dh = '<p>' + zt('点一个物品在这里查看。拖动可以移动或叠加；右键在背包和快捷栏之间快速移动；双击使用或拿在手上；拖到窗口外面就丢在地上。', 'Click an item to see it here. Drag to move or stack it; right click moves it between backpack and belt; double click uses it or puts it in your hands; drag it outside the panels to drop it.') + '</p>';
+    if (!s) dh = '<p>' + zt('点一个物品在这里查看，下面的按钮可以使用、拿在手上、拆分或丢掉（也可以按 ' + keyLabel(KB.drop) + ' 丢掉）。拖动可以移动或叠加；双击使用或拿在手上；拖到窗口外面就丢在地上。', 'Select an item to see it here; the buttons below use, hold, split or drop it (' + keyLabel(KB.drop) + ' drops too). Drag to move or stack; double click uses or holds it; drag it outside the panels to drop it.') + '</p>';
     else {
       var d = RWI[s.id], extra = '';
       if (d.gun !== undefined) extra = '<p>' + tf('弹匣 {0} · 备弹 {1}', ws[d.gun].ammo, ws[d.gun].res).replace('弹匣', zt('弹匣', 'Mag')).replace('备弹', zt('备弹', 'reserve')) + ' · Lv' + wlv[d.gun] + perkIcons(d.gun) + '</p>';
       dh = '<div class="hd"><img src="' + rwIconUrl(s.id) + '" alt=""><div><b>' + duEsc(rwIN(s.id)) + '</b><br><span style="color:#a39e90">×' + s.n + (d.st > 1 ? ' / ' + d.st : '') + '</span></div></div><p>' + duEsc(rwID(s.id)) + '</p>' + extra + '<div class="rwacts">';
       if (d.use) dh += '<button class="rwbtn" data-a="use" type="button"' + (rwCanUseId(s.id) ? '' : ' disabled') + '>' + zt('使用', 'Use') + '</button>';
+      if (RW_RES_TOOL[s.id]) dh += '<button class="rwbtn" data-a="use" type="button">' + (s.id === 'wood' ? zt('用来建房子', 'Build with it') : zt('用来升级建筑', 'Upgrade with it')) + '</button>';
       if (d.tool || d.gun !== undefined || d.use) dh += '<button class="rwbtn' + (d.use ? ' alt' : '') + '" data-a="hold" type="button">' + zt('拿在手上', 'Hold') + '</button>';
       if (s.n > 1) dh += '<button class="rwbtn alt" data-a="split" type="button">' + zt('拆分', 'Split') + '</button>';
       if (s.n > 1) dh += '<button class="rwbtn alt" data-a="drop1" type="button">' + zt('丢 1 个', 'Drop 1') + '</button>';
       dh += '<button class="rwbtn alt" data-a="drop" type="button">' + zt('丢在地上', 'Drop') + '</button></div>';
+      if (RW.cont && RW.cont.s) dh += '<div class="rwacts"><button class="rwbtn" data-a="put" type="button">' + (RW.cont.k === 'fu' ? zt('放进熔炉', 'Put in furnace') : zt('放进箱子', 'Put in box')) + (isTouch ? '' : ' [Enter]') + '</button></div>';
     }
     $('rwiDet').innerHTML = dh;
-    // crafting
+    // crafting, or the box / furnace you have open
+    var rp = $('rwiCraft').parentNode;
+    if (RW.cont) { $('rwiT4').textContent = ''; $('rwiCraft').innerHTML = rwContHtml(); $('rwiCraft').style.maxHeight = 'none'; rp.style.width = 'auto'; rp.style.maxWidth = 'calc(6 * var(--s) + 50px)'; }
+    else {
+    $('rwiCraft').style.maxHeight = ''; rp.style.width = '290px'; rp.style.maxWidth = '';
     h = '';
     RW_CRAFT.forEach(function (q) {
       var ok = rwHas(q[1]);
       h += '<div class="rwcr"><img src="' + rwIconUrl(q[0]) + '" alt=""><div>' + duEsc(rwIN(q[0])) + '<small>' + rwCostTxt(q[1], true) + '</small></div><button class="rwbtn" data-c="' + q[0] + '" type="button"' + (ok ? '' : ' disabled') + '>' + zt('制作', 'Craft') + '</button></div>';
     });
     $('rwiCraft').innerHTML = h;
-    $('rwiFoot').innerHTML = (isTouch ? '' : zt('Tab / ' + keyLabel(KB.bag) + ' / Esc 关闭', 'Tab / ' + keyLabel(KB.bag) + ' / Esc to close') + ' · ') + '<button class="rwbtn alt" data-a="close" type="button">' + zt('关闭背包', 'Close') + '</button>';
+    }
+    $('rwiFoot').innerHTML = (isTouch ? '' : zt('方向键选择 · Enter 使用或拿在手上 · ' + keyLabel(KB.drop) + ' 丢掉 · Tab / ' + keyLabel(KB.bag) + ' / Esc 关闭', 'Arrows select · Enter uses or holds · ' + keyLabel(KB.drop) + ' drops · Tab / ' + keyLabel(KB.bag) + ' / Esc to close') + ' · ') + '<button class="rwbtn alt" data-a="close" type="button">' + zt('关闭背包', 'Close') + '</button>';
   }
 
   /* ---- building: parts, snapping, ghost preview, hammer ---- */
@@ -6857,6 +6985,7 @@ Object.assign(EN, {
     return g;
   }
   function rwPieceParts(k, r, dep) {   // boxes [cx, cy, cz, w, h, d, solid] relative to the part's origin
+    if (RWD[k]) return rwDepParts(k, r);
     var L = [];
     function W(u, y0, y1, len) { var cy = (y0 + y1) / 2, h = y1 - y0; if (r === 0) L.push([u, cy, 0, len, h, 0.2, 1]); else L.push([0, cy, u, 0.2, h, len, 1]); }
     if (k === 'fd') { L.push([0, -dep / 2, 0, 3, dep, 3, 1]); L.push([0, -0.06, 0, 3.04, 0.12, 3.04, 0]); }
@@ -6919,6 +7048,7 @@ Object.assign(EN, {
     var k = String(a[1]); if (!RWB[k]) return;
     rwBuildMats();
     var p = { id: id, k: k, x: +a[2], y: +a[3], z: +a[4], r: (a[5] | 0) & 3, g: Math.max(0, Math.min(2, a[6] | 0)), o: String(a[7] || ''), op: a[8] | 0, cb: [], bl: [], ang: 0 };
+    p.hmax = rwMaxHp(k, p.g); p.hp = +a[9] > 0 ? +a[9] : p.hmax; if (k === 'tc') p.auth = (a[10] && a[10].a) || [p.o];
     if (rwIsWall(k) || k === 'dr') p.r &= 1;
     p.dep = k === 'fd' ? rwFdDepth(p.x, p.z, p.y) : 0;
     p.parts = rwPieceParts(k, p.r, p.dep);
@@ -6929,7 +7059,8 @@ Object.assign(EN, {
       if (p.r === 0) { piv.position.set(-0.58, 0, 0); } else { piv.position.set(0, 0, 0.58); piv.rotation.y = Math.PI / 2; p.base = Math.PI / 2; }
       p.base = p.r === 0 ? 0 : Math.PI / 2; p.ang = p.op ? 1 : 0; piv.rotation.y = p.base - (p.op ? Math.PI / 2 : 0);
       p.m = root;
-    } else p.m = new THREE.Mesh(rwPieceGeo(k, p.r, p.dep), RW.bmat[p.g]);
+    } else if (RWD[k]) p.m = rwDepMesh(p);
+    else p.m = new THREE.Mesh(rwPieceGeo(k, p.r, p.dep), RW.bmat[p.g]);
     p.m.position.set(p.x, p.y, p.z);
     RW.bgroup.add(p.m);
     p.pk = p.parts.map(function (q) { return { minX: p.x + q[0] - q[3] / 2, maxX: p.x + q[0] + q[3] / 2, minY: p.y + q[1] - q[4] / 2, maxY: p.y + q[1] + q[4] / 2, minZ: p.z + q[2] - q[5] / 2, maxZ: p.z + q[2] + q[5] / 2 }; });
@@ -6947,6 +7078,9 @@ Object.assign(EN, {
     delete RW.pieces[id];
     var i = RW.plist.indexOf(p); if (i >= 0) RW.plist.splice(i, 1);
     if (p.k === 'fd') rwFdChanged(p);
+    if (!RW.myX[id] && !RW.tearing && Math.hypot(p.x - P.x, p.z - P.z) < 80) { burst(new THREE.Vector3(p.x, p.y + 1, p.z), 14, partMatG, 6); tone(120, 50, 0.3, 'sawtooth', 0.08); }
+    if (RW.myX[id] && RWD[p.k]) { delete RW.myX[id]; if (rwGive(RWD[p.k], 1) === 0) rwNote(RWD[p.k], 1); }
+    if (RW.cont && RW.cont.id === id) { RW.cont = null; if (RW.ui === 'inv') rwInvRender(); }
     if (RW.myX[id]) { delete RW.myX[id]; var back = Math.floor((RWB[p.k].c.wood || 0) / 2); if (back > 0) { var left = rwGive('wood', back); if (back - left > 0) rwNote('wood', back - left); } }
   }
   function rwPieceDoor(id, op) {
@@ -6956,8 +7090,8 @@ Object.assign(EN, {
     if (Math.hypot(p.x - P.x, p.z - P.z) < 40) tone(p.op ? 220 : 180, p.op ? 300 : 120, 0.12, 'triangle', 0.05);
   }
   function rwPieceGrade(id, g) {
-    var p = RW.pieces[id]; if (!p || p.k === 'dr') return;
-    p.g = Math.max(0, Math.min(2, g | 0)); p.m.material = RW.bmat[p.g];
+    var p = RW.pieces[id]; if (!p || p.k === 'dr' || RWD[p.k]) return;
+    p.g = Math.max(0, Math.min(2, g | 0)); p.m.material = RW.bmat[p.g]; p.hmax = rwMaxHp(p.k, p.g); p.hp = p.hmax;
     if (Math.hypot(p.x - P.x, p.z - P.z) < 40) burst(new THREE.Vector3(p.x, p.y + 1.5, p.z), 8, partMatG, 3);
   }
   function rwPiecesLoad(list) {
@@ -6992,7 +7126,9 @@ Object.assign(EN, {
     return best;
   }
   function rwBuildCand() {
-    var k = RW.bsel, o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    var k = rwCurK(); if (!k) return null;
+    if (RWD[k]) return rwDepCand(k);
+    var o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     var tw = rayWall(o.x, o.y, o.z, dir.x, dir.y, dir.z, 7), hit = tw < 7, tt = Math.min(tw, 5.5);
     var ax = o.x + dir.x * tt, ay = o.y + dir.y * tt, az = o.z + dir.z * tt, best = null, bd = 2.6, near = [], i, p;
     for (i = 0; i < RW.plist.length; i++) { p = RW.plist[i]; if (Math.abs(p.x - ax) < 14 && Math.abs(p.z - az) < 14 && Math.abs(p.y - ay) < 14) near.push(p); }
@@ -7032,6 +7168,7 @@ Object.assign(EN, {
     if (Math.hypot(c.x - P.x, c.z - P.z) > 10) return zt('太远了', 'Too far away');
     if (rwSafe(c.x, c.z)) return zt('前哨站安全区里不能建造', 'No building in the Outpost safe zone');
     if (rwNearMon(c.x, c.z, 12)) return zt('离据点太近了', 'Too close to a monument');
+    if (rwTcBlocked(c.x, c.z)) return zt('这里在别人的领地柜范围内，不能建造', "Inside someone else's tool cupboard range");
     for (i = 0; i < RW.plist.length; i++) {
       p = RW.plist[i];
       if (Math.abs(p.x - c.x) > 3.2 || Math.abs(p.z - c.z) > 3.2 || Math.abs(p.y - c.y) > 3.2) continue;
@@ -7046,7 +7183,7 @@ Object.assign(EN, {
       var pcx = Math.floor(c.x / RW_CH), pcz = Math.floor(c.z / RW_CH);
       for (var bz = -1; bz <= 1; bz++) for (var bx = -1; bx <= 1; bx++) {
         var ch = RW.chunks[(pcx + bx) + ',' + (pcz + bz)]; if (!ch) continue;
-        for (i = 0; i < ch.nodes.length; i++) { var n = ch.nodes[i]; if (rwNodeAlive(n) && Math.abs(n.x - c.x) < 1.5 + n.r && Math.abs(n.z - c.z) < 1.5 + n.r) return zt('有树或石头挡着', 'A tree or rock is in the way'); }
+        for (i = 0; i < ch.nodes.length; i++) { var n = ch.nodes[i]; if (rwNodeAlive(n) && n.kind !== 'hemp' && Math.abs(n.x - c.x) < 1.5 + n.r && Math.abs(n.z - c.z) < 1.5 + n.r) return zt('有树或石头挡着', 'A tree or rock is in the way'); }
       }
     }
     var parts = rwPieceParts(k, c.r, c.dep || 1);
@@ -7060,7 +7197,7 @@ Object.assign(EN, {
     return '';
   }
   function rwBuildTick() {
-    var on = RW.on && heldKind() === 'plan' && state === 'playing' && !RW.dead;
+    var on = RW.on && (heldKind() === 'plan' || heldKind() === 'dep') && state === 'playing' && !RW.dead;
     if (!on) { if (RW.ghost) RW.ghost.visible = false; RW.bc = null; return; }
     var c = rwBuildCand(); RW.bc = c;
     if (!c) { if (RW.ghost) RW.ghost.visible = false; return; }
@@ -7074,6 +7211,7 @@ Object.assign(EN, {
     RW.ghost.position.set(c.x, c.y, c.z);
   }
   function rwPlace() {
+    if (heldKind() === 'dep') { rwPlaceDep(); return; }
     var c = RW.bc;
     if (!c) { banner(RW.bsel === 'fd' ? zt('对着地面放地基', 'Aim at the ground to place a foundation') : RW.bsel === 'dr' ? zt('门要装在门框墙上', 'Doors go into a doorway') : RW.bsel === 'st' ? zt('楼梯要放在地基或楼板上', 'Stairs go on a foundation or floor') : RW.bsel === 'fl' ? zt('楼板要搭在墙顶上', 'Floors sit on top of walls') : zt('墙要放在地基或楼板的边上', 'Walls go on the edge of a foundation or floor'), 1400); tone(150, 120, 0.06, 'square', 0.04); return; }
     if (c.why) { banner(c.why, 1300); tone(150, 120, 0.06, 'square', 0.04); return; }
@@ -7084,11 +7222,17 @@ Object.assign(EN, {
     tone(330, 220, 0.09, 'square', 0.07); tone(660, 500, 0.05, 'triangle', 0.04);
     burst(new THREE.Vector3(c.x, c.y + 0.4, c.z), 6, partMatW, 3);
   }
-  function rwUpCost(k, g) { var base = RWB[k].c.wood || 50; return g === 1 ? { stone: Math.round(base * 1.5) } : { metal: Math.round(base * 0.8) }; }
+  function rwUpCost(k, g) { var base = RWB[k].c.wood || 50; return g === 1 ? { stone: Math.round(base * 1.5) } : { frags: Math.round(base * 0.8) }; }
   function rwHammerHit(p) {
     burst(new THREE.Vector3(p.x, p.y + 1.2, p.z), 4, partMatG, 2.5); VM.shake = 0.15; tone(600, 400, 0.05, 'square', 0.06);
-    if (p.o !== RW.me) { banner(zt('这不是你的建筑', 'This is not yours'), 1200); return; }
-    if (p.k === 'dr') { banner(zt('门不能升级', 'Doors cannot be upgraded'), 1200); return; }
+    if (p.o !== RW.me && !rwTcCovered(p.x, p.z)) { banner(zt('这不是你的建筑', 'This is not yours'), 1200); return; }
+    if (p.hp < p.hmax) {   // damaged: repair first
+      var rc = rwRepairCost(p);
+      if (!rwPay(rc)) { banner(zt('修理需要 ', 'Repair needs ') + Object.keys(rc).map(function (kk) { return rwIN(kk) + ' ' + rc[kk]; }).join(', '), 1400); return; }
+      dSend({ t: 'Rq', id: p.id }); tone(500, 800, 0.08, 'triangle', 0.06); return;
+    }
+    if (p.o !== RW.me) { banner(zt('只有主人能升级', 'Only the owner can upgrade'), 1200); return; }
+    if (p.k === 'dr' || RWD[p.k]) { banner(zt('这个不能升级', 'This cannot be upgraded'), 1200); return; }
     if (p.g >= 2) { banner(zt('已经是金属了', 'Already metal'), 1200); return; }
     var cost = rwUpCost(p.k, p.g + 1);
     if (!rwPay(cost)) { banner(zt('升级需要 ', 'Upgrade needs ') + Object.keys(cost).map(function (kk) { return rwIN(kk) + ' ' + cost[kk]; }).join(', '), 1500); return; }
@@ -7101,7 +7245,7 @@ Object.assign(EN, {
     if (p.o !== RW.me) { banner(zt('这不是你的建筑', 'This is not yours'), 1200); return; }
     var nm = zt(RWB[p.k].n[0], RWB[p.k].n[1]);
     if (RW.dconf === p.id && gtime - RW.dconfT < 2.5) { RW.myX[p.id] = 1; dSend({ t: 'Rx', id: p.id }); RW.dconf = 0; tone(200, 80, 0.2, 'sawtooth', 0.07); }
-    else { RW.dconf = p.id; RW.dconfT = gtime; banner(zt('再按一次右键，拆除这个' + nm, 'Right click again to remove this ' + nm), 1800); }
+    else { RW.dconf = p.id; RW.dconfT = gtime; banner(zt('再按一次 ' + KA() + '，拆除这个' + nm, 'Press ' + KA() + ' again to remove this ' + nm), 1800); }
   }
   function rwBuildMenu() {
     if (state !== 'playing') return;
@@ -7117,7 +7261,7 @@ Object.assign(EN, {
     RWB_ORDER.forEach(function (k) {
       h += '<button class="rwbp' + (k === RW.bsel ? ' on' : '') + '" data-k="' + k + '" type="button"><svg viewBox="0 0 48 48" width="48" height="48">' + RWB_SVG[k] + '</svg>' + zt(RWB[k].n[0], RWB[k].n[1]) + '<small>' + rwCostTxt(RWB[k].c, true) + '</small></button>';
     });
-    h += '</div><p>' + zt('地基放在平地上，旁边的地基会自动对齐；墙放在地基或楼板的边上；楼板搭在墙顶上；门装进门框墙。' + keyLabel(KB.reload) + ' 旋转楼梯。拿锤子：左键升级（石头、金属更好看也更结实的样子），右键拆除自己的建筑。门只有建门的人能开关。', 'Foundations go on fairly flat ground and snap to each other; walls go on foundation or floor edges; floors sit on top of walls; doors go into doorways. ' + keyLabel(KB.reload) + ' turns stairs. With the hammer: left click upgrades to stone or metal, right click removes your own parts. Only the builder can open a door.') + '</p>' +
+    h += '</div><p>' + zt('地基放在平地上，旁边的地基会自动对齐；墙放在地基或楼板的边上；楼板搭在墙顶上；门装进门框墙。' + keyLabel(KB.reload) + ' 旋转楼梯。拿锤子：' + KF() + ' 升级成石头或金属，连按两下 ' + KA() + ' 拆除自己的建筑。门只有建门的人能开关。', 'Foundations go on fairly flat ground and snap to each other; walls go on foundation or floor edges; floors sit on top of walls; doors go into doorways. ' + keyLabel(KB.reload) + ' turns stairs. With the hammer: ' + KF() + ' upgrades to stone or metal, ' + KA() + ' twice removes your own parts. Only the builder can open a door.') + '</p>' +
       '<button class="rwbtn alt" data-x="1" type="button">' + zt('关闭', 'Close') + '</button></div>';
     RW.buildEl.innerHTML = h;
     state = 'bag'; RW.ui = 'build'; releaseInput();
@@ -7132,12 +7276,19 @@ Object.assign(EN, {
     var txt = '', pick = null;
     if (state === 'playing' && !RW.dead) {
       var hk = heldKind(), pc = rwPieceRay(3.2);
-      if (pc && pc.k === 'dr') txt = pc.o === RW.me ? KE() + ' ' + (pc.op ? zt('关门', 'Close the door') : zt('开门', 'Open the door')) : zt('这扇门锁着（不是你的）', 'Locked door (not yours)');
+      if (pc && pc.k === 'dr') txt = rwCanDoor(pc) ? KE() + ' ' + (pc.op ? zt('关门', 'Close the door') : zt('开门', 'Open the door')) : zt('这扇门锁着', 'Locked door');
+      else if (pc && pc.k === 'bx') txt = KE() + ' ' + zt('打开储物箱', 'Open the box');
+      else if (pc && pc.k === 'fu') txt = KE() + ' ' + zt('打开熔炉', 'Open the furnace') + (pc.op ? zt('（正在燃烧）', ' (burning)') : '');
+      else if (pc && pc.k === 'tc') txt = KE() + ' ' + ((pc.auth || []).indexOf(RW.me) >= 0 ? zt('取消在领地柜上的授权', 'Remove your authorisation') : zt('在领地柜上授权自己（25 米内可以建造和开门）', 'Authorise yourself (build and open doors within 25 m)')) + ' · ' + zt('已授权 ', 'authorised: ') + (pc.auth || []).length;
+      else if (pc && pc.k === 'sb') txt = pc.o === RW.me ? zt('你的睡袋：死了可以在这里重生', 'Your sleeping bag: respawn here after dying') : zt('别人的睡袋', "Someone else's sleeping bag");
       var dp = !txt ? rwDropTarget() : null; if (dp) pick = dp;
-      if (!txt) { var cr = rwFindNode(function (q) { return q.kind === 'crate'; }); if (cr) txt = KE() + ' ' + zt('打开补给箱', 'Open the crate'); }
+      if (!txt && !dp) { var hmp = rwFindNode(function (q) { return q.kind === 'hemp'; }); if (hmp) txt = KE() + ' ' + zt('采集麻（布 ×10）', 'Pick hemp (cloth ×10)'); }
+      if (!txt && !dp) { var cr = rwFindNode(function (q) { return q.kind === 'crate'; }); if (cr) txt = KE() + ' ' + zt('打开补给箱', 'Open the crate'); }
+      if (!txt && hk === 'dep') { var dc = RW.bc, ds = rwHeldSlot(); txt = (ds ? rwIN(ds.id) : '') + ' · ' + (dc ? (dc.why || KL1() + zt(' 放下', ' place')) : zt('对着地面', 'aim at the ground')); }
+      if (!txt && hk === 'bomb') txt = KL1() + zt(' 扔出去，粘住后几秒爆炸，快跑开！', ' throw: it sticks and blows after a few seconds. Run!');
       if (!txt && hk === 'plan') { var c = RW.bc, nm = zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]); txt = nm + ' · ' + rwIN('wood') + ' ' + RWB[RW.bsel].c.wood + ' (' + rwCount('wood') + ')' + (c && c.why ? ' · ' + c.why : c ? ' · ' + KL1() + zt(' 放置', ' place') : '') + ' · ' + KR() + zt(' 换部件', ' parts'); }
-      if (!txt && hk === 'hammer' && pc) txt = zt(RWB[pc.k].n[0], RWB[pc.k].n[1]) + ' · ' + zt(RW_GRADE[pc.g][0], RW_GRADE[pc.g][1]) + (pc.o === RW.me ? (pc.g < 2 && pc.k !== 'dr' ? ' · ' + KL1() + zt(' 升级', ' upgrade') + '（' + Object.keys(rwUpCost(pc.k, pc.g + 1)).map(function (kk) { return rwIN(kk) + ' ' + rwUpCost(pc.k, pc.g + 1)[kk]; }).join('') + '）' : '') + ' · ' + KR() + zt(' 拆除', ' remove') : ' · ' + zt('别人的', "someone else's"));
-      if (!txt && VT[hk] && hk !== 'hammer') { var n = rwFindNode(function (q) { return q.kind !== 'crate'; }); if (n) txt = KL() + ' ' + (n.kind === 'tree' ? zt('砍树，得到木材', 'chop: wood') : n.kind === 'rock' ? zt('敲石头，得到石头', 'mine: stone') : zt('开采，得到金属矿', 'mine: metal ore')); }
+      if (!txt && hk === 'hammer' && pc) txt = zt(RWB[pc.k].n[0], RWB[pc.k].n[1]) + ' · ' + (RWD[pc.k] || pc.k === 'dr' ? '' : zt(RW_GRADE[pc.g][0], RW_GRADE[pc.g][1]) + ' · ') + zt('生命 ', 'HP ') + Math.ceil(pc.hp) + '/' + pc.hmax + (pc.hp < pc.hmax && (pc.o === RW.me || rwTcCovered(pc.x, pc.z)) ? ' · ' + KL1() + zt(' 修理', ' repair') : '') + (pc.o === RW.me ? (pc.g < 2 && pc.k !== 'dr' ? ' · ' + KL1() + zt(' 升级', ' upgrade') + '（' + Object.keys(rwUpCost(pc.k, pc.g + 1)).map(function (kk) { return rwIN(kk) + ' ' + rwUpCost(pc.k, pc.g + 1)[kk]; }).join('') + '）' : '') + ' · ' + KR() + zt(' 拆除', ' remove') : ' · ' + zt('别人的', "someone else's"));
+      if (!txt && VT[hk] && hk !== 'hammer') { var n = rwFindNode(function (q) { return q.kind !== 'crate' && q.kind !== 'hemp'; }); if (n) txt = KL() + ' ' + (n.kind === 'tree' ? zt('砍树，得到木材', 'chop: wood') : n.kind === 'rock' ? zt('敲石头，得到石头', 'mine: stone') : zt('开采，得到金属矿', 'mine: metal ore')); }
     }
     rwPickShow(pick);
     if (pick) txt = '';
@@ -7345,15 +7496,441 @@ Object.assign(EN, {
     rwDropTick(dt);
     rwGrassTick();
     rwPieceTick(dt);
+    rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); }
+    RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag only you can see
     var items = [];
     RW.inv.forEach(function (s) { if (s) items.push({ id: s.id, n: s.n }); });
     if (items.length) rwDropAdd(items, P.x, P.z, null, 900, P.y, true);
     rwInvClear(); rwSyncOwned(); rwHotRender(true);
+  }
+
+  /* ---- missions: kill infected for rewards (three at a time, harder as you finish them) ---- */
+  var RWM = { list: [], done: 0, n: 0, seed: '', el: null, html: '' };
+  var RWM_TYPES = { rusher: ['突击者', 'rushers'], gunner: ['射手', 'gunners'], tank: ['装甲兵', 'armored'], sniper: ['狙击手', 'snipers'], bomber: ['自爆兵', 'bombers'] };
+  var RWM_COIN = { rusher: 22, gunner: 35, bomber: 35, sniper: 60, tank: 110 };
+  function rwMNew() {
+    var lv = Math.min(4, Math.floor(RWM.done / 3)), m = null, tries = 0;
+    var camps = RW.mons.filter(function (q) { return q.camp && q.camp.length; });
+    var used = RWM.list.filter(function (o) { return !o.fin; }).map(function (o) { return o.k; }), pool = ['any', 'type', 'type', 'camp', 'head', 'hunt'].filter(function (k) { return used.indexOf(k) < 0 && (k !== 'camp' || camps.length); });
+    if (!pool.length) pool = ['type', 'any'];
+    while (!m && tries++ < 20) {
+      var kind = pool[Math.floor(Math.random() * pool.length)], r = kind === 'any' ? 0.1 : kind === 'type' ? 0.5 : kind === 'camp' ? 0.7 : 0.95, c;
+      if (kind === 'hunt') { var nh = 2 + lv; c = { k: 'hunt', n: nh, coin: 70 + nh * 30 }; }
+      else if (r < 0.28) { var n = [5, 8, 12, 16, 20][lv]; c = { k: 'any', n: n, coin: 60 + n * 18 }; }
+      else if (r < 0.62) { var tl = ['rusher', 'rusher', 'gunner', 'gunner', 'bomber', 'sniper', 'tank']; var ty = tl[Math.floor(Math.random() * tl.length)], base = { rusher: 6, gunner: 4, bomber: 3, sniper: 2, tank: 1 }[ty], n2 = base + Math.floor(base * 0.5 * lv); c = { k: 'type', t: ty, n: n2, coin: Math.round(n2 * RWM_COIN[ty]) }; }
+      else if (r < 0.86 && camps.length) { var cp = camps[Math.floor(Math.random() * camps.length)], n3 = 4 + lv * 2; c = { k: 'camp', mx: Math.round(cp.x), mz: Math.round(cp.z), mk: cp.k, mr: cp.r, n: n3, coin: 120 + n3 * 25 }; }
+      else { var n4 = 2 + lv; c = { k: 'head', n: n4, coin: 80 + n4 * 40 }; }
+      if (RWM.list.some(function (o) { return o.k === c.k && o.t === c.t && o.mk === c.mk && o.mx === c.mx; })) continue;
+      m = c;
+    }
+    if (!m) m = { k: 'any', n: 6, coin: 170 };
+    m.p = 0; m.id = ++RWM.n;
+    if (Math.random() < 0.55) m.item = [['ammo', 1], ['medkit', 1], ['metal', 80], ['armor', 1], ['stone', 150]][Math.floor(Math.random() * 5)];
+    return m;
+  }
+  function rwMSave() { try { localStorage.setItem('rustrange-rwm', JSON.stringify({ seed: RW.seed, list: RWM.list, done: RWM.done, n: RWM.n })); } catch (e) {} }
+  function rwMStart() {
+    var sv = null; try { sv = JSON.parse(localStorage.getItem('rustrange-rwm') || 'null'); } catch (e) {}
+    RWM.list = []; RWM.done = 0;
+    if (sv && sv.seed === RW.seed && sv.list && sv.list.length) { RWM.list = sv.list.filter(function (m) { return m && m.n > 0 && !m.fin; }); RWM.done = sv.done | 0; RWM.n = sv.n | 0; }
+    while (RWM.list.length < 3) RWM.list.push(rwMNew());
+    rwMSave(); RWM.html = ''; rwMRender();
+  }
+  function rwMName(m) {
+    if (m.k === 'any') return zt('击杀 ' + m.n + ' 个感染者', 'Kill ' + m.n + ' infected');
+    if (m.k === 'type') return zt('击杀 ' + m.n + ' 个' + RWM_TYPES[m.t][0], 'Kill ' + m.n + ' ' + RWM_TYPES[m.t][1]);
+    if (m.k === 'hunt') return zt('猎杀 ' + m.n + ' 只动物（鹿、野猪、狼）', 'Hunt ' + m.n + ' animals (deer, boar, wolves)');
+    if (m.k === 'camp') return zt('在' + RW_NAMES[m.mk][0] + '击杀 ' + m.n + ' 个敌人', 'Kill ' + m.n + ' at the ' + RW_NAMES[m.mk][1]);
+    return zt('爆头击杀 ' + m.n + ' 个敌人', 'Get ' + m.n + ' headshot kills');
+  }
+  function rwMKill(e, head) {
+    if (!RW.on || !e) return;
+    var pos = e.g.position, ch = false;
+    RWM.list.forEach(function (m) {
+      if (m.fin) return;
+      var an = !!(e.T && e.T.animal);
+      var ok = an ? m.k === 'hunt' : (m.k === 'any' || (m.k === 'type' && e.type === m.t) || (m.k === 'head' && head) || (m.k === 'camp' && Math.hypot(pos.x - m.mx, pos.z - m.mz) < m.mr + 70));
+      if (!ok) return;
+      m.p = Math.min(m.n, m.p + 1); ch = true;
+      if (m.p >= m.n) rwMDone(m);
+    });
+    if (ch) { rwMSave(); rwMRender(); }
+  }
+  function rwMDone(m) {
+    m.fin = true; RWM.done++;
+    coins += m.coin;
+    var extra = '';
+    if (m.item) { var left = rwGive(m.item[0], m.item[1]); if (left > 0) rwDropAdd([{ id: m.item[0], n: left }], P.x, P.z, null, 600, P.y); rwNote(m.item[0], m.item[1]); extra = ' · ' + rwIN(m.item[0]) + ' ×' + m.item[1]; }
+    banner(zt('任务完成 · ', 'Mission complete · ') + rwMName(m) + ' · +' + m.coin + zt(' 金币', ' coins') + extra, 2600);
+    tone(660, 990, 0.12, 'triangle', 0.08); setTimeout(function () { tone(990, 1320, 0.16, 'triangle', 0.07); }, 120);
+    setTimeout(function () { var i = RWM.list.indexOf(m); if (i >= 0) RWM.list.splice(i, 1, rwMNew()); rwMSave(); RWM.html = ''; rwMRender(); }, 2200);
+  }
+  function rwMRender() {
+    if (!RW.hud) return;
+    if (!RWM.el) { var d = document.createElement('div'); d.id = 'rwMis'; RW.hud.appendChild(d); RWM.el = d; }
+    var h = '<div class="mh"><b>' + zt('任务', 'MISSIONS') + '</b><span>' + zt('已完成 ', 'Done ') + RWM.done + '</span></div>';
+    RWM.list.forEach(function (m) {
+      var dist = m.k === 'camp' ? ' · ' + Math.round(Math.hypot(P.x - m.mx, P.z - m.mz)) + 'm' : '';
+      h += '<div class="mr' + (m.fin ? ' fin' : '') + '"><div class="mt">' + (m.fin ? '✓ ' : '') + duEsc(rwMName(m)) + '</div><div class="mb"><i style="width:' + (m.p / m.n * 100).toFixed(0) + '%"></i></div><div class="mm"><span>' + m.p + ' / ' + m.n + dist + '</span><span>+' + m.coin + (m.item ? ' · ' + duEsc(rwIN(m.item[0])) : '') + '</span></div></div>';
+    });
+    if (h !== RWM.html) { RWM.html = h; RWM.el.innerHTML = h; }
+  }
+  function rwMDraw(ctx, X, Z, big) {   // camp missions are circled on the map
+    RWM.list.forEach(function (m) {
+      if (m.k !== 'camp' || m.fin) return;
+      var x = X(m.mx), z = Z(m.mz), r = Math.max(big ? 9 : 6, (m.mr + 70) * (X(1) - X(0)));
+      ctx.strokeStyle = '#ffb23a'; ctx.lineWidth = big ? 2.5 : 1.5; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(x, z, r, 0, 6.3); ctx.stroke(); ctx.setLineDash([]);
+    });
+  }
+
+  /* ---- Q drops what is in your hands ---- */
+  function rwDropHeld() {
+    if (holster || !rwHeldSlot()) { banner(zt('手里没有东西', 'Nothing in your hands'), 900); return; }
+    rwDropSlot(RW_HOT0 + RW.hot);
+  }
+
+  /* ---- the welcome card when you enter the wild ---- */
+  var RWCSS2 = '' +
+    '#rwWel{position:absolute;left:50%;top:50%;transform:translate(-50%,-46%);width:min(540px,90vw);box-sizing:border-box;padding:26px 28px 20px;background:linear-gradient(160deg,rgba(30,32,28,.95),rgba(11,12,10,.95));border:1px solid rgba(236,230,214,.14);box-shadow:0 30px 90px rgba(0,0,0,.6);opacity:0;transition:opacity .55s,transform .55s;pointer-events:none;z-index:7;color:#ece6d6;text-shadow:none}' +
+    '#rwWel.on{opacity:1;transform:translate(-50%,-50%)}#rwWel::before{content:"";position:absolute;left:-1px;top:-1px;width:76px;height:3px;background:#ff7a1a}' +
+    '#rwWel .we{display:flex;justify-content:space-between;font:700 12px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.32em;color:#ff7a1a}#rwWel .we span{color:#8d887b;letter-spacing:.18em}' +
+    '#rwWel h2{margin:8px 0 6px;font:700 34px/1.1 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;letter-spacing:.1em;color:#f4eee0}' +
+    '#rwWel p{margin:0 0 18px;color:#b3ad9f;font:500 14px/1.65 system-ui,"PingFang SC","Microsoft YaHei",sans-serif}' +
+    '#rwWel .wk{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 22px}' +
+    '#rwWel .wk div{display:flex;align-items:center;gap:10px;font:500 13px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#d8d2c3;min-width:0}' +
+    '#rwWel kbd{flex:0 0 auto;min-width:30px;padding:3px 8px;font:700 13px "Barlow Condensed","Arial Narrow",sans-serif;color:#ece6d6;border:1px solid rgba(236,230,214,.42);border-bottom-width:3px;border-radius:4px;text-align:center;background:rgba(236,230,214,.06)}' +
+    '#rwWel .wf{margin-top:18px;padding-top:12px;border-top:1px solid rgba(236,230,214,.1);display:flex;justify-content:space-between;gap:12px;font:500 12px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#8d887b}' +
+    '#banner.rwb{left:50%;right:auto;top:16%;transform:translateX(-50%);width:max-content;max-width:min(680px,86vw);box-sizing:border-box;padding:9px 18px 9px 15px;font:600 15px/1.45 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:.03em;color:#ece6d6;text-shadow:none;background:rgba(16,17,15,.84);border:1px solid rgba(236,230,214,.14);border-left:3px solid #ff7a1a;text-align:left}' +
+    '#rwMis{position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:120px;width:236px;padding:10px 12px;background:rgba(16,17,15,.62);border:1px solid rgba(236,230,214,.12);border-left:3px solid #ff7a1a;text-shadow:none;pointer-events:none}' +
+    '#rwMis .mh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}#rwMis .mh b{font:700 12px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.26em;color:#ff7a1a}#rwMis .mh span{font:500 11px system-ui,sans-serif;color:#8d887b}' +
+    '#rwMis .mr{padding:6px 0;border-top:1px solid rgba(236,230,214,.08);transition:opacity .4s}#rwMis .mr.fin .mt{color:#8fd14f}#rwMis .mr.fin .mb i{background:#8fd14f}' +
+    '#rwMis .mt{font:600 13px/1.35 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6}' +
+    '#rwMis .mb{height:4px;margin:5px 0 3px;background:rgba(236,230,214,.12)}#rwMis .mb i{display:block;height:100%;background:#ff7a1a;transition:width .3s}' +
+    '#rwMis .mm{display:flex;justify-content:space-between;font:600 11px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.04em;color:#a39e90}' +
+    '@media (max-width:760px){#rwMis{top:112px;width:190px;padding:7px 9px}#rwMis .mt{font-size:12px}#rwWel{padding:18px 18px 14px}#rwWel h2{font-size:26px}#rwWel .wk{grid-template-columns:minmax(0,1fr)}}';
+  function rwWelcomeShow() {
+    if (!RW.hud) return;
+    if (!RW.welEl) {
+      var st = document.createElement('style'); st.textContent = RWCSS2; document.head.appendChild(st);
+      var el = document.createElement('div'); el.id = 'rwWel'; RW.hud.appendChild(el); RW.welEl = el;
+    }
+    var keys = isTouch ? [[zt('开火键', 'Fire'), zt('挥动工具 / 开火', 'Swing a tool / shoot')], [zt('背包', 'Bag'), zt('背包与制作', 'Inventory & crafting')], [zt('交互', 'Use'), zt('捡起 · 开箱 · 开门', 'Pick up · crates · doors')], [zt('瞄准键', 'Aim'), zt('建造时选部件', 'Pick a building part')]]
+      : [[keyLabel(KB.forward) + keyLabel(KB.left) + keyLabel(KB.back) + keyLabel(KB.right), zt('移动，' + keyLabel(KB.sprint) + ' 冲刺', 'Move, ' + keyLabel(KB.sprint) + ' sprints')], ['← ↑ → ↓', zt('转动视角', 'Look around')],
+         [keyLabel(KB.fire), zt('挥动工具 / 开火 / 放置', 'Swing / shoot / place')], [keyLabel(KB.aim), zt('瞄准 / 选建筑部件 / 拆除', 'Aim / parts / remove')],
+         [keyLabel(KB.use), zt('捡起 · 开箱 · 开门', 'Pick up · crates · doors')], [keyLabel(KB.drop), zt('丢掉手里的东西', 'Drop what you hold')],
+         ['Tab', zt('背包与制作', 'Inventory & crafting')], ['1 – 6', zt('切换快捷栏', 'Switch belt slot')], ['X', zt('空手', 'Empty hands')], ['M', zt('全岛地图', 'Island map')]];
+    var h = '<div class="we">THE WILD<span>' + zt('在线 ', 'ONLINE ') + RW.online + '</span></div><h2>' + zt('荒野世界', 'The Wild') + '</h2>' +
+      '<p>' + zt('手里只有一块石头。砍树采石、打猎、用熔炉炼金属，搭起有领地柜和储物箱的房子，放个睡袋当重生点；带上炸药去抄别人的家。左边是任务。', 'You start with a rock. Gather, hunt, smelt metal, build a base with a tool cupboard and storage, drop a sleeping bag, and bring explosives to raid others. Missions are on the left.') + '</p><div class="wk">';
+    keys.forEach(function (k) { h += '<div><kbd>' + duEsc(k[0]) + '</kbd>' + duEsc(k[1]) + '</div>'; });
+    h += '</div><div class="wf"><span>' + zt('前哨站是安全区，可以买卖东西', 'The Outpost is a safe zone with a shop') + '</span><span>' + (isTouch ? zt('点任意处继续', 'Tap to continue') : zt('按任意键继续', 'Press any key')) + '</span></div>';
+    RW.welEl.innerHTML = h;
+    var el2 = RW.welEl;
+    requestAnimationFrame(function () { el2.classList.add('on'); });
+    clearTimeout(RW.welT);
+    function hide() { el2.classList.remove('on'); clearTimeout(RW.welT); document.removeEventListener('keydown', hide, true); document.removeEventListener('pointerdown', hide, true); }
+    setTimeout(function () { document.addEventListener('keydown', hide, true); document.addEventListener('pointerdown', hide, true); }, 600);
+    RW.welT = setTimeout(hide, 12000);
+  }
+
+  /* ================= THE WILD 3.0: furnace, animals, cloth, sleeping bags, boxes, tool cupboards, raiding ================= */
+  Object.assign(RWI, {
+    frags: { n: ['金属碎片', 'Metal Fragments'], st: 1000, d: ['熔炉炼出来的，用来做弹药、护甲、炸药，也用来把建筑升级成金属。', 'Smelted in a furnace. For ammo, armor, explosives and metal upgrades.'] },
+    cloth: { n: ['布', 'Cloth'], st: 1000, d: ['采集麻或剥动物皮得到，用来做绷带、睡袋和炸药。', 'From hemp plants and animal hides. For bandages, sleeping bags and explosives.'] },
+    meat: { n: ['生肉', 'Raw Meat'], st: 50, use: 1, d: ['猎动物得到。生吃只回 5 点生命，放进熔炉烤熟更好。', 'From animals. Eaten raw it heals only 5; cook it in a furnace.'] },
+    cooked: { n: ['熟肉', 'Cooked Meat'], st: 50, use: 1, d: ['吃了回复 25 点生命。', 'Heals 25 HP.'] },
+    bandage: { n: ['绷带', 'Bandage'], st: 10, use: 1, d: ['立刻回复 15 点生命。', 'Instantly heals 15 HP.'] },
+    satchel: { n: ['炸药包', 'Satchel Charge'], st: 10, tool: 'bomb', fuse: 5, bdmg: 300, d: ['拿在手上按开火键扔出去，粘在哪里 5 秒后爆炸：一个就能炸开木墙或木门。', 'Throw it with fire: it sticks and blows after 5 s. One breaks a wooden wall or door.'] },
+    c4: { n: ['定时炸药', 'Timed Explosive'], st: 10, tool: 'bomb', fuse: 8, bdmg: 900, d: ['威力最大的抄家炸药，8 秒后爆炸：两个能炸开金属墙。', 'The strongest raid charge, blows after 8 s. Two break a metal wall.'] },
+    box: { n: ['储物箱', 'Storage Box'], st: 5, dep: 'bx', d: ['拿在手上按开火键放下。能放 18 格东西，存在服务器上，下线也还在。别人炸开就会掉出来。', 'Place it with fire. Holds 18 slots, kept on the server. Raiders who blow it up get the loot.'] },
+    furnace: { n: ['熔炉', 'Furnace'], st: 5, dep: 'fu', d: ['放下后按交互键打开：放木材当燃料、放金属矿或生肉，点火后会炼成金属碎片、烤成熟肉。', 'Place it, open it with Use: wood as fuel, metal ore or raw meat in, light it to get fragments or cooked meat.'] },
+    tc: { n: ['领地柜', 'Tool Cupboard'], st: 1, dep: 'tc', d: ['放在房子里。周围 25 米内只有在柜子上授权的人能建造，也能开这里的门。抄家时找到它就能给自己授权。', 'Put it in your base. Within 25 m only people authorised on it can build or open doors. Raiders who reach it can authorise themselves.'] },
+    sbag: { n: ['睡袋', 'Sleeping Bag'], st: 5, dep: 'sb', d: ['放下后死亡时可以选择在这里重生（每个睡袋 60 秒冷却）。', 'Place it and you can respawn there after dying (60 s cooldown each).'] }
+  });
+  RWI.metal.d = ['开采矿石得到，放进熔炉炼成金属碎片。', 'Mined from ore nodes. Smelt it in a furnace into metal fragments.'];
+  RWI.meat.use = RWI.cooked.use = RWI.bandage.use = 1;
+  RW_CRAFT.length = 0;
+  [['plan', { wood: 20 }], ['hammer', { wood: 30 }], ['hatchet', { wood: 100, stone: 50 }], ['pickaxe', { wood: 100, stone: 80 }], ['bandage', { cloth: 4 }], ['box', { wood: 100 }], ['furnace', { stone: 200, wood: 100 }],
+    ['sbag', { cloth: 30 }], ['tc', { wood: 300 }], ['medkit', { cloth: 6, wood: 20 }], ['ammo', { frags: 30 }], ['armor', { frags: 60, cloth: 10 }], ['satchel', { frags: 60, cloth: 10 }], ['c4', { frags: 250, cloth: 20 }]].forEach(function (q) { RW_CRAFT.push(q); });
+  RW_SELL.push(['frags', 40], ['cloth', 25]);
+  RW_RES_TOOL.frags = 'hammer'; delete RW_RES_TOOL.metal;
+  var RWD = { bx: 'box', fu: 'furnace', tc: 'tc', sb: 'sbag' }, TC_RANGE = 25;
+  Object.assign(RWB, { bx: { c: {}, n: ['储物箱', 'Storage Box'] }, fu: { c: {}, n: ['熔炉', 'Furnace'] }, tc: { c: {}, n: ['领地柜', 'Tool Cupboard'] }, sb: { c: {}, n: ['睡袋', 'Sleeping Bag'] } });
+  function rwMaxHp(k, g) { return k === 'dr' ? 200 : k === 'bx' ? 150 : k === 'fu' || k === 'tc' ? 300 : k === 'sb' ? 60 : [250, 500, 1000][g | 0] || 250; }
+  function rwIsDep(k) { return !!RWD[k]; }
+  function rwCurK() { var hk = heldKind(); if (hk === 'plan') return RW.bsel; if (hk === 'dep') { var s = rwHeldSlot(); return s ? RWI[s.id].dep : null; } return null; }
+  function rwTcBlocked(x, z) {   // an unfriendly tool cupboard covers x,z
+    for (var i = 0; i < RW.plist.length; i++) { var p = RW.plist[i]; if (p.k === 'tc' && Math.hypot(p.x - x, p.z - z) < TC_RANGE && (p.auth || []).indexOf(RW.me) < 0) return p; }
+    return null;
+  }
+  function rwTcCovered(x, z) {
+    for (var i = 0; i < RW.plist.length; i++) { var p = RW.plist[i]; if (p.k === 'tc' && Math.hypot(p.x - x, p.z - z) < TC_RANGE && (p.auth || []).indexOf(RW.me) >= 0) return true; }
+    return false;
+  }
+  function rwCanDoor(p) { return p.o === RW.me || rwTcCovered(p.x, p.z); }
+
+  /* ---- deployables: placement ---- */
+  function rwDepParts(k, r) {
+    var s = (r & 1) === 1, D = { bx: [1.0, 0.62, 0.6, 1], fu: [1.0, 1.35, 1.0, 1], tc: [0.85, 1.6, 0.5, 1], sb: [0.85, 0.12, 2.0, 0] }[k];
+    return [[0, D[1] / 2, 0, s ? D[2] : D[0], D[1], s ? D[0] : D[2], D[3]]];
+  }
+  function rwDepCand(k) {
+    var o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    var tw = rayWall(o.x, o.y, o.z, dir.x, dir.y, dir.z, 5);
+    if (tw >= 5 || dir.y > -0.05) return null;
+    var ax = o.x + dir.x * tw, ay = o.y + dir.y * tw, az = o.z + dir.z * tw, gy = groundAt(ax, az, ay + 0.4);
+    var r = ((Math.round(P.yaw / (Math.PI / 2)) % 4) + 4) % 4;
+    var c = { k: k, x: ax, y: gy, z: az, r: r, dep: 0, onWall: Math.abs(gy - ay) > 0.35 };
+    c.why = rwDepWhy(c);
+    return c;
+  }
+  function rwDepWhy(c) {
+    if (c.onWall) return zt('要放在地面、地基或楼板上', 'Put it on the ground, a foundation or a floor');
+    if (rwSafe(c.x, c.z)) return zt('前哨站安全区里不能放', 'Not in the Outpost safe zone');
+    if (rwNearMon(c.x, c.z, 8)) return zt('离据点太近了', 'Too close to a monument');
+    if (c.k !== 'tc' && rwTcBlocked(c.x, c.z)) return zt('这里在别人的领地柜范围内', "Inside someone else's tool cupboard range");
+    if (c.k === 'tc' && rwTcBlocked(c.x, c.z)) return zt('这里已经有别人的领地柜了', 'Someone else already owns this area');
+    var q = rwDepParts(c.k, c.r)[0], x0 = c.x - q[3] / 2, x1 = c.x + q[3] / 2, z0 = c.z - q[5] / 2, z1 = c.z + q[5] / 2, y0 = c.y + 0.05, y1 = c.y + q[4];
+    for (var i = 0; i < boxes.length; i++) { var b = boxes[i]; if (b.maxX > x0 && b.minX < x1 && b.maxZ > z0 && b.minZ < z1 && b.h > y0 && b.y0 < y1) return zt('被挡住了', 'Something is in the way'); }
+    if (q[6]) { var nx = Math.max(x0, Math.min(P.x, x1)), nz = Math.max(z0, Math.min(P.z, z1)); if (Math.hypot(P.x - nx, P.z - nz) < 0.45 && y1 > P.y + 0.1 && y0 < P.y + 1.8) return zt('你站在这里', 'You are standing there'); }
+    return '';
+  }
+  function rwPlaceDep() {
+    var c = RW.bc, s = rwHeldSlot();
+    if (!c || !s) { banner(zt('对着地面放', 'Aim at the ground'), 1000); return; }
+    if (c.why) { banner(c.why, 1300); tone(150, 120, 0.06, 'square', 0.04); return; }
+    s.n--; if (s.n <= 0) RW.inv[RW_HOT0 + RW.hot] = null; rwInvChanged();
+    var R = function (v) { return Math.round(v * 100) / 100; };
+    dSend({ t: 'Rb', k: c.k, x: R(c.x), y: R(c.y), z: R(c.z), r: c.r });
+    tone(330, 220, 0.09, 'square', 0.07);
+  }
+  function rwDepMesh(p) {
+    var g = new THREE.Group(), inner = new THREE.Group(); g.add(inner); inner.rotation.y = -p.r * Math.PI / 2;
+    function B(w, h, d, mat, x, y, z) { var m = new THREE.Mesh(gBox(w, h, d), mat); m.position.set(x, y, z); inner.add(m); return m; }
+    var M = rwDepMats();
+    if (p.k === 'bx') { B(1.0, 0.5, 0.6, RW.dmat, 0, 0.25, 0); B(1.04, 0.12, 0.64, M.trim, 0, 0.56, 0); B(0.14, 0.12, 0.05, M.metal, 0, 0.42, 0.32); [-0.48, 0.48].forEach(function (x) { B(0.06, 0.6, 0.62, M.trim, x, 0.3, 0); }); }
+    else if (p.k === 'fu') {
+      var stone = RW.bmat[1]; B(1.0, 1.0, 1.0, stone, 0, 0.5, 0); B(0.8, 0.15, 0.8, M.trim, 0, 1.07, 0); B(0.32, 0.5, 0.32, stone, 0.2, 1.4, -0.2);
+      p.glow = new THREE.MeshStandardMaterial({ color: 0x1a1410, roughness: 1 }); B(0.5, 0.36, 0.06, p.glow, 0, 0.42, 0.5);
+      rwFurnaceLit(p);
+    } else if (p.k === 'tc') {
+      B(0.85, 1.6, 0.5, RW.dmat, 0, 0.8, 0); B(0.75, 0.05, 0.4, M.trim, 0, 0.8, 0.05); B(0.75, 0.05, 0.4, M.trim, 0, 1.25, 0.05);
+      B(0.5, 0.18, 0.04, M.red, 0, 1.45, 0.26); B(0.06, 0.4, 0.06, M.wood, -0.2, 1.0, 0.18); B(0.2, 0.08, 0.08, M.metal, -0.2, 1.18, 0.18);
+    } else if (p.k === 'sb') { B(0.8, 0.1, 1.9, M.bag, 0, 0.05, 0.05); B(0.62, 0.12, 0.35, M.pillow, 0, 0.1, -0.78); }
+    return g;
+  }
+  var DEPM = null;
+  function rwDepMats() {
+    return DEPM || (DEPM = { trim: new THREE.MeshStandardMaterial({ color: 0x4a3420, roughness: 0.9 }), metal: new THREE.MeshStandardMaterial({ color: 0x8a9096, roughness: 0.4, metalness: 0.7 }),
+      red: new THREE.MeshStandardMaterial({ color: 0xb03a2a, roughness: 0.7 }), wood: new THREE.MeshStandardMaterial({ color: 0x7b5531, roughness: 0.85 }),
+      bag: new THREE.MeshStandardMaterial({ color: 0x3e4a2c, roughness: 1 }), pillow: new THREE.MeshStandardMaterial({ color: 0x8a8460, roughness: 1 }) });
+  }
+  function rwFurnaceLit(p) {
+    if (!p.glow) return;
+    p.glow.color.setHex(p.op ? 0xff8a2a : 0x1a1410); p.glow.emissive.setHex(p.op ? 0xff5a10 : 0); if ('emissiveIntensity' in p.glow) p.glow.emissiveIntensity = p.op ? 1.4 : 0;
+  }
+
+  /* ---- storage box / furnace screen: shown in the right panel of the inventory ---- */
+  function rwContOpen(p) {
+    if (state !== 'playing') return;
+    RW.cont = { id: p.id, k: p.k, s: null, lit: 0 }; RW.cfoc = -1;
+    dSend({ t: 'Bq', id: p.id });
+    rwInvOpen();
+    tone(220, 300, 0.08, 'triangle', 0.05);
+  }
+  function rwContClose() { if (RW.cont) { dSend({ t: 'Bc' }); RW.cont = null; RW.cfoc = -1; } }
+  function rwContPut(i) {
+    var s = RW.inv[i]; if (!s || !RW.cont || !RW.cont.s) return;
+    if (RW.cont.k === 'fu' && s.id !== 'wood' && s.id !== 'metal' && s.id !== 'meat') { banner(zt('熔炉只能放木材、金属矿、生肉', 'The furnace takes wood, metal ore and raw meat'), 1400); return; }
+    dSend({ t: 'Bp', id: RW.cont.id, it: s.id, n: s.n });
+    RW.inv[i] = null; rwInvChanged();
+    tone(300, 380, 0.05, 'square', 0.04);
+  }
+  function rwContTake(j) { if (RW.cont && RW.cont.s && RW.cont.s[j]) { dSend({ t: 'Bt', id: RW.cont.id, s: j }); tone(380, 300, 0.05, 'square', 0.04); } }
+  function rwContLight() { if (RW.cont && RW.cont.k === 'fu') dSend({ t: 'Bl', id: RW.cont.id }); }
+  function rwContHtml() {
+    var C = RW.cont, h = '', i;
+    var title = C.k === 'fu' ? zt('熔炉', 'FURNACE') : zt('储物箱', 'STORAGE BOX');
+    h += '<h3>' + title + '</h3>';
+    if (!C.s) return h + '<p>' + zt('正在打开……', 'Opening…') + '</p>';
+    function slot(j, label) { var q = C.s[j], cls = 'rwslot' + (RW.cfoc === j ? ' sel' : ''); return '<div class="' + cls + '" data-cs="' + j + '">' + (label ? '<i>' + label + '</i>' : '') + (q ? '<img src="' + rwIconUrl(q[0]) + '" alt=""><b>' + q[1] + '</b>' : '') + '</div>'; }
+    if (C.k === 'bx') { h += '<div class="rwgrid" id="rwiCont">'; for (i = 0; i < C.s.length; i++) h += slot(i); h += '</div>'; }
+    else {
+      h += '<div class="rwgrid" id="rwiCont" style="grid-template-columns:repeat(4,var(--s))">' + slot(0, zt('燃料', 'FUEL')) + slot(1, zt('原料', 'IN')) + slot(2, zt('产出', 'OUT')) + slot(3, zt('产出', 'OUT')) + '</div>';
+      h += '<p>' + (C.lit ? '<b style="color:#ff9a3a">' + zt('正在燃烧', 'Burning') + '</b> · ' : '') + zt('木材当燃料，放金属矿炼成金属碎片、放生肉烤成熟肉。每秒炼 1 个，每 2 秒烧 1 个木材。', 'Wood is fuel. Metal ore becomes fragments, raw meat gets cooked: 1 per second, 1 wood every 2 seconds.') + '</p>';
+      h += '<div class="rwacts"><button class="rwbtn" data-a="light" type="button">' + (C.lit ? zt('熄火', 'Put out') : zt('点火', 'Light')) + (isTouch ? '' : ' [' + keyLabel(KB.reload) + ']') + '</button></div>';
+    }
+    h += '<p>' + (isTouch ? zt('点背包里的物品再点「放进去」，点这里的格子拿出来。', 'Tap an item, then Put in. Tap a slot here to take it out.')
+      : zt('Enter 把选中的物品放进去；方向键走到这边选格子按 Enter 拿出来；也可以拖进来、点格子拿出来。', 'Enter puts the selected item in. Arrow over here and Enter takes a slot out. Dragging and clicking work too.')) + '</p>';
+    return h;
+  }
+  function rwContView(m) {
+    if (!RW.cont || RW.cont.id !== (m.id | 0)) return;
+    RW.cont.s = m.s; RW.cont.lit = m.lit | 0;
+    if (RW.ui === 'inv') rwInvRender();
+  }
+
+  /* ---- sleeping bags: pick where to respawn ---- */
+  RW.bagCd = {};
+  function rwMyBags() { return RW.plist.filter(function (p) { return p.k === 'sb' && p.o === RW.me; }); }
+  function rwBagButtons() {
+    var h = '';
+    rwMyBags().forEach(function (p) {
+      var cd = Math.max(0, Math.ceil((RW.bagCd[p.id] || 0) - gtime)), d = Math.round(Math.hypot(p.x - P.x, p.z - P.z));
+      h += '<button class="go alt rwbagbtn" data-bag="' + p.id + '" type="button"' + (cd ? ' disabled' : '') + '>' + zt('在睡袋重生', 'Respawn at sleeping bag') + ' · ' + d + 'm' + (cd ? ' · ' + cd + 's' : '') + '</button>';
+    });
+    return h;
+  }
+
+  /* ---- animals ---- */
+  Object.assign(ETYPES, {
+    deer: { name: '鹿', hp: 3, speed: 5.0, scale: 1, body: 0x8a6440, eye: 0x1a1410, coin: 0, score: 0, animal: true },
+    boar: { name: '野猪', hp: 6, speed: 3.6, scale: 1, body: 0x4a3628, eye: 0xe8e0c8, coin: 0, score: 0, animal: true },
+    wolf: { name: '狼', hp: 4, speed: 5.2, scale: 1, body: 0x6a6a66, eye: 0xffd23a, coin: 0, score: 0, animal: true }
+  });
+  CO.types = Object.keys(ETYPES);
+  function rwAnimalBuild(type, rig, A) {
+    var T = ETYPES[type], fur = new THREE.MeshStandardMaterial({ color: T.body, roughness: 0.95 }), dark = new THREE.MeshStandardMaterial({ color: new THREE.Color(T.body).multiplyScalar(0.6), roughness: 0.95 });
+    var lite = new THREE.MeshStandardMaterial({ color: new THREE.Color(T.body).lerp(new THREE.Color(0xe8dcc0), 0.45), roughness: 0.95 }), eye = new THREE.MeshBasicMaterial({ color: T.eye });
+    function bx(w, h, d, mat, x, y, z, par) { var m = new THREE.Mesh(gBox(w, h, d), mat); m.position.set(x, y, z); (par || rig).add(m); return m; }
+    function leg(x, y, z, len, th) { var p = new THREE.Group(); p.position.set(x, y, z); rig.add(p); bx(th, len, th, dark, 0, -len / 2, 0, p); bx(th * 1.1, 0.08, th * 1.3, dark, 0, -len + 0.03, th * 0.15, p); return p; }
+    var body, head, Lh, Lz, th;
+    if (type === 'deer') {
+      Lh = 0.8; Lz = 0.42; th = 0.09;
+      body = bx(0.46, 0.5, 1.15, fur, 0, 1.05, 0); bx(0.36, 0.2, 0.9, lite, 0, 0.84, 0);
+      var neck = bx(0.2, 0.55, 0.22, fur, 0, 1.45, 0.52); neck.rotation.x = -0.45;
+      head = bx(0.24, 0.26, 0.44, fur, 0, 1.72, 0.72); bx(0.14, 0.12, 0.16, dark, 0, 1.66, 0.96);
+      bx(0.04, 0.05, 0.04, eye, -0.11, 1.78, 0.82); bx(0.04, 0.05, 0.04, eye, 0.11, 1.78, 0.82);
+      [-1, 1].forEach(function (s) { var a1 = bx(0.04, 0.36, 0.04, lite, s * 0.1, 2.0, 0.62); a1.rotation.z = -s * 0.35; var a2 = bx(0.03, 0.2, 0.03, lite, s * 0.2, 2.1, 0.7); a2.rotation.z = -s * 0.9; bx(0.06, 0.12, 0.03, fur, s * 0.15, 1.86, 0.6); });
+      bx(0.12, 0.16, 0.08, lite, 0, 1.18, -0.6);
+    } else if (type === 'boar') {
+      Lh = 0.42; Lz = 0.36; th = 0.11;
+      body = bx(0.56, 0.58, 1.05, fur, 0, 0.7, 0); bx(0.5, 0.14, 0.9, dark, 0, 1.02, -0.02);
+      head = bx(0.42, 0.4, 0.42, fur, 0, 0.68, 0.66); bx(0.22, 0.18, 0.18, lite, 0, 0.58, 0.92);
+      bx(0.05, 0.05, 0.03, eye, -0.13, 0.78, 0.87); bx(0.05, 0.05, 0.03, eye, 0.13, 0.78, 0.87);
+      [-1, 1].forEach(function (s) { var tk = bx(0.04, 0.16, 0.04, eye, s * 0.12, 0.6, 0.98); tk.rotation.x = -0.4; bx(0.1, 0.12, 0.04, dark, s * 0.15, 0.94, 0.62); });
+      bx(0.05, 0.18, 0.05, dark, 0, 0.82, -0.56);
+    } else {
+      Lh = 0.6; Lz = 0.38; th = 0.08;
+      body = bx(0.36, 0.42, 1.0, fur, 0, 0.82, 0); bx(0.4, 0.46, 0.4, fur, 0, 0.86, 0.3);
+      head = bx(0.3, 0.3, 0.32, fur, 0, 1.0, 0.66); bx(0.16, 0.14, 0.24, lite, 0, 0.94, 0.88);
+      bx(0.05, 0.04, 0.03, eye, -0.09, 1.06, 0.82); bx(0.05, 0.04, 0.03, eye, 0.09, 1.06, 0.82);
+      [-1, 1].forEach(function (s) { var ear = bx(0.08, 0.14, 0.05, dark, s * 0.1, 1.2, 0.6); ear.rotation.z = -s * 0.2; });
+      var tail = bx(0.1, 0.1, 0.5, dark, 0, 0.85, -0.68); tail.rotation.x = 0.5;
+    }
+    A.quad = [leg(-0.16, Lh, Lz, Lh, th), leg(0.16, Lh, Lz, Lh, th), leg(-0.16, Lh, -Lz, Lh, th), leg(0.16, Lh, -Lz, Lh, th)];
+    A.lean = 0; A.mats = [fur, dark, lite];
+    return { body: body, head: head, mats: [fur, dark, lite] };
+  }
+  function rwAnimalStep(e, dt) {   // deer run away, boars charge when you get close, wolves hunt you
+    var pos = e.g.position, m = e.camp, ty = e.type;
+    e.t += dt; animEnemy(e, dt);
+    if (e.burn > 0) { e.burn -= dt; e.hp -= e.burnDps * dt; if (e.hp <= 0) { killEnemy(e, false); return true; } }
+    if (e.flash > 0) { e.flash -= dt; setEm(e, 0xffffff); } else setEm(e, 0);
+    var TP = coopTarget(pos); BT = TP;
+    var dx = TP.x - pos.x, dz = TP.z - pos.z, dd = Math.hypot(dx, dz) || 1, home = Math.hypot(pos.x - m.x, pos.z - m.z);
+    updateBar(e, Math.hypot(P.x - pos.x, P.z - pos.z));
+    if (e.hurt > 0) e.hurt -= dt;
+    var safeT = rwSafe(TP.x, TP.z) || (TP === P && RW.dead), mv = 0, ux = 0, uz = 0, sp = e.speed;
+    var scared = ty === 'deer' ? (dd < 16 || e.hurt > 0) : false;
+    var angry = !safeT && (ty === 'wolf' ? dd < 28 : ty === 'boar' ? (dd < 7 || e.hurt > 0) : false) && home < m.r + 90;
+    if (scared && !safeT) { ux = -dx / dd; uz = -dz / dd; mv = 1; e.g.rotation.y = Math.atan2(ux, uz); }
+    else if (angry) {
+      ux = dx / dd; uz = dz / dd; mv = dd > 1.4 ? 1 : 0; e.g.rotation.y = Math.atan2(dx, dz);
+      e.melee = (e.melee || 0) - dt;
+      if (dd < 1.8 && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'boar' ? 1.1 : 0.9; dmgTP(TP, ty === 'boar' ? 12 : 10); tone(ty === 'wolf' ? 500 : 180, ty === 'wolf' ? 300 : 90, 0.12, 'sawtooth', 0.06); }
+    } else {
+      e.wt = (e.wt || 0) - dt;
+      if (e.wt <= 0) { e.wt = 4 + Math.random() * 6; var wa = Math.random() * 6.28, wd = Math.random() * m.r * 0.7; e.wx = m.x + Math.cos(wa) * wd; e.wz = m.z + Math.sin(wa) * wd; }
+      var tx = (e.wx === undefined ? m.x : e.wx) - pos.x, tz = (e.wz === undefined ? m.z : e.wz) - pos.z, tl = Math.hypot(tx, tz);
+      if (tl > 1.2) { ux = tx / tl; uz = tz / tl; mv = 0.28; e.g.rotation.y = Math.atan2(ux, uz); }
+    }
+    var nx = pos.x + ux * sp * mv * dt, nz = pos.z + uz * sp * mv * dt;
+    if (!rwDeep(nx, nz)) { pos.x = nx; pos.z = nz; } else e.wt = 0;
+    for (var j = 0; j < 2; j++) { rwResolve(pos, e.r); resolveCircle(pos, e.r, pos.y + 0.65); }
+    pos.y = rwH(pos.x, pos.z);
+    return false;
+  }
+  function rwAnimalLoot(e) {
+    var p = e.g.position, ty = e.type, loot = ty === 'deer' ? [['meat', 6], ['cloth', 8]] : ty === 'boar' ? [['meat', 9], ['cloth', 5]] : [['meat', 4], ['cloth', 10]];
+    rwDropAdd(loot.map(function (q) { return { id: q[0], n: q[1] }; }), p.x, p.z, null, 420);
+  }
+  function rwPlanHerds() {   // fixed hunting grounds across the island, the same for everybody
+    RW.herds = [];
+    var rg = seeded(hashStr('rwherd' + RW.seed)), H = RW.half, tries = 0;
+    while (RW.herds.length < 42 && tries++ < 3000) {
+      var x = (rg() * 2 - 1) * H * 0.8, z = (rg() * 2 - 1) * H * 0.8, h = rwBase(x, z);
+      if (h < 2 || h > 32 || rwNearMon(x, z, 80) || (RW.safe && Math.hypot(x - RW.safe.x, z - RW.safe.z) < RW.safe.r + 60)) continue;
+      if (RW.herds.some(function (o) { return Math.hypot(o.x - x, o.z - z) < 160; })) continue;
+      var r = rg(), camp = r < 0.45 ? ['deer', 'deer', 'deer'] : r < 0.75 ? ['boar', 'boar'] : ['wolf', 'wolf', 'wolf'];
+      RW.herds.push({ k: 'herd', x: x, z: z, r: 55, R: 0, R2: 0, camp: camp, slots: null, meshes: [] });
+    }
+  }
+
+  /* ---- raiding: explosives and building damage ---- */
+  RW.bombs = [];
+  function rwThrowBomb() {
+    var s = rwHeldSlot(); if (!s || !RWI[s.id] || RWI[s.id].tool !== 'bomb' || RW.dead) return;
+    var d = RWI[s.id];
+    s.n--; if (s.n <= 0) RW.inv[RW_HOT0 + RW.hot] = null; rwInvChanged();
+    var g = new THREE.Group(), M = rwDepMats();
+    var body = new THREE.Mesh(gBox(s.id === 'c4' ? 0.34 : 0.26, 0.18, s.id === 'c4' ? 0.22 : 0.2), s.id === 'c4' ? M.metal : M.bag); g.add(body);
+    var led = new THREE.Mesh(gBox(0.06, 0.04, 0.06), new THREE.MeshBasicMaterial({ color: 0xff2a1a })); led.position.y = 0.11; g.add(led);
+    var dir = new THREE.Vector3(0, 0.18, -1).applyQuaternion(camera.quaternion).normalize();
+    g.position.copy(camera.position).add(dir.clone().multiplyScalar(0.6));
+    RW.group.add(g);
+    RW.bombs.push({ g: g, led: led, vx: dir.x * 11, vy: dir.y * 11 + 1.5, vz: dir.z * 11, fuse: d.fuse, bdmg: d.bdmg, stuck: false, beep: 0, c4: s.id === 'c4' });
+    tone(250, 150, 0.1, 'square', 0.05);
+  }
+  function rwBombTick(dt) {
+    for (var i = RW.bombs.length - 1; i >= 0; i--) {
+      var b = RW.bombs[i], p = b.g.position;
+      if (!b.stuck) {
+        b.vy -= 18 * dt;
+        var nx = p.x + b.vx * dt, ny = p.y + b.vy * dt, nz = p.z + b.vz * dt, sp = Math.hypot(b.vx, b.vy, b.vz) || 1;
+        var t = rayWall(p.x, p.y, p.z, b.vx / sp, b.vy / sp, b.vz / sp, sp * dt + 0.12);
+        if (t < sp * dt + 0.12) { var k = Math.max(0, t - 0.1); p.x += b.vx / sp * k; p.y += b.vy / sp * k; p.z += b.vz / sp * k; b.stuck = true; tone(400, 300, 0.05, 'square', 0.05); }
+        else { p.set(nx, ny, nz); b.g.rotation.x += dt * 6; }
+        var gh = rwH(p.x, p.z); if (p.y < gh + 0.1) { p.y = gh + 0.1; b.stuck = true; }
+      }
+      b.fuse -= dt; b.beep -= dt;
+      var on = (b.fuse % 0.5) < 0.25; b.led.visible = on;
+      if (b.beep <= 0) { b.beep = b.fuse < 2 ? 0.25 : 1; if (Math.hypot(p.x - P.x, p.z - P.z) < 50) tone(1400, 1300, 0.05, 'square', 0.04); }
+      if (b.fuse <= 0) {
+        if (b.g.parent) b.g.parent.remove(b.g); RW.bombs.splice(i, 1);
+        RW.noBlast = true; explode(p.x, p.y, p.z, b.c4 ? 5 : 4, b.c4 ? 14 : 8, true); RW.noBlast = false;
+        rwBlastBuild(p.x, p.y, p.z, b.c4 ? 3.4 : 2.8, b.bdmg);
+      }
+    }
+  }
+  function rwBlastBuild(x, y, z, r, dmg) {   // tell the server which parts this blast hit
+    var out = [];
+    for (var i = 0; i < RW.plist.length && out.length < 60; i++) {
+      var p = RW.plist[i]; if (Math.abs(p.x - x) > r + 4 || Math.abs(p.z - z) > r + 4) continue;
+      var best = 1e9;
+      p.pk.forEach(function (b) { var dx = Math.max(b.minX - x, 0, x - b.maxX), dy = Math.max(b.minY - y, 0, y - b.maxY), dz = Math.max(b.minZ - z, 0, z - b.maxZ); best = Math.min(best, Math.hypot(dx, dy, dz)); });
+      if (best < r) out.push([p.id, Math.round(dmg * (1 - 0.6 * best / r))]);
+    }
+    if (out.length) dSend({ t: 'Rh', a: out });
+  }
+  function rwPieceHp(id, hp) {
+    var p = RW.pieces[id]; if (!p) return;
+    var was = p.hp; p.hp = hp;
+    if (hp < was && Math.hypot(p.x - P.x, p.z - P.z) < 60) burst(new THREE.Vector3(p.x, p.y + 1.2, p.z), 6, partMatG, 4);
+  }
+  function rwRepairCost(p) { return p.g === 2 ? { frags: 10 } : p.g === 1 ? { stone: 15 } : { wood: 15 }; }
+
+  /* ---- hemp: walk up and pick it for cloth ---- */
+  function rwPickHemp(n) {
+    var hp = RW.nst[n.id]; if (hp !== undefined && hp <= 0) return;
+    RW.nst[n.id] = 0; dSend({ t: 'Rg', id: n.id, max: 1, k: 'hemp' });
+    var left = rwGive('cloth', 10); if (left > 0) rwDropAdd([{ id: 'cloth', n: left }], P.x, P.z, null, 300, P.y);
+    rwNote('cloth', 10 - left > 0 ? 10 - left : 10);
+    tone(500, 700, 0.06, 'triangle', 0.05);
+    var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch);
   }
 
   EN['收购'] = 'Sell';
