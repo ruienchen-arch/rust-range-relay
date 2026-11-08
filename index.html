@@ -4561,6 +4561,7 @@ Object.assign(EN, {
     coopClearPeers();
   }
   DU.leave = function (notify) {
+    rwSaveNow(true);
     rwTeardown();
     if (coop || DU.coopWanted) coopCleanup();
     if (notify && DU.connected) dSend({ t: 'q' });
@@ -5234,7 +5235,7 @@ Object.assign(EN, {
   function rwDie() {
     if (RW.dead) return;
     RW.dead = true; RW.deadT = 0; releaseInput(); rwUiClose(true); rwDropOnDeath();
-    rwDeathReport();
+    rwDeathReport(); rwSaveNow(true);
     if (RW.attacker && gtime - RW.attackT < 15) dSend({ t: 'Rk', to: RW.attacker });
     RW.attacker = 0;
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
@@ -5249,8 +5250,8 @@ Object.assign(EN, {
     var sp = rwSpawnPoint();
     if (bag && bag.k === 'sb') { sp = [bag.x + 0.8, bag.z + 0.8, groundAt(bag.x + 0.8, bag.z + 0.8, bag.y + 1)]; RW.bagCd[bag.id] = gtime + 60; }
     P.hp = P.maxHp; P.armor = 0; P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; RW.px = P.x; RW.pz = P.z;
-    resetLoadout(); resetInv(); coins = Math.floor(coins * 0.5); grenades = 1; adrenT = 0; W.cd = 0; W.reload = 0; aiming = false; updateSlots(); rwInvReset(false);
-    RW.dead = false; $('menu').hidden = true; requestLock();
+    resetLoadout(); resetInv(); if (!RW.joinDead) coins = Math.floor(coins * 0.5); grenades = 1; adrenT = 0; W.cd = 0; W.reload = 0; aiming = false; updateSlots(); rwInvReset(false);
+    RW.dead = false; RW.joinDead = false; $('menu').hidden = true; requestLock(); rwSaveNow(true);
     banner(bag ? zt('你在睡袋重生了', 'You respawned at your sleeping bag') : zt('你在海岸重生了', 'You respawned on the coast'), 1500);
   }
 
@@ -5378,7 +5379,7 @@ Object.assign(EN, {
     DU.connected = true; DU.opened = true;
     rwSetAuth(m.auth | 0);
     RW.online = (m.peers ? m.peers.length : 0) + 1;
-    RW.me = String(m.me || '');
+    RW.me = String(m.me || ''); RW.saveIn = m.save || null; RW.restored = 0;
     rwBuildWorld(); rwPiecesLoad(m.builds); rwStart(); rwChatStart(m.chat);
   }
 
@@ -5413,7 +5414,7 @@ Object.assign(EN, {
       hemi: [hemi.color.getHex(), hemi.groundColor.getHex(), hemi.intensity], sun: [sun.color.getHex(), sun.intensity, sun.position.x, sun.position.y, sun.position.z] };
   }
   function rwStart() {
-    rwSaveScene();
+    rwSaveScene(); RW.deadJoin = false; RW.joinDead = false;
     coop = true; duel = false; siege = false; RW.on = true; RW.dead = false;
     mode = 'rush'; diff = 'normal'; DF = DIFFS.normal; CH = CHARS[charId];
     floor.visible = false; cornerLights.forEach(function (o) { o.l.visible = false; }); cLight.visible = false;
@@ -5431,13 +5432,15 @@ Object.assign(EN, {
     W.cd = 0; W.reload = 0; aiming = false; aimT = 0; latched = false;
     wave = 0; score = 0; waveDelay = 0; spawned = 0; toSpawn = 0;
     coopBoardEl().hidden = true;
+    rwRestore();
     rwStream(P.x, P.z, true);
     rwInitUi(); rwInitUi2(); RW.hud.style.display = 'block'; rwHotRender(true); $('bagHud').hidden = true;
     state = 'playing'; $('menu').hidden = true; $('hud').hidden = false; $('cross').hidden = false;
-    requestLock(); tone(200, 400, 0.1, 'square', 0.05);
+    if (!RW.deadJoin) requestLock(); tone(200, 400, 0.1, 'square', 0.05);   // came back dead: keep the mouse free for the death screen
     $('banner').classList.add('rwb'); rwMStart(); rwWelcomeShow();
     try { renderer.compile(scene, camera); } catch (e) {}   // build every shader now instead of stalling the first frames
     RW.safeNow = false; RW.cullT = 0;
+    if (RW.deadJoin) { RW.deadJoin = false; rwJoinDead(); }
   }
   function rwTeardown() {
     if (!RW.built && !RW.on) return;
@@ -5459,6 +5462,7 @@ Object.assign(EN, {
   /* ---- per frame ---- */
   function rwTick(dt) {
     RW.gatherCd = Math.max(0, RW.gatherCd - dt);
+    rwSaveTick(dt);
     rwStream(P.x, P.z, false);
     rwTick2(dt);
     if (!coopG()) rwNpcTick(dt);
@@ -6255,7 +6259,7 @@ Object.assign(EN, {
     if (!RW.on) return;
     for (var i = 0; i < WDEF.length; i++) owned[i] = rwCount('g' + i) > 0;
   }
-  function rwInvChanged() { rwSyncOwned(); rwHotRender(true); if (RW.ui === 'inv') rwInvRender(); }
+  function rwInvChanged() { rwSyncOwned(); rwHotRender(true); if (RW.ui === 'inv') rwInvRender(); rwSaveSoon(); }
   function rwHeldSlot() { return RW.inv[RW_HOT0 + RW.hot]; }
   function heldKind() {
     if (holster) return 'hands';
@@ -7616,13 +7620,14 @@ Object.assign(EN, {
       var st = document.createElement('style'); st.textContent = RWCSS2; document.head.appendChild(st);
       var el = document.createElement('div'); el.id = 'rwWel'; RW.hud.appendChild(el); RW.welEl = el;
     }
+    if (RW.deadJoin) return;   // came back dead: the death screen comes first
     var keys = isTouch ? [[zt('开火键', 'Fire'), zt('挥动工具 / 开火', 'Swing a tool / shoot')], [zt('背包', 'Bag'), zt('背包与制作', 'Inventory & crafting')], [zt('交互', 'Use'), zt('捡起 · 开箱 · 开门', 'Pick up · crates · doors')], [zt('瞄准键', 'Aim'), zt('建造时选部件', 'Pick a building part')]]
       : [[keyLabel(KB.forward) + keyLabel(KB.left) + keyLabel(KB.back) + keyLabel(KB.right), zt('移动，' + keyLabel(KB.sprint) + ' 冲刺', 'Move, ' + keyLabel(KB.sprint) + ' sprints')], ['← ↑ → ↓', zt('转动视角', 'Look around')],
          [keyLabel(KB.fire), zt('挥动工具 / 开火 / 放置', 'Swing / shoot / place')], [keyLabel(KB.aim), zt('瞄准 / 选建筑部件 / 拆除', 'Aim / parts / remove')],
          [keyLabel(KB.use), zt('捡起 · 开箱 · 开门', 'Pick up · crates · doors')], [keyLabel(KB.drop), zt('丢掉手里的东西', 'Drop what you hold')],
          ['Tab', zt('背包与制作', 'Inventory & crafting')], ['1 – 6', zt('切换快捷栏', 'Switch belt slot')], ['X', zt('空手', 'Empty hands')], ['M', zt('全岛地图', 'Island map')], ['Enter', zt('全图聊天', 'World chat')]];
     var h = '<div class="we">THE WILD<span>' + zt('在线 ', 'ONLINE ') + RW.online + '</span></div><h2>' + zt('荒野世界', 'The Wild') + '</h2>' +
-      '<p>' + zt('手里只有一块石头。砍树采石、打猎、用熔炉炼金属，搭起有领地柜和储物箱的房子，放个睡袋当重生点；带上炸药去抄别人的家。左边是任务。', 'You start with a rock. Gather, hunt, smelt metal, build a base with a tool cupboard and storage, drop a sleeping bag, and bring explosives to raid others. Missions are on the left.') + '</p><div class="wk">';
+      '<p>' + (RW.restored ? zt(RW.restored === 2 ? '欢迎回来。背包、快捷栏和你建的东西都还在，你回到了上次离开的地方。' : '欢迎回来。背包、快捷栏和你建的东西都还在。', RW.restored === 2 ? 'Welcome back. Your backpack, belt and everything you built are still here, and you are where you left off.' : 'Welcome back. Your backpack, belt and everything you built are still here.') + ' ' : '') + zt('手里只有一块石头。砍树采石、打猎、用熔炉炼金属，搭起有领地柜和储物箱的房子，放个睡袋当重生点；带上炸药去抄别人的家。左边是任务。', 'You start with a rock. Gather, hunt, smelt metal, build a base with a tool cupboard and storage, drop a sleeping bag, and bring explosives to raid others. Missions are on the left.') + '</p><div class="wk">';
     keys.forEach(function (k) { h += '<div><kbd>' + duEsc(k[0]) + '</kbd>' + duEsc(k[1]) + '</div>'; });
     h += '</div><div class="wf"><span>' + zt('前哨站是安全区，可以买卖东西', 'The Outpost is a safe zone with a shop') + '</span><span>' + (isTouch ? zt('点任意处继续', 'Tap to continue') : zt('按任意键继续', 'Press any key')) + '</span></div>';
     RW.welEl.innerHTML = h;
@@ -8111,6 +8116,96 @@ Object.assign(EN, {
     }
     mesh.count = n; mesh.frustumCulled = false; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mapGroup.add(mesh);
+  }
+
+  /* ---- your character is kept on the server: backpack, belt, coins, health, ammo and where you stood ----
+     Saved every few seconds, right after the backpack changes, when you die, leave or close the page.
+     A copy also goes to this browser (localStorage) in case the server has none. */
+  var RWS = { t: 0, soon: 0, last: '' };
+  function rwSaveKey() { return 'rustrange-rws'; }
+  function rwSaveState() {
+    var s = { v: 1, t: Date.now(), hot: RW.hot | 0, coins: Math.max(0, coins | 0), gr: Math.max(0, grenades | 0) };
+    if (RW.dead) {   // what you get back after dying: the coast, a rock and half your coins
+      s.inv = []; for (var i = 0; i < RW_SLOTS; i++) s.inv.push(0);
+      s.inv[RW_HOT0] = ['rock', 1]; s.hot = 0; s.coins = RW.joinDead ? Math.max(0, coins | 0) : Math.floor(coins * 0.5); s.dead = 1;   // already halved when you came back dead
+      return s;
+    }
+    s.inv = RW.inv.map(function (o) { return o && o.n > 0 ? [o.id, o.n | 0] : 0; });
+    s.hp = Math.max(1, Math.round(P.hp)); s.ar = Math.max(0, Math.round(P.armor || 0));
+    s.ws = ws.map(function (w) { return [w.ammo | 0, w.res | 0]; });
+    s.x = Math.round(P.x * 10) / 10; s.y = Math.round(P.y * 10) / 10; s.z = Math.round(P.z * 10) / 10; s.yaw = Math.round(P.yaw * 100) / 100;
+    return s;
+  }
+  function rwSaveNow(fin) {
+    if (!RW.on || !RW.me || RW.entering) return;
+    var s = rwSaveState(), js = JSON.stringify(s);
+    RWS.t = 0; RWS.soon = 0;
+    try { localStorage.setItem(rwSaveKey(), JSON.stringify({ seed: RW.seed, me: RW.me, s: s })); } catch (e) {}
+    var cmp = js.replace(/"t":\d+,/, '');
+    if (cmp === RWS.last && !fin) return;
+    RWS.last = cmp;
+    if (DU.connected) dSend({ t: 'Rs', s: s });
+  }
+  function rwSaveTick(dt) {
+    RWS.t += dt;
+    if (RWS.soon > 0) { RWS.soon -= dt; if (RWS.soon <= 0) { rwSaveNow(); return; } }
+    if (RWS.t >= 5) rwSaveNow();
+  }
+  function rwSaveSoon() { if (RW.on && !(RWS.soon > 0)) RWS.soon = 0.8; }
+  function rwSaveLocal() {
+    var o = null; try { o = JSON.parse(localStorage.getItem(rwSaveKey()) || 'null'); } catch (e) {}
+    return o && o.s && o.seed === RW.seed && o.me === RW.me ? o.s : null;
+  }
+  // called from rwStart after the fresh loadout: puts back what was saved (the newer of server and browser copy)
+  function rwRestore() {
+    var a = RW.saveIn, b = rwSaveLocal(), s = a && b ? ((+b.t || 0) > (+a.t || 0) ? b : a) : (a || b);
+    RW.saveIn = null; RWS.last = '';
+    if (!s || !Array.isArray(s.inv)) return false;
+    rwInvClear();
+    for (var i = 0; i < RW_SLOTS && i < s.inv.length; i++) {
+      var o = s.inv[i];
+      if (Array.isArray(o) && RWI[o[0]] && o[1] > 0) RW.inv[i] = { id: String(o[0]), n: Math.min(o[1] | 0, RWI[o[0]].st || 1) };
+    }
+    RW.hot = Math.max(0, Math.min(5, s.hot | 0));
+    if (isFinite(s.coins)) coins = Math.max(0, s.coins | 0);
+    if (isFinite(s.gr)) grenades = Math.max(0, Math.min(9, s.gr | 0));
+    if (Array.isArray(s.ws)) for (var k = 0; k < ws.length && k < s.ws.length; k++) {
+      var w = s.ws[k]; if (!Array.isArray(w)) continue;
+      ws[k].ammo = Math.max(0, Math.min(WDEF[k].mag, w[0] | 0)); ws[k].res = Math.max(0, Math.min(WDEF[k].maxRes || 9999, w[1] | 0));
+    }
+    var placed = false;
+    if (s.dead) RW.deadJoin = true;   // rwStart shows the death screen with your sleeping bags
+    else {
+      if (s.hp > 0) P.hp = Math.min(P.maxHp, s.hp);
+      if (s.ar > 0) P.armor = Math.min(100, s.ar);
+      var lim = RW.half * 1.05;
+      if (isFinite(s.x) && isFinite(s.z) && Math.abs(s.x) < lim && Math.abs(s.z) < lim && rwH(s.x, s.z) > RW_SEA - 0.2) {
+        P.x = +s.x; P.z = +s.z; P.y = groundAt(P.x, P.z, (+s.y || 0) + 0.6); P.vy = 0; RW.px = P.x; RW.pz = P.z;
+        if (isFinite(s.yaw)) P.yaw = +s.yaw;
+        placed = true;
+      }
+    }
+    holster = false; rwInvChanged(); updateSlots();
+    RW.lastHeld = rwHeldSlot() ? rwHeldSlot().id : '';
+    RW.restored = s.dead ? 0 : placed ? 2 : 1;
+    return true;
+  }
+  window.addEventListener('pagehide', function () { rwSaveNow(true); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') rwSaveNow(true); });
+
+  // you left while dead: come back to the death screen and pick a sleeping bag or the coast
+  function rwJoinDead() {
+    RW.dead = true; RW.deadT = 0; RW.joinDead = true; releaseInput(); rwUiClose(true);
+    if (RW.welEl) RW.welEl.classList.remove('on');
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    var bags = rwBagButtons().replace(/ · \d+m/g, '');   // the distance would be from a random coast point
+    var h = duHead('RUST', '荒野世界', zt('欢迎回来', 'Welcome back'));
+    h += '<p>' + zt('你上次离开时已经倒下了。选一个地方重生' + (bags ? '：可以回到自己的睡袋。' : '。放个睡袋，下次就能在那里重生。'), 'You were dead when you left. Pick where to respawn' + (bags ? ': you can go back to one of your sleeping bags.' : '. Place a sleeping bag to respawn there next time.')) + '</p>' +
+      bags + '<button class="go" id="rwRespawn" type="button">' + zt('在海岸随机重生', 'Respawn on the coast') + '</button><button class="ghost" id="rwLobby" type="button">' + zt('返回大厅', 'Back to lobby') + '</button>';
+    duCard(h, function () {});
+    $('rwLobby').addEventListener('click', function () { DU.leave(false); });
+    $('rwRespawn').addEventListener('click', function () { rwRespawn(); });
+    Array.prototype.forEach.call(document.querySelectorAll('.rwbagbtn'), function (bt) { bt.addEventListener('click', function () { var bp = RW.pieces[+bt.getAttribute('data-bag')]; if (bp) rwRespawn(bp); }); });
   }
 
   EN['收购'] = 'Sell';

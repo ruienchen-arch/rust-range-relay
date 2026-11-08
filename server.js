@@ -37,7 +37,7 @@ const INTEREST = 420;
 const world = { clients: new Map(), nextId: 1, auth: 0, nodes: new Map() };
 const RESPAWN_MS = { tree: 600000, rock: 600000, ore: 900000, crate: 900000, hemp: 300000 };
 function worldSeed() {
-  if (!db.world) { db.world = { seed: 'w' + crypto.randomBytes(4).toString('hex') }; saveDb(); }
+  if (!db.world) { db.world = { seed: buildSeed || playerSeed || ('w' + crypto.randomBytes(4).toString('hex')) }; saveDb(); }   // reuse the island the buildings were made on
   return process.env.WORLD_SEED || db.world.seed;
 }
 function electAuthority() {
@@ -46,7 +46,7 @@ function electAuthority() {
   if (best !== world.auth) { world.auth = best; for (const o of world.clients.values()) o.send(JSON.stringify({ op: 'authority', id: best })); }
 }
 function worldJoin(c, m) {
-  checkBuildSeed();
+  checkBuildSeed(); checkPlayerSeed();
   const peers = [...world.clients.keys()], names = {};
   for (const o of world.clients.values()) names[o.id] = o.name || '';
   c.world = true; c.room = { code: 'WORLD', duel: false, clients: world.clients }; c.id = world.nextId++; c.x = 0; c.z = 0; c.hasPos = false;
@@ -57,7 +57,7 @@ function worldJoin(c, m) {
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
   if (!world.auth) world.auth = c.id;
-  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, chat: chatLog, builds: [...builds.values()].map(pub) }));
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub) }));
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
   chatPush({ t: 'RJ', n: c.name, j: 1 });
   electAuthority();
@@ -158,6 +158,38 @@ function saveBuilds() { if (!buildT) buildT = setTimeout(() => { buildT = null; 
 function checkBuildSeed() {   // a new island (new seed) starts with no buildings
   const s = worldSeed();
   if (buildSeed !== s) { if (builds.size) console.log('world seed changed: clearing ' + builds.size + ' building parts'); builds.clear(); buildSeq = 0; buildSeed = s; saveBuilds(); }
+}
+// ---- each player's backpack, belt, coins and position (DATA_DIR/players.json), so they are still there next visit ----
+const PLAYER_FILE = path.join(DATA_DIR, 'players.json');
+let players = {}, playerSeed = '', playerT = null;
+try { const w = JSON.parse(fs.readFileSync(PLAYER_FILE, 'utf8')); playerSeed = String(w.seed || ''); if (w.p && typeof w.p === 'object') players = w.p; } catch (e) {}
+function writePlayers() {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(PLAYER_FILE + '.tmp', JSON.stringify({ seed: playerSeed, p: players })); fs.renameSync(PLAYER_FILE + '.tmp', PLAYER_FILE); }
+  catch (e) { console.error('could not save players:', e.message); }
+}
+function savePlayers() { if (!playerT) playerT = setTimeout(() => { playerT = null; writePlayers(); }, 3000); }
+function checkPlayerSeed() {   // a new island starts everybody fresh, like a wipe
+  const s = worldSeed();
+  if (playerSeed !== s) { if (Object.keys(players).length) console.log('world seed changed: clearing saved players'); players = {}; playerSeed = s; savePlayers(); }
+}
+const int = (v, lo, hi) => (Number.isFinite(+v) ? Math.max(lo, Math.min(hi, Math.round(+v))) : lo);
+const num = (v, lim) => (Number.isFinite(+v) && Math.abs(+v) <= lim ? Math.round(+v * 100) / 100 : null);
+function cleanSave(s) {
+  if (!s || typeof s !== 'object' || !Array.isArray(s.inv) || s.inv.length !== 30) return null;
+  const o = { v: 1, t: int(s.t, 0, 9e15), hot: int(s.hot, 0, 5), coins: int(s.coins, 0, 1e9), gr: int(s.gr, 0, 9), inv: [] };
+  for (const it of s.inv) o.inv.push(Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1 ? [it[0], int(it[1], 1, 100000)] : 0);
+  if (s.dead) { o.dead = 1; return o; }
+  o.hp = int(s.hp, 1, 1000); o.ar = int(s.ar, 0, 100);
+  if (Array.isArray(s.ws) && s.ws.length <= 24) o.ws = s.ws.map((w) => (Array.isArray(w) ? [int(w[0], 0, 1000), int(w[1], 0, 10000)] : [0, 0]));
+  const lim = WORLD_SIZE * 2, x = num(s.x, lim), y = num(s.y, 1000), z = num(s.z, lim);
+  if (x !== null && y !== null && z !== null) { o.x = x; o.y = y; o.z = z; o.yaw = num(s.yaw, 100) || 0; }
+  return o;
+}
+function worldSave(c, m) {
+  if (!c.owner || c.owner[0] === 'c') return;   // no browser key and no account: nothing to tie the save to
+  const now = Date.now(); if (c.svT && now - c.svT < 250) return; c.svT = now;
+  const s = cleanSave(m.s); if (!s) return;
+  players[c.owner] = s; savePlayers();
 }
 function worldAll(s) { for (const o of world.clients.values()) o.send(s); }
 const isWallish = (k) => k === 'wl' || k === 'dw' || k === 'wn';
@@ -291,7 +323,7 @@ setInterval(() => {   // furnaces: 1 ore or raw meat per second, 1 wood every 2 
     contWatchers(a); saveBuilds();
   }
 }, 1000).unref();
-function flushOnExit() { if (buildT) { clearTimeout(buildT); buildT = null; writeBuilds(); } if (saveT) { clearTimeout(saveT); saveT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) {} } }
+function flushOnExit() { if (playerT) { clearTimeout(playerT); playerT = null; writePlayers(); } if (buildT) { clearTimeout(buildT); buildT = null; writeBuilds(); } if (saveT) { clearTimeout(saveT); saveT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch (e) {} } }
 process.on('SIGTERM', () => { flushOnExit(); process.exit(0); });
 process.on('SIGINT', () => { flushOnExit(); process.exit(0); });
 
@@ -487,6 +519,7 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Re') { worldDeath(c, m); return; }
   if (c.world && m.t === 'Rh') { worldDamage(c, m); return; }
   if (c.world && m.t === 'Ra') { worldAuth(c, m); return; }
+  if (c.world && m.t === 'Rs') { worldSave(c, m); return; }
   if (c.world && (m.t === 'Bq' || m.t === 'Bp' || m.t === 'Bt' || m.t === 'Bl' || m.t === 'Bc')) { worldCont(c, m); return; }
   const to = m.to; delete m.to;
   m.i = c.id;
