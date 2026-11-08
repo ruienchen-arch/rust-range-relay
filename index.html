@@ -5185,6 +5185,7 @@ Object.assign(EN, {
     lootSpots.forEach(function (sp) { if (rng() > keep) return; var r = rng(); list.push([r < (sp.rich ? 0.4 : 0.3) ? 'health' : 'ammo', sp.x, sp.z, sp.y]); });
     setPickups(list);
     NAV.dirty = false;
+    rwMonSnap(list);
   }
 
   /* ---- gathering and crates ---- */
@@ -5385,6 +5386,7 @@ Object.assign(EN, {
 
   /* ---- building the world and starting to play ---- */
   function rwBuildWorld() {
+    if (rwUnpark()) return;   // same island as last time: reuse it
     rwTeardownWorld();
     A = RW.half;
     RW.matT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, map: RW.detail || (RW.detail = rwDetailTex()) });
@@ -5448,7 +5450,7 @@ Object.assign(EN, {
     rwUiClose(true); rwChatClose(); holster = false; $('banner').classList.remove('rwb');
     if (RW.hud) RW.hud.style.display = 'none';
     if (RW.mapEl) RW.mapEl.style.display = 'none';
-    rwTeardownWorld();
+    rwParkWorld();
     var S = RW.saved; RW.saved = null;
     if (S) {
       scene.fog.near = S.fogNear; scene.fog.far = S.fogFar; scene.fog.color.setHex(S.fogCol); camera.far = S.far; camera.updateProjectionMatrix();
@@ -8207,6 +8209,64 @@ Object.assign(EN, {
     $('rwLobby').addEventListener('click', function () { DU.leave(false); });
     $('rwRespawn').addEventListener('click', function () { rwRespawn(); });
     Array.prototype.forEach.call(document.querySelectorAll('.rwbagbtn'), function (bt) { bt.addEventListener('click', function () { var bp = RW.pieces[+bt.getAttribute('data-bag')]; if (bp) rwRespawn(bp); }); });
+  }
+
+  /* ---- keep the built island while you are in the lobby, so going back to the wild is instant ----
+     Leaving parks the island (terrain chunks, grass, sky, water, monuments, the map picture and the monuments'
+     collision) instead of throwing it away. Coming back to the same island puts it straight back; only trees and
+     rocks that were cut or grew back meanwhile are rebuilt. A different island (new seed) frees the parked one. */
+  function rwMonSnap(pick) {   // end of rwBuildMonuments: what the monuments put into the shared arrays
+    RW.monSnap = { boxes: boxes.slice(), blockers: blockers.slice(), solid: solidMeshes.slice(), placed: placed.slice(), loot: lootSpots.slice(),
+      bld: bldList.slice(), road: roadList.slice(), shop: shopZone, pick: pick };
+  }
+  function rwRefill(arr, src) { arr.length = 0; for (var i = 0; i < src.length; i++) arr.push(src[i]); }
+  function rwParkWorld() {
+    if (!RW.built || !RW.group || !RW.monSnap || !RW.mapCv) { rwTeardownWorld(); return; }
+    RW.tearing = true; RW.drops.slice().forEach(rwDropRemove); RW.myX = {};
+    RW.plist.slice().forEach(function (p) { rwPieceDel(p.id); }); RW.pieces = {}; RW.plist = []; RW.tearing = false;   // buildings come fresh from the server
+    if (RW.ghost) { if (RW.ghost.parent) RW.ghost.parent.remove(RW.ghost); RW.ghost = null; }
+    var mm = RW.mons.map(function (m) { var l = m.meshes || []; l.forEach(function (o) { o.visible = true; if (o.parent) o.parent.remove(o); }); return l; });   // the next small map clears mapGroup
+    scene.remove(RW.group);
+    RW.park = { seed: RW.seed, half: RW.half, group: RW.group, chunks: RW.chunks, grass: GRASS.cells, sky: RW.sky, bgroup: RW.bgroup, water: RW.water,
+      matT: RW.matT, matD: RW.matD, mapCv: RW.mapCv, mons: mm, snap: RW.monSnap, nst: Object.assign({}, RW.nst) };
+    RW.group = null; RW.chunks = {}; GRASS.cells = {}; RW.sky = null; RW.bgroup = null; RW.built = false;
+  }
+  function rwParkFree(K) {
+    for (var k in K.chunks) { var ch = K.chunks[k]; ch.t.geometry.dispose(); if (ch.d) ch.d.geometry.dispose(); }
+    for (var g in K.grass) { var c = K.grass[g]; if (c.m.dispose) c.m.dispose(); }
+    K.mons.forEach(function (l) { l.forEach(function (o) { if (o.geometry) o.geometry.dispose(); }); });
+  }
+  function rwAliveH(h) { return h === undefined || h > 0; }
+  function rwUnpark() {   // called at the start of rwBuildWorld; true = the parked island is back
+    var K = RW.park; RW.park = null;
+    if (!K) return false;
+    if (K.seed !== RW.seed || K.half !== RW.half) { rwParkFree(K); return false; }
+    A = RW.half;
+    rwPlan();   // cheap and deterministic: same monuments in the same order, fresh camp and herd state
+    if (RW.mons.length !== K.mons.length) { rwParkFree(K); return false; }
+    RW.group = K.group; scene.add(RW.group); RW.chunks = K.chunks; GRASS.cells = K.grass;
+    RW.sky = K.sky; RW.bgroup = K.bgroup; RW.water = K.water; RW.matT = K.matT; RW.matD = K.matD; RW.mapCv = K.mapCv; RW.ghost = null;
+    // monuments back into mapGroup, replacing what the last small map left there
+    while (mapGroup.children.length) { var o = mapGroup.children[0]; mapGroup.remove(o); if (o.geometry) o.geometry.dispose(); }
+    batches = {}; lineBatches = {};
+    fortRect = null; turrets.length = 0; allies.length = 0; turretSlots.length = 0; lowerOpen = false; lowerHatch = null; fortHole = null; towers.length = 0; towerRoofs.length = 0; towerSpots.length = 0;
+    RW.mons.forEach(function (m, i) { m.meshes = K.mons[i]; m.meshes.forEach(function (x) { mapGroup.add(x); }); });
+    var S = K.snap;
+    rwRefill(boxes, S.boxes); rwRefill(blockers, S.blockers); rwRefill(solidMeshes, S.solid); rwRefill(placed, S.placed); rwRefill(lootSpots, S.loot);
+    rwRefill(bldList, S.bld); rwRefill(roadList, S.road); shopZone = S.shop;
+    rng = seeded(hashStr('rwmon' + RW.seed));
+    setPickups(S.pick || []); NAV.dirty = false;
+    RW.monSnap = S; RW.built = true;
+    // trees, rocks and crates that changed while you were away
+    var seen = {}, id;
+    function chk(id) {
+      if (rwAliveH(K.nst[id]) === rwAliveH(RW.nst[id])) return;
+      var ch = rwChunkOf(id); if (ch && !seen[ch.key]) { seen[ch.key] = 1; rwRebuildDecor(ch); }
+    }
+    for (id in K.nst) chk(id);
+    for (id in RW.nst) if (!(id in K.nst)) chk(id);
+    RW.unparked = (RW.unparked | 0) + 1;
+    return true;
   }
 
   /* ---- premium UI theme (ui.css): kept as the last stylesheet so it wins over panels that add their own CSS later ---- */
