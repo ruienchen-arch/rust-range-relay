@@ -6310,6 +6310,11 @@ Object.assign(EN, {
     '#rwNotes{position:absolute;right:16px;bottom:110px;display:flex;flex-direction:column;align-items:flex-end;gap:4px;pointer-events:none}' +
     '.rwnote{display:flex;align-items:center;gap:8px;background:rgba(20,21,19,.72);border-left:3px solid #8fd14f;padding:3px 12px 3px 6px;font:700 15px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6;transition:opacity .45s,transform .45s}' +
     '.rwnote img{width:26px;height:26px}.rwnote.out{opacity:0;transform:translateX(24px)}' +
+    '#rwPick{position:absolute;left:50%;top:calc(50% + 40px);transform:translateX(-50%);display:none;flex-direction:column;align-items:center;gap:4px;pointer-events:none}' +
+    '#rwPick .ic{width:64px;height:64px;position:relative;background:rgba(14,15,13,.62);border:1px solid rgba(236,230,214,.4);box-sizing:border-box}' +
+    '#rwPick .ic img{position:absolute;left:8%;top:8%;width:84%;height:84%}' +
+    '#rwPick .ic b{position:absolute;right:4px;bottom:1px;font:700 15px "Barlow Condensed","Arial Narrow",sans-serif;color:#fff;text-shadow:0 1px 2px #000}' +
+    '#rwPick span{font:700 13px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6;background:rgba(14,15,13,.8);border:1px solid rgba(255,122,26,.75);padding:2px 10px;letter-spacing:.08em}' +
     '#rwPrompt{position:absolute;left:0;right:0;top:60%;text-align:center;pointer-events:none}' +
     '#rwPrompt span{display:inline-block;background:rgba(14,15,13,.78);border:1px solid rgba(255,122,26,.7);padding:6px 14px;font:600 14px system-ui,"PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:.04em;color:#ece6d6}' +
     '#rwInv,#rwBuild{position:absolute;inset:0;z-index:12;display:none;align-items:center;justify-content:center;background:rgba(8,9,8,.62);padding:14px;overflow:auto;color:#e6e0d0;font:600 13px/1.35 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;user-select:none;-webkit-user-select:none;--s:62px;box-sizing:border-box}' +
@@ -6345,6 +6350,8 @@ Object.assign(EN, {
     var hb = document.createElement('div'); hb.id = 'rwHot'; RW.hud.appendChild(hb); RW.hotEl = hb;
     hb.addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('.rwh') : null; if (b && state === 'playing') rwSelectHot(+b.getAttribute('data-h')); });
     var nt = document.createElement('div'); nt.id = 'rwNotes'; RW.hud.appendChild(nt); RW.notesEl = nt;
+    var pk = document.createElement('div'); pk.id = 'rwPick'; pk.innerHTML = '<div class="ic"><img alt=""><b></b></div><span></span>'; RW.hud.appendChild(pk); RW.pickEl = pk; RW.pickKey = '';
+    if (isTouch) { pk.style.pointerEvents = 'auto'; pk.addEventListener('click', function () { rwInteract(); }); }
     var pr = document.createElement('div'); pr.id = 'rwPrompt'; pr.innerHTML = '<span></span>'; pr.style.display = 'none'; RW.hud.appendChild(pr); RW.promptEl = pr; RW.promptTxt = '';
   }
   var hotCache = '';
@@ -6473,10 +6480,10 @@ Object.assign(EN, {
     vmBox(g, 0.08, 0.09, 0.062, VMM.skin, 0.004 * side, 0, 0.022, o + 2);
     for (var i = 0; i < 4; i++) vmBox(g, 0.072, 0.0205, 0.036, i % 2 ? VMM.skinD : VMM.skin, 0, 0.033 - i * 0.022, -0.019, o + 3);
     vmBox(g, 0.026, 0.024, 0.052, VMM.skin, -0.04 * side, 0.044, -0.002, o + 3, 0, 0, 0.3 * side);
-    var arm = new THREE.Group(); arm.position.set(0, -0.046, 0.034); arm.rotation.x = 0.95; g.add(arm);
-    vmBox(arm, 0.07, 0.07, 0.08, VMM.skin, 0, 0, 0.03, o + 1);
-    vmBox(arm, 0.098, 0.098, 0.034, VMM.cuff, 0, 0, 0.075, o + 1);
-    vmBox(arm, 0.094, 0.094, 0.5, VMM.sleeve, 0, 0, 0.33, o);
+    var arm = new THREE.Group(); arm.position.set(0, -0.046, 0.03); arm.rotation.x = 1.25; g.add(arm);
+    vmBox(arm, 0.066, 0.066, 0.07, VMM.skin, 0, 0, 0.025, o + 1);
+    vmBox(arm, 0.096, 0.096, 0.03, VMM.cuff, 0, 0, 0.07, o + 1);
+    vmBox(arm, 0.092, 0.092, 0.26, VMM.sleeve, 0, 0, 0.215, o);
     return g;
   }
   var VM = { g: new THREE.Group(), piv: new THREE.Group(), tools: {}, sw: 0, dur: 0.5, hitAt: 0.5, hitDone: false, side: 1, kind: '', shake: 0 };
@@ -6534,9 +6541,9 @@ Object.assign(EN, {
       var pr = 0, pl = 0;
       if (p > 0) { var ext = p < VM.hitAt ? sstep(0.05, VM.hitAt, p) : 1 - sstep(VM.hitAt, 1, p); if (VM.side > 0) pr = ext; else pl = ext; }
       var pump = sr * Math.sin(bob * 0.7), lift = hk === 'item' ? 0.03 : 0;
-      VM.fr.position.set(0.2 - 0.09 * pr, -0.235 + 0.06 * pr + 0.05 * pump + lift, -0.43 - 0.3 * pr + 0.07 * pump);
+      VM.fr.position.set(0.2 - 0.09 * pr, -0.175 + 0.06 * pr + 0.05 * pump + lift, -0.43 - 0.3 * pr + 0.07 * pump);
       VM.fr.rotation.set(0.15 + 0.35 * pr - 0.3 * sr, 0.08, -0.32 + 0.22 * pr);
-      VM.fl.position.set(-0.2 + 0.09 * pl, -0.245 + 0.06 * pl - 0.05 * pump, -0.45 - 0.3 * pl - 0.07 * pump);
+      VM.fl.position.set(-0.2 + 0.09 * pl, -0.185 + 0.06 * pl - 0.05 * pump, -0.45 - 0.3 * pl - 0.07 * pump);
       VM.fl.rotation.set(0.15 + 0.35 * pl - 0.3 * sr, -0.08, 0.32 - 0.22 * pl);
     } else {
       var plan = hk === 'plan', b0 = plan ? 0.17 : 0.3, b1 = plan ? -0.27 : -0.36, b2 = plan ? -0.42 : -0.56, rest = plan ? 0.05 : -0.22;
@@ -7122,17 +7129,47 @@ Object.assign(EN, {
   /* ---- prompt line in the middle of the screen ---- */
   function rwPromptTick() {
     if (!RW.promptEl) return;
-    var txt = '';
+    var txt = '', pick = null;
     if (state === 'playing' && !RW.dead) {
       var hk = heldKind(), pc = rwPieceRay(3.2);
       if (pc && pc.k === 'dr') txt = pc.o === RW.me ? KE() + ' ' + (pc.op ? zt('关门', 'Close the door') : zt('开门', 'Open the door')) : zt('这扇门锁着（不是你的）', 'Locked door (not yours)');
-      if (!txt) { var dp = rwDropTarget(); if (dp) txt = KE() + ' ' + zt('捡起 ', 'Pick up ') + rwDropName(dp) + zt('（不捡就留在地上，过一会儿消失）', ' (or leave it: it vanishes after a while)'); }
+      var dp = !txt ? rwDropTarget() : null; if (dp) pick = dp;
       if (!txt) { var cr = rwFindNode(function (q) { return q.kind === 'crate'; }); if (cr) txt = KE() + ' ' + zt('打开补给箱', 'Open the crate'); }
       if (!txt && hk === 'plan') { var c = RW.bc, nm = zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]); txt = nm + ' · ' + rwIN('wood') + ' ' + RWB[RW.bsel].c.wood + ' (' + rwCount('wood') + ')' + (c && c.why ? ' · ' + c.why : c ? ' · ' + KL1() + zt(' 放置', ' place') : '') + ' · ' + KR() + zt(' 换部件', ' parts'); }
       if (!txt && hk === 'hammer' && pc) txt = zt(RWB[pc.k].n[0], RWB[pc.k].n[1]) + ' · ' + zt(RW_GRADE[pc.g][0], RW_GRADE[pc.g][1]) + (pc.o === RW.me ? (pc.g < 2 && pc.k !== 'dr' ? ' · ' + KL1() + zt(' 升级', ' upgrade') + '（' + Object.keys(rwUpCost(pc.k, pc.g + 1)).map(function (kk) { return rwIN(kk) + ' ' + rwUpCost(pc.k, pc.g + 1)[kk]; }).join('') + '）' : '') + ' · ' + KR() + zt(' 拆除', ' remove') : ' · ' + zt('别人的', "someone else's"));
       if (!txt && VT[hk] && hk !== 'hammer') { var n = rwFindNode(function (q) { return q.kind !== 'crate'; }); if (n) txt = KL() + ' ' + (n.kind === 'tree' ? zt('砍树，得到木材', 'chop: wood') : n.kind === 'rock' ? zt('敲石头，得到石头', 'mine: stone') : zt('开采，得到金属矿', 'mine: metal ore')); }
     }
+    rwPickShow(pick);
+    if (pick) txt = '';
     if (txt !== RW.promptTxt) { RW.promptTxt = txt; RW.promptEl.firstChild.textContent = txt; RW.promptEl.style.display = txt ? 'block' : 'none'; }
+  }
+
+  function rwPickShow(d) {   // the pick-up card under the crosshair: the item's icon, its amount, and "pick up"
+    var el = RW.pickEl; if (!el) return;
+    var key = d ? (d.bag ? 'bag' : d.it[0].id) + '|' + (d.it.length > 1 ? d.it.length + 'i' : d.it[0].n) + '|' + LANG : '';
+    if (key === RW.pickKey) return;
+    RW.pickKey = key;
+    if (!d) { el.style.display = 'none'; return; }
+    el.querySelector('img').src = rwIconUrl(d.bag ? 'bag' : d.it[0].id);
+    el.querySelector('b').textContent = d.bag ? '' : d.it.length > 1 ? d.it.length + zt('件', '') : '×' + d.it[0].n;
+    el.querySelector('span').textContent = zt('捡起', 'Pick up') + (isTouch ? '' : ' [' + keyLabel(KB.use) + ']');
+    el.style.display = 'flex';
+  }
+
+  /* ---- first-person items get their own depth-correct render pass (no more fingers showing through palms or sleeves through guns) ---- */
+  [hemi, sun, cLight].concat(cornerLights.map(function (o) { return o.l; })).forEach(function (l) { l.layers.enable(1); });
+  renderer.autoClear = false;
+  function renderFrame() {
+    for (var i = 0; i < camera.children.length; i++) camera.children[i].traverse(function (o) {
+      o.layers.set(1); o.frustumCulled = false;                       // never culled: they always sit right in front of the eye
+      if (o.material && o.material.depthTest === false) o.material.depthTest = true;
+    });
+    renderer.clear();
+    camera.layers.set(0); renderer.render(scene, camera);           // pass 1: the world
+    var bg = scene.background; scene.background = null;              // a colour background makes three.js wipe the screen on every render call
+    renderer.clearDepth();
+    camera.layers.set(1); renderer.render(scene, camera);           // pass 2: hands, tools and guns on top, with proper depth among themselves
+    scene.background = bg; camera.layers.set(0);
   }
 
   /* ---- grass: instanced tufts that sway in the wind, only near the player ---- */
@@ -7345,7 +7382,7 @@ Object.assign(EN, {
     } else if (state === 'over') {
       stepParts(dt);
     }
-    renderer.render(scene, camera);
+    renderFrame();
   }
 
   loadMap(mapId);
