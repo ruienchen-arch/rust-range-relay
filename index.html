@@ -2386,7 +2386,7 @@ Object.assign(EN, {
     m.position.set(x, y, z); scene.add(m);
     blasts.push({ m: m, life: 0.35, r: r });
     burst(new THREE.Vector3(x, y, z), 18, partMatO, 9);
-    tone(140, 30, 0.45, 'sawtooth', 0.2);
+    sfx('explode', { x: x, y: y, z: z });
     if (byPlayer) {
       for (var i = enemies.length - 1; i >= 0; i--) {
         var e = enemies[i], ep = e.g.position, dd = Math.hypot(ep.x - x, ep.y + 1 - y, ep.z - z);
@@ -2462,7 +2462,7 @@ Object.assign(EN, {
   function killEnemy(e, headshot) {
     if (e.slot) { e.slot.e = null; e.slot.t = gtime + 90; }
     if (e.dead) return;
-    if (e.ghost) { e.dead = true; CO.dead[e.gid] = gtime; coopDropGhost(e, true); tone(220, 50, 0.25, 'sawtooth', 0.12); if (e.T && e.T.animal) rwAnimalLoot(e); rwMKill(e, headshot); return; }
+    if (e.ghost) { e.dead = true; CO.dead[e.gid] = gtime; coopDropGhost(e, true); sfx('edie'); if (e.T && e.T.animal) rwAnimalLoot(e); rwMKill(e, headshot); return; }
     e.dead = true;
     var p = e.g.position.clone(); p.y += 1.2;
     burst(p, e.type === 'boss' ? 40 : 14, partMatO, 6);
@@ -2476,7 +2476,7 @@ Object.assign(EN, {
     
     if (PK.w >= 0) perkKill(PK.w, e, headshot);
     if (mode === 'rush') timeLeft = Math.min(180, timeLeft + 1);
-    tone(220, 50, 0.25, 'sawtooth', 0.12);
+    sfx('edie');
   }
 
   /* ---------- fortress (siege mode) ---------- */
@@ -2577,7 +2577,7 @@ Object.assign(EN, {
         tw.cd = L.cd;
         best.hp -= L.dmg * (1 + wave * 0.03); best.flash = 0.06;
         addTracer(new THREE.Vector3(tw.x, tw.y, tw.z), new THREE.Vector3(ep.x, ep.y + 1.1, ep.z));
-        tone(L.f0, L.f1, 0.04, 'square', 0.015 + tw.ally.lv * 0.004);
+        sfx('turret', { v: 0.6 });
         if (best.hp <= 0) killEnemy(best, false);
       }
     }
@@ -2776,7 +2776,7 @@ Object.assign(EN, {
         var tx = ep.x + (hit ? 0 : (Math.random() - 0.5) * 3), tz = ep.z + (hit ? 0 : (Math.random() - 0.5) * 3);
         var sr = shotLen(al.x, H + 1.2, al.z, tx, ep.y + 1.1, tz), blockedShot = sr.t < sr.dl - 0.25;
         tracerClipped(al.x, H + 1.2, al.z, sr, 0.5);
-        tone(520, 200, 0.04, 'square', 0.012);
+        sfx('turret', { v: 0.5 });
         if (hit && !blockedShot) { best.hp -= L.dmg * (1 + wave * 0.02); best.flash = 0.06; if (best.hp <= 0) killEnemy(best, false); }
       }
     }
@@ -2798,7 +2798,7 @@ Object.assign(EN, {
         tu.cd = L.cd;
         best.hp -= L.dmg * (1 + wave * 0.03); best.flash = 0.06;
         addTracer(new THREE.Vector3(tu.x, tu.y, tu.z), new THREE.Vector3(ep.x, ep.y + 1.1, ep.z));
-        tone(L.f0, L.f1, 0.04, 'square', 0.015 + tu.lv * 0.004);
+        sfx('turret', { v: 0.6 });
         if (best.hp <= 0) killEnemy(best, false);
       }
     }
@@ -2808,20 +2808,20 @@ Object.assign(EN, {
   var ray = new THREE.Raycaster();
   var tmpD = new THREE.Vector3();
   function reload() {
-    if (heldKind() !== 'gun') { if (RW.on && heldKind() === 'plan') { RW.brot = (RW.brot + 1) % 4; tone(500, 700, 0.04, 'square', 0.04); banner(zt('楼梯方向已旋转', 'Stairs turned'), 600); } return; }
+    if (heldKind() !== 'gun') { if (RW.on && heldKind() === 'plan') { RW.brot = (RW.brot + 1) % 4; sfx('click'); banner(zt('楼梯方向已旋转', 'Stairs turned'), 600); } return; }
     if (duel && DU.phase !== 'fight') return;
     var d = WDEF[cur], s = ws[cur];
     if (W.reload > 0 || s.ammo === d.mag || s.res <= 0) return;
     W.reload = d.reload * CH.rel * wStats(cur).rel; W.reloadMax = W.reload; W.rsnd = 0;
     aiming = false;
-    tone(300, 120, 0.12, 'square', 0.05);
+    sfx('reload', { s: 0, g: WDEF[cur].id });
   }
   /* ---------- weapon trait effects ---------- */
-  function healP(n) { P.hp = Math.min(P.maxHp, P.hp + n); tone(800, 1200, 0.06, 'sine', 0.05); }
+  function healP(n) { P.hp = Math.min(P.maxHp, P.hp + n); sfx('heal'); }
   function miniBlast(pt, r, dmg, skip) {
     var m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.7 }));
     m.position.copy(pt); scene.add(m); blasts.push({ m: m, life: 0.35, r: r });
-    burst(pt, 8, partMatO, 6); tone(180, 60, 0.18, 'sawtooth', 0.08);
+    burst(pt, 8, partMatO, 6); sfx('blast', { x: pt.x, y: pt.y, z: pt.z });
     for (var i = enemies.length - 1; i >= 0; i--) {
       var o = enemies[i]; if (o === skip || o.dead) continue;
       var op = o.g.position, dd = Math.hypot(op.x - pt.x, op.y + 1 - pt.y, op.z - pt.z);
@@ -2877,13 +2877,13 @@ Object.assign(EN, {
     var d = WDEF[cur], s = ws[cur];
     if (W.reload > 0 || W.cd > 0) return false;
     if (s.ammo <= 0) {
-      if (s.res > 0) reload(); else { W.cd = 0.3; tone(120, 100, 0.05, 'square', 0.04); }
+      if (s.res > 0) reload(); else { W.cd = 0.3; sfx('empty'); }
       return false;
     }
     var st = wStats(cur), pks = wperk[cur], pkc = pks.length ? perkById(pks[pks.length - 1]).c : 0, pkm = pkc ? perkPartMat(pkc) : partMatO;
     s.ammo--; W.cd = d.cd * st.cd; recoil = d.rec; flashT = 0.05;
     P.pitch = Math.min(1.45, P.pitch + d.rec * 0.0035);
-    tone(d.f0, d.f1, 0.1 + d.rec * 0.04, 'sawtooth', d.vol);
+    sfx('shot', { g: d.id, v: d.vol });
     if (d.rocket) { fireRocket(); return true; }
     var spread = aiming ? d.aimSpread : d.spread;
     var targets = [];
@@ -2926,7 +2926,7 @@ Object.assign(EN, {
           if (e.dead || seen.indexOf(e) >= 0) continue;
           seen.push(e);
           var dealt = (ud.head ? d.head : d.dmg) * CH.dmg * st.dmg, crit = st.crit > 0 && Math.random() < st.crit;
-          if (crit) { dealt *= 2.2; burst(hit.point, 5, partMatY, 5); tone(1200, 900, 0.05, 'square', 0.05); }
+          if (crit) { dealt *= 2.2; burst(hit.point, 5, partMatY, 5); sfx('headshot'); }
           CO.head = !!ud.head; e.hp -= dealt; e.cr = 'h';
           e.flash = 0.08;
           end = hit.point.clone();
@@ -2946,7 +2946,7 @@ Object.assign(EN, {
     PK.w = -1;
     if (duel || coop) DU.flush(cur);
     if (killed) mark(true);
-    else if (hitAny) { mark(false); tone(900, 700, 0.05, 'square', 0.06); }
+    else if (hitAny) { mark(false); sfx('hitmark'); }
     return true;
   }
 
@@ -2999,7 +2999,7 @@ Object.assign(EN, {
     if (i === cur || !owned[i]) return;
     cur = i; drawT = 1;
     W.reload = 0; W.cd = 0.25; aiming = false; latched = true;
-    tone(400, 600, 0.06, 'square', 0.04);
+    sfx('equip');
     updateSlots();
   }
   function updateSlots() {
@@ -3388,7 +3388,7 @@ Object.assign(EN, {
     $('menu').hidden = true;
     $('hud').hidden = false; $('cross').hidden = false;
     requestLock();
-    tone(200, 400, 0.1, 'square', 0.05);
+    sfx('start');
   }
 
   function releaseInput() { firing = false; touchFire = false; aiming = false; firePress = false; }
@@ -3461,8 +3461,17 @@ Object.assign(EN, {
   });
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   window.addEventListener('mouseup', function (e) { if (e.button === 2) aiming = false; else if (e.button === 0) firing = false; });
+  var wheelAcc = 0, wheelT = 0, wheelLast = 0;
   document.addEventListener('wheel', function (e) {
-    if (state === 'playing' && Math.abs(e.deltaY) > 1) {
+    if (state !== 'playing') return;
+    var now = performance.now(), dy = e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 400 : 1);
+    if (now - wheelLast > 260) wheelAcc = 0;   // a new scroll gesture
+    wheelLast = now;
+    if (wheelAcc && (dy > 0) !== (wheelAcc > 0)) wheelAcc = 0;   // changed direction
+    wheelAcc += dy;
+    if (Math.abs(wheelAcc) < 50 || now - wheelT < 170) return;   // about one notch, at most ~6 switches a second
+    e = { deltaY: wheelAcc }; wheelAcc = 0; wheelT = now;
+    if (true) {
       if (RW.on) { rwSelectHot((RW.hot + (e.deltaY > 0 ? 1 : -1) + 6) % 6); return; }
       var dir = e.deltaY > 0 ? 1 : -1, n = cur;
       for (var t = 0; t < WDEF.length; t++) { n = (n + dir + WDEF.length) % WDEF.length; if (owned[n]) { setWeapon(n); break; } }
@@ -3631,7 +3640,7 @@ Object.assign(EN, {
       animateReload(G, rpg);
       if (rpg >= 0) {
         var cues = G.id === 'shotgun' ? [0.2, 0.4, 0.6, 0.88] : [0.22, 0.7, 0.88];
-        while (W.rsnd < cues.length && rpg >= cues[W.rsnd]) { tone(W.rsnd === 1 && G.id !== 'shotgun' ? 380 : 260, W.rsnd === 1 && G.id !== 'shotgun' ? 520 : 160, 0.05, 'square', 0.06); W.rsnd++; }
+        while (W.rsnd < cues.length && rpg >= cues[W.rsnd]) { sfx('reload', { s: W.rsnd, g: G.id }); W.rsnd++; }
       }
       var hasSc = G.sc.visible, fk = hasSc ? Math.min(1, camera.fov / baseFov) : 1;   // with a scope the gun keeps its on-screen size while the view zooms
       var adsX = 0, adsY = hasSc ? -G.topY : G.base[1] + 0.06, adsZ = G.base[2];   // with a scope the sight axis sits dead centre on the screen
@@ -3687,10 +3696,10 @@ Object.assign(EN, {
         if (pk.type === 'health') {
           if (P.hp >= P.maxHp) continue;
           P.hp = Math.min(P.maxHp, P.hp + 35 * DF.heal);
-          banner(t('生命 +35'), 900); tone(600, 900, 0.12, 'sine', 0.08);
+          banner(t('生命 +35'), 900); sfx('medpick');
           pk.cool = RW.on ? 240 : 30; pk.g.visible = false;
         } else if (addAmmo(1)) {
-          banner(t('弹药补给'), 900); tone(500, 800, 0.12, 'sine', 0.08);
+          banner(t('弹药补给'), 900); sfx('ammopick');
           pk.cool = RW.on ? 240 : 30; pk.g.visible = false;
         }
       }
@@ -3754,14 +3763,14 @@ Object.assign(EN, {
         if (ty === 'sniper') {
           if (e.charge > 0) {
             e.charge -= dt; mv = 0;
-            if (e.charge <= 0) { fireBolt(pos.x, 1.7, pos.z, 34, 20, 0, boltMatC, 0.1); tone(900, 200, 0.2, 'sawtooth', 0.09); }
-          } else if (e.cd <= 0 && dd < 40) { e.charge = 0.8; e.cd = 3.8 + Math.random(); tone(500, 1200, 0.7, 'sine', 0.05); }
+            if (e.charge <= 0) { fireBolt(pos.x, 1.7, pos.z, 34, 20, 0, boltMatC, 0.1); sfx('eshot', { v: 1.2 }); }
+          } else if (e.cd <= 0 && dd < 40) { e.charge = 0.8; e.cd = 3.8 + Math.random(); sfx('charge'); }
         } else if (e.cd <= 0 && dd < 32) {
           var by = ty === 'boss' ? 2.4 : 1.3;
           e.cd = ty === 'boss' ? 1.7 : 2.2 + Math.random() * 1.2;
           fireBolt(pos.x, by, pos.z, 13, ty === 'boss' ? 12 : 10, 0);
           if (ty === 'boss') { fireBolt(pos.x, by, pos.z, 13, 12, -0.3); fireBolt(pos.x, by, pos.z, 13, 12, 0.3); }
-          tone(300, 180, 0.15, 'square', 0.05);
+          sfx('eshot');
         }
         }
       }
@@ -3837,7 +3846,7 @@ Object.assign(EN, {
     if (siege) {
       updateTurrets(dt); updateTowers(dt); updateAllies(dt);
       if (fort.hp <= 0 && state === 'playing') { gameOver('要塞陷落'); return; }
-      if (!fort.warned && fort.hp < fort.max * 0.3) { fort.warned = true; banner(t('要塞告急！'), 1800); tone(180, 120, 0.4, 'sawtooth', 0.1); }
+      if (!fort.warned && fort.hp < fort.max * 0.3) { fort.warned = true; banner(t('要塞告急！'), 1800); sfx('siren'); }
       else if (fort.warned && fort.hp > fort.max * 0.45) fort.warned = false;
     }
 
@@ -3931,7 +3940,7 @@ Object.assign(EN, {
     if (P.armor > 0) { var ab = Math.min(P.armor, n); P.armor -= ab; n -= ab; }
     P.hp -= n;
     hurtFlash();
-    tone(140, 60, 0.2, 'sawtooth', 0.12);
+    sfx('hurt');
     if (P.hp <= 0) { P.hp = 0; if (RW.on) rwDie(); else if (coop) coopDown(); else gameOver(); }
   }
 
@@ -3944,7 +3953,7 @@ Object.assign(EN, {
     m.position.copy(camera.position).add(dir.clone().multiplyScalar(0.5));
     scene.add(m);
     nades.push({ m: m, vx: dir.x * 15, vy: dir.y * 15 + 2, vz: dir.z * 15, fuse: 1.7 });
-    tone(250, 150, 0.1, 'square', 0.05);
+    sfx('throw');
   }
   function stepNades(dt) {
     for (var i = nades.length - 1; i >= 0; i--) {
@@ -4079,7 +4088,7 @@ Object.assign(EN, {
       if (!siege || !towers[i]) return;
       if (kind === 'twrx') assignTower(i, -1);
       else { var pk = towerNextAlly(i); if (pk < 0) return; assignTower(i, pk); }
-      tone(600, 1100, 0.1, 'sine', 0.08);
+      sfx('coins');
       renderShop();
       return;
     }
@@ -4089,7 +4098,7 @@ Object.assign(EN, {
       var gc = gunUpPrice(gi);
       if (coins < gc) return;
       coins -= gc; wlv[gi]++;
-      tone(500, 1400, 0.18, 'triangle', 0.09);
+      sfx('upgrade');
       banner(tf('{0} 升到 {1} 级', t(WDEF[gi].name), wlv[gi]), 1500);
       if (wlv[gi] % 3 === 0) perkOffer(gi);
       refreshGunLook(gi); updateSlots(); renderShop();
@@ -4099,7 +4108,7 @@ Object.assign(EN, {
       var pw = Math.floor(i / 100), pi = i % 100;
       if (!owned[pw] || !wofr[pw] || wofr[pw].indexOf(pi) < 0 || Math.floor(wlv[pw] / 3) - wperk[pw].length <= 0) return;
       wperk[pw].push(PERKS[pi].id); wofr[pw] = null;
-      tone(400, 1600, 0.25, 'sawtooth', 0.08);
+      sfx('upgrade');
       banner(PERKS[pi].ic + ' ' + t(PERKS[pi].name), 1500);
       refreshGunLook(pw); updateSlots(); renderShop();
       return;
@@ -4112,7 +4121,7 @@ Object.assign(EN, {
       if (!upgradeAlly(i)) return;
       if (aal.tower >= 0) refreshTower(aal.tower);
       coins -= apc;
-      tone(600, 1200, 0.12, 'sine', 0.08);
+      sfx('coins');
       renderShop();
       return;
     }
@@ -4123,7 +4132,7 @@ Object.assign(EN, {
       if (ttu.lv >= TLV.length - 1 || coins < upc) return;
       if (!upgradeTurret(i)) return;
       coins -= upc;
-      tone(700, 1000, 0.1, 'sine', 0.08);
+      sfx('coins');
       renderShop();
       return;
     }
@@ -4133,7 +4142,7 @@ Object.assign(EN, {
       if (!scopeOwned[i]) { if (coins < sc.price) return; coins -= sc.price; scopeOwned[i] = true; wsc[cur] = i; }
       else wsc[cur] = (wsc[cur] === i) ? 0 : i;
       aiming = false;
-      tone(700, 1000, 0.1, 'sine', 0.08);
+      sfx('coins');
       renderShop();
       return;
     }
@@ -4162,7 +4171,7 @@ Object.assign(EN, {
       else if (it.id === 'floor') { if (lowerOpen || !openLowerFloor()) return; }
       coins -= price;
     }
-    tone(700, 1000, 0.1, 'sine', 0.08);
+    sfx('coins');
     renderShop();
   }
   /* ---------- backpack ---------- */
@@ -4206,7 +4215,7 @@ Object.assign(EN, {
     else if (id === 'ammo') { if (!addAmmo(2)) return false; }
     else if (id === 'vital') { vit++; P.maxHp += 20; P.hp = Math.min(P.maxHp, P.hp + 20); }
     inv[id]--;
-    tone(600, 1000, 0.1, 'sine', 0.08);
+    sfx('use');
     renderBag();
     return true;
   }
@@ -4306,8 +4315,8 @@ Object.assign(EN, {
     d.style.top = (e.clientY - r.top - size / 2) + 'px';
     b.appendChild(d);
     setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 600);
-    if (b.classList.contains('go')) tone(260, 640, 0.14, 'square', 0.05);
-    else if (!b.classList.contains('tbtn')) tone(520, 700, 0.05, 'sine', 0.04);
+    if (b.classList.contains('go')) sfx('uiok');
+    else if (!b.classList.contains('tbtn')) sfx('click');
   }, true);
 
   /* ---------- room duel: 1v1 over WebRTC (peer to peer, no game server) ---------- */
@@ -4437,7 +4446,7 @@ Object.assign(EN, {
           var wd = WDEF[m.w | 0];
           if (wd) {
             var dist = Math.hypot(DU.rt.x - P.x, DU.rt.z - P.z);
-            tone(wd.f0, wd.f1, 0.1 + wd.rec * 0.04, 'sawtooth', wd.vol * 0.8 * Math.max(0.15, 1 - dist / 40));
+            sfx('shot', { g: wd.id, v: wd.vol * 0.8, d: dist });
           }
         }
         break;
@@ -4473,7 +4482,7 @@ Object.assign(EN, {
     if (P.armor > 0) { var ab = Math.min(P.armor, n); P.armor -= ab; n -= ab; }
     P.hp -= n;
     hurtFlash();
-    tone(head ? 220 : 140, 60, 0.2, 'sawtooth', 0.12);
+    sfx('hurt', { h: head });
     if (P.hp <= 0) { P.hp = 0; duDie(); }
   };
   function duDie() {
@@ -4485,7 +4494,7 @@ Object.assign(EN, {
   function duOpDown() {
     if (DU.opDead || (DU.phase !== 'fight' && DU.phase !== 'between')) return;
     DU.opDead = true; DU.me++; DU.alive = false;
-    mark(true); tone(900, 1300, 0.12, 'square', 0.07);
+    mark(true); sfx('kill');
     if (DU.phase === 'fight') { DU.phase = 'between'; DU.t = 3; banner(zt('击倒对手！', 'Opponent down!'), 2200); }
   }
 
@@ -4580,8 +4589,8 @@ Object.assign(EN, {
     if (DU.phase === 'count') {
       DU.t -= dt;
       var n = Math.ceil(DU.t);
-      if (DU.t <= 0) { DU.phase = 'fight'; banner(zt('开火！', 'FIGHT!'), 900); tone(500, 900, 0.2, 'square', 0.08); }
-      else if (n !== DU.lastN) { DU.lastN = n; banner(String(n), 900); tone(300, 300, 0.08, 'square', 0.05); }
+      if (DU.t <= 0) { DU.phase = 'fight'; banner(zt('开火！', 'FIGHT!'), 900); sfx('drum', { big: 1 }); }
+      else if (n !== DU.lastN) { DU.lastN = n; banner(String(n), 900); sfx('drum'); }
     } else if (DU.phase === 'between') {
       DU.t -= dt;
       if (DU.t <= 0) { if (DU.me >= DU.target || DU.op >= DU.target) duEnd(); else duRespawn(2.5); }
@@ -5322,9 +5331,9 @@ Object.assign(EN, {
         if (dd > far) mv = 1; else if (dd < near) mv = -0.6;
         e.cd = (e.cd === undefined ? 1 : e.cd) - dt;
         if (ty === 'sniper') {
-          if (e.charge > 0) { e.charge -= dt; mv = 0; if (e.charge <= 0) { rwNpcHurtMe(TP, ty); fireBolt(pos.x, pos.y + 1.7, pos.z, 38, 24, 0, boltMatC, 0.1); tone(900, 200, 0.2, 'sawtooth', 0.09); } }
-          else if (e.cd <= 0 && dd < 75) { e.charge = 0.8; e.cd = 3.8 + Math.random(); tone(500, 1200, 0.7, 'sine', 0.05); }
-        } else if (e.cd <= 0 && dd < 34) { e.cd = 1.5 + Math.random() * 1.1; rwNpcHurtMe(TP, ty); fireBolt(pos.x, pos.y + 1.3, pos.z, 15, 9, 0); tone(300, 180, 0.15, 'square', 0.05); }
+          if (e.charge > 0) { e.charge -= dt; mv = 0; if (e.charge <= 0) { rwNpcHurtMe(TP, ty); fireBolt(pos.x, pos.y + 1.7, pos.z, 38, 24, 0, boltMatC, 0.1); sfx('eshot', { v: 1.2 }); } }
+          else if (e.cd <= 0 && dd < 75) { e.charge = 0.8; e.cd = 3.8 + Math.random(); sfx('charge'); }
+        } else if (e.cd <= 0 && dd < 34) { e.cd = 1.5 + Math.random() * 1.1; rwNpcHurtMe(TP, ty); fireBolt(pos.x, pos.y + 1.3, pos.z, 15, 9, 0); sfx('eshot'); }
       }
     } else {
       var tx = home > m.r * 0.75 ? m.x - pos.x : (e.wx === undefined ? 0 : e.wx - pos.x), tz = home > m.r * 0.75 ? m.z - pos.z : (e.wz === undefined ? 0 : e.wz - pos.z), tl = Math.hypot(tx, tz);
@@ -5360,7 +5369,7 @@ Object.assign(EN, {
       case 'RW': rwWrongCode(m); break;
       case 'Ru': rwPieceGrade(m.id | 0, m.g | 0); break;
       case 'Rr': { var bc = RWB[m.k]; if (RWD[m.k]) rwGive(RWD[m.k], 1); else if (bc) { for (var ck in bc.c) rwGive(ck, bc.c[ck]); banner(zt('这里不能建造（被占用了）', 'Could not build there (taken)'), 1400); } break; }
-      case 'Rk': { var vic = coins; coins += 80; banner(zt('击杀玩家 +80', 'Player kill +80'), 1500); tone(900, 1300, 0.12, 'sine', 0.07); break; }
+      case 'Rk': { var vic = coins; coins += 80; banner(zt('击杀玩家 +80', 'Player kill +80'), 1500); sfx('kill'); break; }
     }
   }
   function rwSetAuth(id) {
@@ -5442,7 +5451,7 @@ Object.assign(EN, {
     rwStream(P.x, P.z, true);
     rwInitUi(); rwInitUi2(); RW.hud.style.display = 'block'; rwHotRender(true); $('bagHud').hidden = true;
     state = 'playing'; $('menu').hidden = true; $('hud').hidden = false; $('cross').hidden = false;
-    if (!RW.deadJoin) requestLock(); tone(200, 400, 0.1, 'square', 0.05);   // came back dead: keep the mouse free for the death screen
+    if (!RW.deadJoin) requestLock(); sfx('wind');   // came back dead: keep the mouse free for the death screen
     $('banner').classList.add('rwb'); rwMStart(); rwWelcomeShow();
     try { renderer.compile(scene, camera); } catch (e) {}   // build every shader now instead of stalling the first frames
     RW.safeNow = false; RW.cullT = 0;
@@ -5842,7 +5851,7 @@ Object.assign(EN, {
           var wd = WDEF[m.w | 0];
           if (wd) {
             var dist = Math.hypot(p.rt.x - P.x, p.rt.z - P.z);
-            tone(wd.f0, wd.f1, 0.1 + wd.rec * 0.04, 'sawtooth', wd.vol * 0.8 * Math.max(0.15, 1 - dist / 40));
+            sfx('shot', { g: wd.id, v: wd.vol * 0.8, d: dist });
           }
         }
         break;
@@ -6289,7 +6298,7 @@ Object.assign(EN, {
     if (d && d.gun !== undefined) cur = d.gun;
     W.reload = 0; W.cd = 0.25; aiming = false; latched = true; drawT = 1; VM.sw = 0;
     RW.lastHeld = s ? s.id : '';
-    tone(400, 600, 0.06, 'square', 0.04);
+    sfx('equip');
     rwHotRender(true); if (RW.ui === 'inv') rwInvRender();
   }
   function rwEquipGun(i) {
@@ -6299,7 +6308,7 @@ Object.assign(EN, {
   }
   function toggleHolster() {
     holster = !holster; drawT = 1; aiming = false; W.reload = 0; VM.sw = 0; latched = true;
-    tone(holster ? 300 : 400, holster ? 200 : 600, 0.06, 'square', 0.04);
+    sfx('equip');
     if (RW.on) { rwHotRender(true); if (RW.ui === 'inv') rwInvRender(); } else updateSlots();
   }
   function rwCanUseId(id) {
@@ -6316,7 +6325,7 @@ Object.assign(EN, {
     var tool = RW_RES_TOOL[res], cost = tool === 'plan' ? { wood: 20 } : { wood: 30 }, k, idx = -1;
     for (k = 0; k < RW_SLOTS; k++) if (RW.inv[k] && RW.inv[k].id === tool) { idx = k; break; }
     if (idx < 0) {
-      if (!rwPay(cost)) { banner(zt('先攒 ' + cost.wood + ' 木材，做一个' + rwIN(tool), 'Collect ' + cost.wood + ' wood first to make a ' + rwIN(tool)), 1800); tone(150, 120, 0.06, 'square', 0.04); return false; }
+      if (!rwPay(cost)) { banner(zt('先攒 ' + cost.wood + ' 木材，做一个' + rwIN(tool), 'Collect ' + cost.wood + ' wood first to make a ' + rwIN(tool)), 1800); sfx('deny'); return false; }
       rwGive(tool, 1); rwNote(tool, 1);
       for (k = 0; k < RW_SLOTS; k++) if (RW.inv[k] && RW.inv[k].id === tool) { idx = k; break; }
       if (idx < 0) return false;
@@ -6331,7 +6340,7 @@ Object.assign(EN, {
     var s0 = RW.inv[i]; if (s0 && RW_RES_TOOL[s0.id]) return rwGoBuild(s0.id);
     var s = RW.inv[i]; if (!s || !RWI[s.id] || !RWI[s.id].use) return false;
     var id = s.id;
-    if (!rwCanUseId(id)) { tone(150, 120, 0.06, 'square', 0.04); banner(id === 'medkit' ? zt('生命是满的', 'Health is full') : id === 'armor' ? zt('护甲已满', 'Armor is full') : id === 'ammo' ? zt('备弹都是满的', 'Reserve ammo is full') : zt('现在用不了', 'Cannot use that now'), 1000); return false; }
+    if (!rwCanUseId(id)) { sfx('deny'); banner(id === 'medkit' ? zt('生命是满的', 'Health is full') : id === 'armor' ? zt('护甲已满', 'Armor is full') : id === 'ammo' ? zt('备弹都是满的', 'Reserve ammo is full') : zt('现在用不了', 'Cannot use that now'), 1000); return false; }
     if (id === 'medkit') P.hp = Math.min(P.maxHp, P.hp + 60);
     else if (id === 'armor') P.armor = Math.min(100, P.armor + 50);
     else if (id === 'adren') adrenT = 30;
@@ -6339,7 +6348,7 @@ Object.assign(EN, {
     else if (id === 'vital') { vit++; P.maxHp += 20; P.hp = Math.min(P.maxHp, P.hp + 20); }
     else if (id === 'meat' || id === 'cooked' || id === 'bandage') P.hp = Math.min(P.maxHp, P.hp + (id === 'meat' ? 5 : id === 'cooked' ? 25 : 15));
     s.n--; if (s.n <= 0) RW.inv[i] = null;
-    tone(600, 1000, 0.1, 'sine', 0.08);
+    sfx('use');
     rwInvChanged();
     return true;
   }
@@ -6381,18 +6390,18 @@ Object.assign(EN, {
     var n = one ? 1 : s.n, fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), x = P.x + fx * 1.4, z = P.z + fz * 1.4;
     rwDropAdd([{ id: s.id, n: n }], x, z, null, 600, groundAt(x, z, P.y + 0.7));
     s.n -= n; if (s.n <= 0) RW.inv[i] = null;
-    tone(260, 160, 0.06, 'square', 0.04);
+    sfx('drop');
     rwInvChanged();
   }
   function rwCraft(id) {
     var r = null; RW_CRAFT.forEach(function (q) { if (q[0] === id) r = q; });
     if (!r) return;
-    if (RW_BENCH[id] && !rwNearBench()) { tone(150, 120, 0.06, 'square', 0.04); banner(zt('要站在工作台旁边才能制作', 'Stand next to a workbench to craft this'), 1500); return; }
-    if (!rwPay(r[1])) { tone(150, 120, 0.06, 'square', 0.04); banner(zt('材料不够', 'Not enough materials'), 1000); return; }
+    if (RW_BENCH[id] && !rwNearBench()) { sfx('deny'); banner(zt('要站在工作台旁边才能制作', 'Stand next to a workbench to craft this'), 1500); return; }
+    if (!rwPay(r[1])) { sfx('deny'); banner(zt('材料不够', 'Not enough materials'), 1000); return; }
     var left = rwGive(id, 1);
     if (left > 0) { var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw); rwDropAdd([{ id: id, n: left }], P.x + fx, P.z + fz, null, 600, groundAt(P.x + fx, P.z + fz, P.y + 0.7)); banner(zt('背包满了，东西放在脚边', 'Inventory full: dropped at your feet'), 1500); }
     rwNote(id, 1);
-    tone(500, 900, 0.12, 'triangle', 0.08);
+    sfx('craft');
   }
 
   /* ---- belt (always on screen), notices on the right, the interaction prompt ---- */
@@ -6565,7 +6574,7 @@ Object.assign(EN, {
     d.it.forEach(function (q) { var left = rwGive(q.id, q.n), k = q.n - left; if (k > 0) { rwNote(q.id, k); got++; } q.n = left; });
     d.it = d.it.filter(function (q) { return q.n > 0; });
     if (!d.it.length) rwDropRemove(d); else { rwDropLabel(d); banner(zt('背包满了，剩下的还在地上', 'Inventory full: the rest is still on the ground'), 1500); }
-    if (got) tone(500, 800, 0.08, 'sine', 0.06);
+    if (got) sfx('pickup');
   }
 
   /* ---- first-person hands and tools ---- */
@@ -6673,7 +6682,7 @@ Object.assign(EN, {
   }
   function vmAction(hk, want) {
     if (VT[hk]) {
-      if (want && VM.sw <= 0 && drawT < 0.3) { var v = VT[hk]; VM.sw = 1e-4; VM.dur = v.dur; VM.hitAt = v.hit; VM.hitDone = false; VM.side = -VM.side; tone(240, 120, 0.09, 'triangle', 0.03); }
+      if (want && VM.sw <= 0 && drawT < 0.3) { var v = VT[hk]; VM.sw = 1e-4; VM.dur = v.dur; VM.hitAt = v.hit; VM.hitDone = false; VM.side = -VM.side; sfx('swing'); }
     } else if (hk === 'plan') { if (want && !latched) { latched = true; rwPlace(); } }
     else if (hk === 'item') { if (want && !latched) { latched = true; rwUseSlot(RW_HOT0 + RW.hot); } }
     else if (hk === 'dep') { if (want && !latched) { latched = true; rwPlaceDep(); } }
@@ -6690,7 +6699,7 @@ Object.assign(EN, {
     if (vmMelee(hk)) return;
     if (RW.on) { var n = rwFindNode(function (q) { return q.kind !== 'crate' && q.kind !== 'hemp'; }); if (n) { rwGatherHit(n, hk); return; } }
     var dir = tmpD.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize(), cp = camera.position, wt = rayWall(cp.x, cp.y, cp.z, dir.x, dir.y, dir.z, 2.4);
-    if (wt < 2.4) { burst(new THREE.Vector3(cp.x + dir.x * wt, cp.y + dir.y * wt, cp.z + dir.z * wt), 3, partMatG, 2.5); tone(150, 90, 0.05, 'square', 0.05); VM.shake = 0.12; }
+    if (wt < 2.4) { burst(new THREE.Vector3(cp.x + dir.x * wt, cp.y + dir.y * wt, cp.z + dir.z * wt), 3, partMatG, 2.5); sfx('thud'); VM.shake = 0.12; }
   }
   function vmMelee(hk) {
     var dmg = (VT[hk] ? VT[hk].dmg : 0.5) * CH.dmg, targets = [];
@@ -6709,7 +6718,7 @@ Object.assign(EN, {
       else if (ud && ud.enemy) {
         var e = ud.enemy; if (e.dead) continue;
         CO.head = false; e.hp -= dmg; e.flash = 0.08; e.cr = 'h'; if (e.rw) e.hurt = 4;
-        if (e.hp <= 0) { killEnemy(e, false); mark(true); } else { mark(false); tone(900, 700, 0.05, 'square', 0.06); }
+        if (e.hp <= 0) { killEnemy(e, false); mark(true); } else { mark(false); sfx('hitmark'); }
       } else continue;
       burst(hit.point, 4, partMatO, 3); VM.shake = 0.18;
       return true;
@@ -6729,10 +6738,10 @@ Object.assign(EN, {
     else banner(n.kind === 'ore' ? zt('金属矿要用镐或石块才敲得动', 'Metal ore needs a pickaxe or a rock') : zt('空手采不到东西', 'Bare hands get nothing here'), 1300);
     var hp3 = new THREE.Vector3(n.x + ox * n.r * 0.8, Math.min(camera.position.y, n.y + 1.4), n.z + oz * n.r * 0.8);
     burst(hp3, n.kind === 'tree' ? 6 : 5, n.kind === 'tree' ? partMatW : n.kind === 'ore' ? partMatY : partMatG, 3.5);
-    tone(n.kind === 'tree' ? 170 : 520, n.kind === 'tree' ? 110 : 300, 0.08, 'square', 0.08);
-    if (n.kind !== 'tree') tone(1400, 900, 0.04, 'triangle', 0.03);
+    sfx(n.kind === 'tree' ? 'chop' : 'mine');
+    if (n.kind !== 'tree') void 0;
     VM.shake = 0.2; mark(false);
-    if (hp <= 0) { var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch); tone(120, 50, 0.4, 'sawtooth', 0.08); }
+    if (hp <= 0) { var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch); sfx(n.kind === 'tree' ? 'treefall' : 'rockbreak', { x: n.x, z: n.z }); }
   }
   var partMatW = new THREE.MeshBasicMaterial({ color: 0xb98a52 });
   function rwOpenCrate(n) {
@@ -6747,18 +6756,18 @@ Object.assign(EN, {
     if (!RW.on || RW.dead || state !== 'playing') return false;
     var pc = rwPieceRay(3.2);
     if (pc && rwIsDoor(pc.k)) {
-      if (rwCanDoor(pc)) { dSend({ t: 'Ro', id: pc.id }); tone(260, 180, 0.08, 'square', 0.05); }
+      if (rwCanDoor(pc)) { dSend({ t: 'Ro', id: pc.id }); sfx('latch'); }
       else if (pc.lock) rwCodeOpen(pc, 'try');
-      else { banner(zt('门锁着：只有建门的人或在领地柜上授权的人能打开', 'Locked: only the builder or people authorised on the tool cupboard can open it'), 1600); tone(150, 120, 0.06, 'square', 0.04); }
+      else { banner(zt('门锁着：只有建门的人或在领地柜上授权的人能打开', 'Locked: only the builder or people authorised on the tool cupboard can open it'), 1600); sfx('deny'); }
       return true;
     }
     if (pc && rwIsCont(pc.k)) { rwContOpen(pc); return true; }
     if (pc && (pc.k === 'ln' || (pc.k === 'bt' && pc.op))) {
-      if (rwSafeFrom(pc)) { dSend({ t: 'Ro', id: pc.id }); tone(400, 600, 0.06, 'triangle', 0.05); if (pc.k === 'bt') RW.trig[pc.id] = 0; }
+      if (rwSafeFrom(pc)) { dSend({ t: 'Ro', id: pc.id }); sfx('latch'); if (pc.k === 'bt') RW.trig[pc.id] = 0; }
       else banner(zt('这不是你的', 'This is not yours'), 1100);
       return true;
     }
-    if (pc && pc.k === 'tc') { dSend({ t: 'Ra', id: pc.id }); tone(500, 700, 0.08, 'triangle', 0.05); return true; }
+    if (pc && pc.k === 'tc') { dSend({ t: 'Ra', id: pc.id }); sfx('latch'); return true; }
     var dp = rwDropTarget(); if (dp) { rwDropPick(dp); return true; }
     var hm = rwFindNode(function (q) { return q.kind === 'hemp'; }); if (hm) { rwPickHemp(hm); return true; }
     var n = rwFindNode(function (q) { return q.kind === 'crate'; });
@@ -6787,7 +6796,7 @@ Object.assign(EN, {
     var dx = P.x - n.x, dz = P.z - n.z, dl = Math.hypot(dx, dz) || 1;
     rwDropAdd(items, n.x + dx / dl * 1.1, n.z + dz / dl * 1.1, null, 420);
     banner(zt('补给箱：金币 +' + c + '，物品在箱子旁边', 'Crate: +' + c + ' coins, the loot is next to it'), 1600);
-    tone(700, 1100, 0.1, 'sine', 0.06);
+    sfx('loot');
   }
 
   /* ---- the Rust-style inventory screen: character on the left, backpack + belt in the middle, item + crafting on the right ---- */
@@ -6885,7 +6894,7 @@ Object.assign(EN, {
     if (RW.isel < 0) RW.isel = RW_HOT0 + RW.hot;
     rwInvRender();
     if (RW.promptEl) RW.promptEl.style.display = 'none';
-    tone(300, 420, 0.06, 'triangle', 0.04);
+    sfx('zip');
   }
   function rwUiClose(noLock) {
     rwContClose();
@@ -7097,7 +7106,7 @@ Object.assign(EN, {
     delete RW.pieces[id];
     var i = RW.plist.indexOf(p); if (i >= 0) RW.plist.splice(i, 1);
     if (p.k === 'fd') rwFdChanged(p);
-    if (!RW.myX[id] && !RW.tearing && Math.hypot(p.x - P.x, p.z - P.z) < 80) { burst(new THREE.Vector3(p.x, p.y + 1, p.z), 14, partMatG, 6); tone(120, 50, 0.3, 'sawtooth', 0.08); }
+    if (!RW.myX[id] && !RW.tearing && Math.hypot(p.x - P.x, p.z - P.z) < 80) { burst(new THREE.Vector3(p.x, p.y + 1, p.z), 14, partMatG, 6); sfx('collapse', { x: p.x, y: p.y, z: p.z }); }
     if (RW.myX[id] && RWD[p.k]) { delete RW.myX[id]; if (rwGive(RWD[p.k], 1) === 0) rwNote(RWD[p.k], 1); }
     if (RW.cont && RW.cont.id === id) { RW.cont = null; if (RW.ui === 'inv') rwInvRender(); }
     if (RW.myX[id]) { delete RW.myX[id]; var cst = RWB[p.k].c; for (var rk in cst) { var back = Math.floor(cst[rk] / 2); if (back > 0) { var left = rwGive(rk, back); if (back - left > 0) rwNote(rk, back - left); } } }   // half the cost back
@@ -7105,7 +7114,7 @@ Object.assign(EN, {
   function rwPieceDoor(id, op) {   // doors open and close; lanterns and bear traps switch
     var p = RW.pieces[id]; if (!p) return;
     p.op = op ? 1 : 0;
-    if (rwIsDoor(p.k)) { rwPieceSolid(p, false); rwPieceSolid(p, true); if (Math.hypot(p.x - P.x, p.z - P.z) < 40) tone(p.op ? 220 : 180, p.op ? 300 : 120, 0.12, 'triangle', 0.05); }
+    if (rwIsDoor(p.k)) { rwPieceSolid(p, false); rwPieceSolid(p, true); if (Math.hypot(p.x - P.x, p.z - P.z) < 40) sfx(p.op ? 'dooropen' : 'doorclose', { x: p.x, y: p.y + 1, z: p.z }); }
     else rwToggleShow(p);
   }
   function rwPieceGrade(id, g) {
@@ -7151,12 +7160,17 @@ Object.assign(EN, {
     var tw = rayWall(o.x, o.y, o.z, dir.x, dir.y, dir.z, 7), hit = tw < 7, tt = Math.min(tw, 5.5);
     var ax = o.x + dir.x * tt, ay = o.y + dir.y * tt, az = o.z + dir.z * tt, best = null, bd = 1.6, near = [], i, p, reach = Math.min(tw, 7) + 2.0;
     for (i = 0; i < RW.plist.length; i++) { p = RW.plist[i]; if (Math.abs(p.x - o.x) < 12 && Math.abs(p.z - o.z) < 12 && Math.abs(p.y - o.y) < 12) near.push(p); }
+    function taken(c) {   // a spot that already holds this kind of part is never offered
+      for (var j = 0; j < near.length; j++) { var q = near[j]; if (Math.abs(q.x - c.x) > 0.3 || Math.abs(q.z - c.z) > 0.3 || Math.abs(q.y - c.y) > 0.3) continue;
+        if (q.k === k || (rwIsWall(k) && rwIsWall(q.k)) || (RW_HOST[k] && RW_HOST[q.k] === RW_HOST[k]) || ((k === 'fl' || k === 'rf') && (q.k === 'fl' || q.k === 'rf' || q.k === 'fd'))) return true; }
+      return false;
+    }
     function consider(c, px, py, pz) {   // the spot closest to your line of sight wins, so it also works looking into empty air (upper floors)
       var d1 = Math.hypot(px - ax, (py - ay) * 0.8, pz - az) * 0.615;   // near the point you are looking at (the old rule, 2.6 m)
       var vx = px - o.x, vy = py - o.y, vz = pz - o.z, t = vx * dir.x + vy * dir.y + vz * dir.z, d2 = 1e9;
       if (t >= 0.6 && t <= reach) d2 = Math.hypot(vx - dir.x * t, (vy - dir.y * t) * 1.2, vz - dir.z * t) + t * 0.03;   // or near your line of sight
       var dd = tw < 5.5 ? d1 : d2;   // looking at something close: the old rule; looking into the air (upper floors): the line of sight
-      if (dd < bd) { bd = dd; best = c; }
+      if (dd < bd && !taken(c)) { bd = dd; best = c; }
     }
     near.forEach(function (p) {
       if (k === 'fd' && p.k === 'fd') [[3, 0], [-3, 0], [0, 3], [0, -3]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: 0, snap: true }, p.x + q[0], p.y, p.z + q[1]); });
@@ -7241,23 +7255,23 @@ Object.assign(EN, {
   function rwPlace() {
     if (heldKind() === 'dep') { rwPlaceDep(); return; }
     var c = RW.bc;
-    if (!c) { banner(rwPlaceHint(RW.bsel), 1400); tone(150, 120, 0.06, 'square', 0.04); return; }
-    if (c.why) { banner(c.why, 1300); tone(150, 120, 0.06, 'square', 0.04); return; }
+    if (!c) { banner(rwPlaceHint(RW.bsel), 1400); sfx('deny'); return; }
+    if (c.why) { banner(c.why, 1300); sfx('deny'); return; }
     if (!rwPay(RWB[c.k].c)) return;
     var R = function (v) { return Math.round(v * 100) / 100; };
     dSend({ t: 'Rb', k: c.k, x: R(c.x), y: R(c.y), z: R(c.z), r: c.r });
     RW.pendB = RW.pendB || []; RW.pendB.push(c.k);
-    tone(330, 220, 0.09, 'square', 0.07); tone(660, 500, 0.05, 'triangle', 0.04);
+    sfx('build'); void 0;
     burst(new THREE.Vector3(c.x, c.y + 0.4, c.z), 6, partMatW, 3);
   }
   function rwUpCost(k, g) { var base = RWB[k].c.wood || 50; return g === 1 ? { stone: Math.round(base * 1.5) } : { frags: Math.round(base * 0.8) }; }
   function rwHammerHit(p) {
-    burst(new THREE.Vector3(p.x, p.y + 1.2, p.z), 4, partMatG, 2.5); VM.shake = 0.15; tone(600, 400, 0.05, 'square', 0.06);
+    burst(new THREE.Vector3(p.x, p.y + 1.2, p.z), 4, partMatG, 2.5); VM.shake = 0.15; sfx('hammer');
     if (p.o !== RW.me && !rwTcCovered(p.x, p.z)) { banner(zt('这不是你的建筑', 'This is not yours'), 1200); return; }
     if (p.hp < p.hmax) {   // damaged: repair first
       var rc = rwRepairCost(p);
       if (!rwPay(rc)) { banner(zt('修理需要 ', 'Repair needs ') + Object.keys(rc).map(function (kk) { return rwIN(kk) + ' ' + rc[kk]; }).join(', '), 1400); return; }
-      dSend({ t: 'Rq', id: p.id }); tone(500, 800, 0.08, 'triangle', 0.06); return;
+      dSend({ t: 'Rq', id: p.id }); sfx('repair'); return;
     }
     if (p.o !== RW.me) { banner(zt('只有主人能升级', 'Only the owner can upgrade'), 1200); return; }
     if (rwNoUp(p.k)) { banner(zt('这个不能升级', 'This cannot be upgraded'), 1200); return; }
@@ -7265,14 +7279,14 @@ Object.assign(EN, {
     var cost = rwUpCost(p.k, p.g + 1);
     if (!rwPay(cost)) { banner(zt('升级需要 ', 'Upgrade needs ') + Object.keys(cost).map(function (kk) { return rwIN(kk) + ' ' + cost[kk]; }).join(', '), 1500); return; }
     dSend({ t: 'Ru', id: p.id, g: p.g + 1 });
-    tone(400, 900, 0.15, 'triangle', 0.07);
+    sfx('upgrade');
   }
   function rwDemolish() {
     var p = rwPieceRay(5);
     if (!p) return;
     if (p.o !== RW.me) { banner(zt('这不是你的建筑', 'This is not yours'), 1200); return; }
     var nm = zt(RWB[p.k].n[0], RWB[p.k].n[1]);
-    if (RW.dconf === p.id && gtime - RW.dconfT < 2.5) { RW.myX[p.id] = 1; dSend({ t: 'Rx', id: p.id }); RW.dconf = 0; tone(200, 80, 0.2, 'sawtooth', 0.07); }
+    if (RW.dconf === p.id && gtime - RW.dconfT < 2.5) { RW.myX[p.id] = 1; dSend({ t: 'Rx', id: p.id }); RW.dconf = 0; sfx('collapse'); }
     else { RW.dconf = p.id; RW.dconfT = gtime; banner(zt('再按一次 ' + KA() + '，拆除这个' + nm, 'Press ' + KA() + ' again to remove this ' + nm), 1800); }
   }
   function rwBuildMenu() {
@@ -7281,7 +7295,7 @@ Object.assign(EN, {
       var el = document.createElement('div'); el.id = 'rwBuild'; stage.appendChild(el); RW.buildEl = el;
       el.addEventListener('click', function (e) {
         var b = e.target.closest ? e.target.closest('[data-k]') : null;
-        if (b) { RW.bsel = b.getAttribute('data-k'); tone(500, 700, 0.05, 'square', 0.04); }
+        if (b) { RW.bsel = b.getAttribute('data-k'); sfx('click'); }
         if (b || e.target === el || (e.target.closest && e.target.closest('[data-x]'))) rwUiClose();
       });
     }
@@ -7537,7 +7551,7 @@ Object.assign(EN, {
     });
     return h;
   }
-  function rwSell(i) { var q = RW_SELL[i]; if (!q || !rwTake(q[0], 100)) return; coins += q[1]; tone(700, 1000, 0.1, 'sine', 0.08); }
+  function rwSell(i) { var q = RW_SELL[i]; if (!q || !rwTake(q[0], 100)) return; coins += q[1]; sfx('coins'); }
 
   /* ---- per frame, called from rwTick ---- */
   function rwTick2(dt) {
@@ -7615,7 +7629,7 @@ Object.assign(EN, {
     var extra = '';
     if (m.item) { var left = rwGive(m.item[0], m.item[1]); if (left > 0) rwDropAdd([{ id: m.item[0], n: left }], P.x, P.z, null, 600, P.y); rwNote(m.item[0], m.item[1]); extra = ' · ' + rwIN(m.item[0]) + ' ×' + m.item[1]; }
     banner(zt('任务完成 · ', 'Mission complete · ') + rwMName(m) + ' · +' + m.coin + zt(' 金币', ' coins') + extra, 2600);
-    tone(660, 990, 0.12, 'triangle', 0.08); setTimeout(function () { tone(990, 1320, 0.16, 'triangle', 0.07); }, 120);
+    sfx('bell'); setTimeout(function () { void 0; }, 120);
     setTimeout(function () { var i = RWM.list.indexOf(m); if (i >= 0) RWM.list.splice(i, 1, rwMNew()); rwMSave(); RWM.html = ''; rwMRender(); }, 2200);
   }
   function rwMRender() {
@@ -7758,11 +7772,11 @@ Object.assign(EN, {
   function rwPlaceDep() {
     var c = RW.bc, s = rwHeldSlot();
     if (!c || !s) { banner(zt('对着地面放', 'Aim at the ground'), 1000); return; }
-    if (c.why) { banner(c.why, 1300); tone(150, 120, 0.06, 'square', 0.04); return; }
+    if (c.why) { banner(c.why, 1300); sfx('deny'); return; }
     s.n--; if (s.n <= 0) RW.inv[RW_HOT0 + RW.hot] = null; rwInvChanged();
     var R = function (v) { return Math.round(v * 100) / 100; };
     dSend({ t: 'Rb', k: c.k, x: R(c.x), y: R(c.y), z: R(c.z), r: c.r });
-    tone(330, 220, 0.09, 'square', 0.07);
+    sfx('build');
   }
   function rwDepMesh(p) {
     var g = new THREE.Group(), inner = new THREE.Group(); g.add(inner); inner.rotation.y = -p.r * Math.PI / 2;
@@ -7798,7 +7812,7 @@ Object.assign(EN, {
     RW.cont = { id: p.id, k: p.k, s: null, lit: 0 }; RW.cfoc = -1;
     dSend({ t: 'Bq', id: p.id });
     rwInvOpen();
-    tone(220, 300, 0.08, 'triangle', 0.05);
+    sfx('lid');
   }
   function rwContClose() { if (RW.cont) { dSend({ t: 'Bc' }); RW.cont = null; RW.cfoc = -1; } }
   function rwContPut(i) {
@@ -7807,9 +7821,9 @@ Object.assign(EN, {
     if (RW.cont.k === 'cf' && s.id !== 'wood' && s.id !== 'meat') { banner(zt('篝火只能放木材和生肉', 'The campfire takes wood and raw meat'), 1400); return; }
     dSend({ t: 'Bp', id: RW.cont.id, it: s.id, n: s.n });
     RW.inv[i] = null; rwInvChanged();
-    tone(300, 380, 0.05, 'square', 0.04);
+    sfx('stash');
   }
-  function rwContTake(j) { if (RW.cont && RW.cont.s && RW.cont.s[j]) { dSend({ t: 'Bt', id: RW.cont.id, s: j }); tone(380, 300, 0.05, 'square', 0.04); } }
+  function rwContTake(j) { if (RW.cont && RW.cont.s && RW.cont.s[j]) { dSend({ t: 'Bt', id: RW.cont.id, s: j }); sfx('stash'); } }
   function rwContLight() { if (RW.cont && rwIsFurn(RW.cont.k)) dSend({ t: 'Bl', id: RW.cont.id }); }
   function rwContHtml() {
     var C = RW.cont, h = '', i;
@@ -7901,7 +7915,7 @@ Object.assign(EN, {
     else if (angry) {
       ux = dx / dd; uz = dz / dd; mv = dd > 1.4 ? 1 : 0; e.g.rotation.y = Math.atan2(dx, dz);
       e.melee = (e.melee || 0) - dt;
-      if (dd < 1.8 && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'boar' ? 1.1 : 0.9; rwNpcHurtMe(TP, ty); dmgTP(TP, ty === 'boar' ? 12 : 10); tone(ty === 'wolf' ? 500 : 180, ty === 'wolf' ? 300 : 90, 0.12, 'sawtooth', 0.06); }
+      if (dd < 1.8 && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'boar' ? 1.1 : 0.9; rwNpcHurtMe(TP, ty); dmgTP(TP, ty === 'boar' ? 12 : 10); sfx('bite', { w: ty === 'wolf' }); }
     } else {
       e.wt = (e.wt || 0) - dt;
       if (e.wt <= 0) { e.wt = 4 + Math.random() * 6; var wa = Math.random() * 6.28, wd = Math.random() * m.r * 0.7; e.wx = m.x + Math.cos(wa) * wd; e.wz = m.z + Math.sin(wa) * wd; }
@@ -7943,7 +7957,7 @@ Object.assign(EN, {
     g.position.copy(camera.position).add(dir.clone().multiplyScalar(0.6));
     RW.group.add(g);
     RW.bombs.push({ g: g, led: led, vx: dir.x * 11, vy: dir.y * 11 + 1.5, vz: dir.z * 11, fuse: d.fuse, bdmg: d.bdmg, stuck: false, beep: 0, c4: s.id === 'c4' });
-    tone(250, 150, 0.1, 'square', 0.05);
+    sfx('throw');
   }
   function rwBombTick(dt) {
     for (var i = RW.bombs.length - 1; i >= 0; i--) {
@@ -7952,13 +7966,13 @@ Object.assign(EN, {
         b.vy -= 18 * dt;
         var nx = p.x + b.vx * dt, ny = p.y + b.vy * dt, nz = p.z + b.vz * dt, sp = Math.hypot(b.vx, b.vy, b.vz) || 1;
         var t = rayWall(p.x, p.y, p.z, b.vx / sp, b.vy / sp, b.vz / sp, sp * dt + 0.12);
-        if (t < sp * dt + 0.12) { var k = Math.max(0, t - 0.1); p.x += b.vx / sp * k; p.y += b.vy / sp * k; p.z += b.vz / sp * k; b.stuck = true; tone(400, 300, 0.05, 'square', 0.05); }
+        if (t < sp * dt + 0.12) { var k = Math.max(0, t - 0.1); p.x += b.vx / sp * k; p.y += b.vy / sp * k; p.z += b.vz / sp * k; b.stuck = true; sfx('thud'); }
         else { p.set(nx, ny, nz); b.g.rotation.x += dt * 6; }
         var gh = rwH(p.x, p.z); if (p.y < gh + 0.1) { p.y = gh + 0.1; b.stuck = true; }
       }
       b.fuse -= dt; b.beep -= dt;
       var on = (b.fuse % 0.5) < 0.25; b.led.visible = on;
-      if (b.beep <= 0) { b.beep = b.fuse < 2 ? 0.25 : 1; if (Math.hypot(p.x - P.x, p.z - P.z) < 50) tone(1400, 1300, 0.05, 'square', 0.04); }
+      if (b.beep <= 0) { b.beep = b.fuse < 2 ? 0.25 : 1; if (Math.hypot(p.x - P.x, p.z - P.z) < 50) sfx('beep'); }
       if (b.fuse <= 0) {
         if (b.g.parent) b.g.parent.remove(b.g); RW.bombs.splice(i, 1);
         RW.noBlast = true; explode(p.x, p.y, p.z, b.c4 ? 5 : 4, b.c4 ? 14 : 8, true); RW.noBlast = false;
@@ -7989,7 +8003,7 @@ Object.assign(EN, {
     RW.nst[n.id] = 0; dSend({ t: 'Rg', id: n.id, max: 1, k: 'hemp' });
     var left = rwGive('cloth', 10); if (left > 0) rwDropAdd([{ id: 'cloth', n: left }], P.x, P.z, null, 300, P.y);
     rwNote('cloth', 10 - left > 0 ? 10 - left : 10);
-    tone(500, 700, 0.06, 'triangle', 0.05);
+    sfx('rustle');
     var ch = rwChunkOf(n.id); if (ch) rwRebuildDecor(ch);
   }
 
@@ -8637,7 +8651,7 @@ Object.assign(EN, {
         RW.trig[p.id] = gtime;
         dSend({ t: 'Rt', id: p.id });
         if (p.k === 'lm') { RW.noBlast = true; explode(p.x, p.y + 0.3, p.z, 3, 0, false); RW.noBlast = false; RW.lastNpc = 'mine'; RW.lastNpcT = gtime; damage(60); VM.shake = 0.6; }
-        else { p.op = 1; rwTrapPose(p); RW.trapT = gtime + 2.5; RW.lastNpc = 'trap'; RW.lastNpcT = gtime; damage(30); tone(900, 200, 0.12, 'square', 0.12); banner(zt('被捕兽夹夹住了！', 'Caught in a bear trap!'), 1500); }
+        else { p.op = 1; rwTrapPose(p); RW.trapT = gtime + 2.5; RW.lastNpc = 'trap'; RW.lastNpcT = gtime; damage(30); sfx('snap'); banner(zt('被捕兽夹夹住了！', 'Caught in a bear trap!'), 1500); }
       }
     }
   }
@@ -8645,7 +8659,7 @@ Object.assign(EN, {
   /* ---- code locks ---- */
   function rwLockUse() {   // fire with a code lock in hand
     var p = rwPieceRay(3.2);
-    if (!p || !rwIsDoor(p.k)) { banner(zt('对着自己的门或大门按开火键装密码锁', 'Aim at your own door or gate and press fire'), 1400); tone(150, 120, 0.06, 'square', 0.04); return; }
+    if (!p || !rwIsDoor(p.k)) { banner(zt('对着自己的门或大门按开火键装密码锁', 'Aim at your own door or gate and press fire'), 1400); sfx('deny'); return; }
     if (p.o !== RW.me) { banner(zt('只能装在自己的门上', 'Only on your own door'), 1300); return; }
     rwCodeOpen(p, 'set');
   }
@@ -8682,7 +8696,7 @@ Object.assign(EN, {
     if (k === 'b') C.v = C.v.slice(0, -1);
     else if (k === 'ok') { if (C.v.length === 4) { rwCodeSubmit(); return; } }
     else if (/^\d$/.test(k) && C.v.length < 4) C.v += k;
-    tone(k === 'ok' ? 700 : 520, 520, 0.03, 'square', 0.03);
+    sfx('keypad', { ok: k === 'ok' });
     rwCodeRender();
   }
   function rwCodeSubmit() {
@@ -8692,7 +8706,7 @@ Object.assign(EN, {
       if (!s || s.id !== 'lock') { banner(zt('手里要拿着密码锁', 'Hold a code lock'), 1200); rwUiClose(); return; }
       s.n--; if (s.n <= 0) RW.inv[RW_HOT0 + RW.hot] = null; rwInvChanged();
       dSend({ t: 'Rz', id: C.id, code: C.v });
-      banner(zt('密码锁已装好，密码 ', 'Code lock fitted, code ') + C.v, 2200); tone(600, 900, 0.1, 'triangle', 0.06);
+      banner(zt('密码锁已装好，密码 ', 'Code lock fitted, code ') + C.v, 2200); sfx('latch');
     } else dSend({ t: 'Ry', id: C.id, code: C.v });
     rwUiClose();
   }
@@ -8712,7 +8726,7 @@ Object.assign(EN, {
     p.lock = m.l ? (m.a || []).map(String) : null;
     if (p.lock && !was && p.lock.indexOf(RW.me) >= 0 && p.o !== RW.me) banner(zt('密码正确：以后可以直接开这扇门', 'Code accepted: you can open this door from now on'), 1800);
   }
-  function rwWrongCode() { RW.lastNpc = 'lock'; RW.lastNpcT = gtime; damage(10); banner(zt('密码错误！被电了一下', 'Wrong code! Zap'), 1400); tone(1600, 200, 0.18, 'sawtooth', 0.1); VM.shake = 0.4; }
+  function rwWrongCode() { RW.lastNpc = 'lock'; RW.lastNpcT = gtime; damage(10); banner(zt('密码错误！被电了一下', 'Wrong code! Zap'), 1400); sfx('zap'); VM.shake = 0.4; }
 
   var RWCSS4 = '#rwCode{position:absolute;inset:0;z-index:12;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);pointer-events:auto}' +
     '.rwcode{width:300px;text-align:center}.rwcode .cd{display:flex;gap:8px;justify-content:center;margin:6px 0 14px}' +
@@ -8748,9 +8762,9 @@ Object.assign(EN, {
   function rwMarksSave() { try { localStorage.setItem(rwMarksKey(), JSON.stringify(RW.marks)); } catch (e) {} if (typeof rwSaveSoon === 'function') rwSaveSoon(); }
   function rwMarkToggle(x, z) {   // a marker near x,z goes away, otherwise a new one is put down
     var lim = Math.max(18, RW.half * 0.025);
-    for (var i = 0; i < RW.marks.length; i++) if (Math.hypot(RW.marks[i][0] - x, RW.marks[i][1] - z) < lim) { RW.marks.splice(i, 1); rwMarksSave(); tone(300, 200, 0.06, 'triangle', 0.05); return; }
+    for (var i = 0; i < RW.marks.length; i++) if (Math.hypot(RW.marks[i][0] - x, RW.marks[i][1] - z) < lim) { RW.marks.splice(i, 1); rwMarksSave(); sfx('click'); return; }
     if (RW.marks.length >= RW_MKMAX) { banner(zt('最多 ' + RW_MKMAX + ' 个标记：先删掉一个', 'At most ' + RW_MKMAX + ' markers: remove one first'), 1400); return; }
-    RW.marks.push([Math.round(x), Math.round(z)]); rwMarksSave(); tone(600, 900, 0.07, 'triangle', 0.05);
+    RW.marks.push([Math.round(x), Math.round(z)]); rwMarksSave(); sfx('pin');
   }
   function rwMyTcs() { return RW.plist.filter(function (p) { return p.k === 'tc' && (p.auth || []).indexOf(RW.me) >= 0; }); }
 
@@ -8805,7 +8819,7 @@ Object.assign(EN, {
     if (k === 'ArrowLeft') RW.mcur[0] -= st; else if (k === 'ArrowRight') RW.mcur[0] += st;
     else if (k === 'ArrowUp') RW.mcur[1] -= st; else if (k === 'ArrowDown') RW.mcur[1] += st;
     else if (k === 'Enter' || k === 'NumpadEnter' || k === 'Space') rwMarkToggle(RW.mcur[0], RW.mcur[1]);
-    else if (k === 'Backspace' || k === 'Delete') { if (RW.marks.length) { RW.marks = []; rwMarksSave(); tone(250, 150, 0.08, 'triangle', 0.05); } }
+    else if (k === 'Backspace' || k === 'Delete') { if (RW.marks.length) { RW.marks = []; rwMarksSave(); sfx('paper'); } }
     else if (k === 'Escape') rwToggleMap(false);
     else return;
     RW.mcur[0] = Math.max(-RW.half, Math.min(RW.half, RW.mcur[0])); RW.mcur[1] = Math.max(-RW.half, Math.min(RW.half, RW.mcur[1]));
@@ -8842,6 +8856,232 @@ Object.assign(EN, {
       '#rwMk .mk i::after{content:"";position:absolute;top:21px;border:5px solid transparent;border-top-color:var(--c)}#rwMk .mk b{font:700 11px/1 system-ui,sans-serif;color:#fff;background:rgba(0,0,0,.55);padding:2px 5px}#rwMk .mk.edge{opacity:.8}';
     document.head.appendChild(st);
   })();
+
+  /* ================= REALISTIC SOUND =================
+     Every sound is synthesised from noise, resonances and envelopes (no chiptune oscillators), rendered once into a buffer
+     (three variations each), then played with a little pitch jitter, distance damping, stereo pan and an outdoor reverb. */
+  var SFX = { buf: {}, bus: null, rev: null, last: {}, sr: 48000 };
+  function sfxCtx() {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+    if (!SFX.bus) {
+      SFX.sr = ac.sampleRate;
+      var comp = ac.createDynamicsCompressor(); comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.002; comp.release.value = 0.22;
+      var master = ac.createGain(); master.gain.value = 0.85; master.connect(comp); comp.connect(ac.destination);
+      var rev = ac.createConvolver(); rev.buffer = sfxImpulse(); var rg = ac.createGain(); rg.gain.value = 0.5; rev.connect(rg); rg.connect(master);
+      SFX.bus = master; SFX.rev = rev;
+    }
+    if (ac.state === 'suspended') { try { ac.resume(); } catch (e) {} }
+    return ac;
+  }
+  ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) { window.addEventListener(ev, function () { if (ac && ac.state === 'suspended') { try { ac.resume(); } catch (e) {} } }, { passive: true }); });
+
+  // ---- tiny DSP kit (mono Float32Arrays) ----
+  function S(sec) { return Math.max(1, Math.round(sec * SFX.sr)); }
+  function N(n) { var a = new Float32Array(n); for (var i = 0; i < n; i++) a[i] = Math.random() * 2 - 1; return a; }
+  function bq(a, type, f0, q, f1) {   // RBJ biquad, optionally sweeping (exponentially) from f0 to f1
+    var n = a.length, x1 = 0, x2 = 0, y1 = 0, y2 = 0, b0, b1, b2, a1, a2;
+    for (var i = 0; i < n; i++) {
+      if ((i & 31) === 0) {
+        var f = f1 ? f0 * Math.pow(f1 / f0, i / n) : f0; f = Math.min(f, SFX.sr * 0.45);
+        var w = 2 * Math.PI * f / SFX.sr, cs = Math.cos(w), al = Math.sin(w) / (2 * q), A0 = 1 + al;
+        if (type === 'lp') { b0 = (1 - cs) / 2; b1 = 1 - cs; b2 = b0; } else if (type === 'hp') { b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = b0; } else { b0 = al; b1 = 0; b2 = -al; }
+        b0 /= A0; b1 /= A0; b2 /= A0; a1 = -2 * cs / A0; a2 = (1 - al) / A0;
+      }
+      var x = a[i], y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x; y2 = y1; y1 = y; a[i] = y;
+    }
+    return a;
+  }
+  function env(a, att, dec, hold) {   // linear attack, optional hold, exponential decay
+    var A = S(att), H = S(hold || 0);
+    for (var i = 0; i < a.length; i++) a[i] *= i < A ? i / A : i < A + H ? 1 : Math.exp(-(i - A - H) / (dec * SFX.sr));
+    return a;
+  }
+  function sine(n, f0, f1, dec, att) {   // pitch-swept sine with a decay
+    var a = new Float32Array(n), ph = 0, A = S(att || 0.002);
+    for (var i = 0; i < n; i++) { var f = f0 * Math.pow(f1 / f0, i / n); ph += 2 * Math.PI * f / SFX.sr; a[i] = Math.sin(ph) * (i < A ? i / A : 1) * Math.exp(-i / (dec * SFX.sr)); }
+    return a;
+  }
+  function modal(n, modes) {   // struck object: decaying partials [freq, amp, decay]
+    var a = new Float32Array(n);
+    modes.forEach(function (m) { var f = m[0] * (1 + (Math.random() - 0.5) * 0.02), w = 2 * Math.PI * f / SFX.sr, ph = Math.random() * 6; for (var i = 0; i < n; i++) a[i] += Math.sin(w * i + ph) * m[1] * Math.exp(-i / (m[2] * SFX.sr)); });
+    return a;
+  }
+  function mix(dst, src, g, at) { var o = S(at || 0); for (var i = 0; i < src.length && i + o < dst.length; i++) dst[i + o] += src[i] * g; return dst; }
+  function sat(a, drive) { var k = Math.tanh(drive); for (var i = 0; i < a.length; i++) a[i] = Math.tanh(a[i] * drive) / k; return a; }
+  function am(a, fn) { for (var i = 0; i < a.length; i++) a[i] *= fn(i / SFX.sr); return a; }
+  function click(n, f, g, d) { return mix(new Float32Array(n), env(bq(N(S(0.03)), 'bp', f, 2), 0.0002, d || 0.004), g); }
+  function rustle(n, f, len, g) { var r = env(bq(N(S(len)), 'bp', f, 0.8), 0.02, len * 0.35); var gate = 1; am(r, function () { if (Math.random() < 0.08) gate = 0.25 + Math.random() * 0.75; return gate; }); return mix(new Float32Array(n), r, g); }
+  function sfxImpulse() {   // outdoors: a short, airy, darkening tail
+    var len = S(1.7), b = ac.createBuffer(2, len, SFX.sr);
+    for (var c = 0; c < 2; c++) { var d = b.getChannelData(c), lp = 0; for (var i = 0; i < len; i++) { var t = i / SFX.sr, k = 0.35 + 0.6 * Math.exp(-t * 2); lp += (Math.random() * 2 - 1 - lp) * k; d[i] = lp * Math.exp(-t * 3.4) * (i < S(0.012) ? i / S(0.012) : 1); } }
+    return b;
+  }
+
+  // ---- the sounds ----
+  var GUN = {   // crack (Hz), body (Hz), body decay, thump (Hz), thump decay, tail length, drive, level
+    pistol: [3600, 1300, 0.06, 150, 0.05, 0.5, 2.3, 0.85], revolver: [3000, 950, 0.09, 110, 0.08, 0.75, 2.7, 1], smg: [4000, 1600, 0.045, 170, 0.04, 0.38, 2.1, 0.75],
+    rifle: [3300, 1050, 0.075, 100, 0.07, 0.85, 2.6, 0.95], lmg: [2900, 900, 0.085, 90, 0.08, 0.95, 2.8, 1], shotgun: [2400, 640, 0.13, 70, 0.12, 1.05, 3.1, 1],
+    sniper: [4300, 780, 0.11, 62, 0.1, 1.45, 3.3, 1], turret: [3800, 1500, 0.04, 160, 0.035, 0.3, 2, 0.5], enemy: [3100, 1150, 0.07, 110, 0.06, 0.8, 2.5, 0.85]
+  };
+  function sfxGun(g) {
+    if (g === 'rpg') {   // launch: a rushing whoosh over a deep thump
+      var n = S(1.1), o = new Float32Array(n);
+      mix(o, env(bq(N(n), 'bp', 380, 1.2, 2400), 0.02, 0.35), 1.6); mix(o, sine(n, 75, 40, 0.14), 1.0); mix(o, env(bq(N(n), 'hp', 1800, 0.7), 0.0003, 0.01), 0.6);
+      return { d: sat(o, 2), gain: 0.95, rv: 0.4, far: 160 };
+    }
+    var P0 = GUN[g] || GUN.rifle, len = P0[5] + 0.12, n2 = S(len), out = new Float32Array(n2);
+    mix(out, env(bq(N(n2), 'hp', P0[0], 0.7), 0.0003, 0.006), 1.1);                 // supersonic crack
+    mix(out, env(bq(N(n2), 'bp', P0[1], 0.9), 0.0008, P0[2]), 1.7);                  // muzzle blast body
+    mix(out, sine(n2, P0[3], P0[3] * 0.55, P0[4]), 0.9);                             // chest thump
+    mix(out, env(bq(N(n2), 'lp', 2200, 0.7, 500), 0.008, P0[5] * 0.32), 0.22);       // outdoor tail
+    if (g === 'shotgun') mix(out, env(bq(N(n2), 'bp', 2600, 1.5), 0.001, 0.03), 0.5, 0.004);
+    return { d: sat(out, P0[6]), gain: P0[7], rv: 0.35, far: g === 'turret' ? 90 : 220, pv: 0.06 };
+  }
+  function sfxMake(name, o) {
+    var n, a, k;
+    switch (name) {
+      case 'shot': return sfxGun(o.g);
+      case 'turret': return sfxGun('turret');
+      case 'eshot': return sfxGun('enemy');
+      case 'explode': case 'blast': {
+        var big = name === 'explode', L = big ? 2.6 : 1.2; n = S(L); a = new Float32Array(n);
+        mix(a, env(bq(N(n), 'hp', 1400, 0.7), 0.0004, 0.012), 1.2);
+        mix(a, env(bq(N(n), 'lp', big ? 1000 : 1400, 0.7, big ? 110 : 180), 0.004, big ? 0.55 : 0.22), 2.4);
+        mix(a, sine(n, big ? 58 : 75, big ? 28 : 40, big ? 0.9 : 0.3), 1.1);
+        for (k = 0; k < (big ? 30 : 10); k++) { var t = 0.12 + Math.random() * (L * 0.55); mix(a, env(bq(N(S(0.02)), 'bp', 1500 + Math.random() * 3500, 2), 0.0003, 0.004), 0.35 * Math.exp(-t * 1.6), t); }
+        return { d: sat(a, 2.6), gain: big ? 1 : 0.8, rv: 0.6, far: big ? 260 : 140 };
+      }
+      case 'hurt': {
+        n = S(0.4); a = new Float32Array(n);
+        mix(a, env(bq(N(n), 'lp', 380, 0.8), 0.002, 0.07), 1.5); mix(a, sine(n, 90, 55, 0.07), 0.8);
+        var gr = env(bq(N(n), 'bp', o.h ? 820 : 640, 6, o.h ? 520 : 430), 0.025, 0.09); mix(gr, env(bq(N(n), 'bp', 1250, 8), 0.025, 0.07), 0.6); mix(a, gr, 0.5, 0.01);
+        return { d: sat(a, 1.6), gain: 0.6 };
+      }
+      case 'edie': {
+        n = S(0.6); a = new Float32Array(n);
+        mix(a, env(bq(N(n), 'lp', 300, 0.8), 0.002, 0.08), 1.3); mix(a, env(bq(N(S(0.4)), 'lp', 220, 0.8), 0.003, 0.1), 1.6, 0.22); mix(a, sine(S(0.3), 70, 45, 0.09), 0.9, 0.22);
+        return { d: sat(a, 1.5), gain: 0.55, rv: 0.25 };
+      }
+      case 'charge': { n = S(0.75); a = sine(n, 220, 760, 5, 0.5); mix(a, env(bq(N(n), 'bp', 1600, 10, 3200), 0.6, 0.2), 0.25); return { d: a, gain: 0.25 }; }
+      case 'siren': {
+        n = S(1.9); a = new Float32Array(n); var ph = 0;
+        for (k = 0; k < n; k++) { var tt = k / SFX.sr, f = 520 + 230 * Math.sin(2 * Math.PI * 0.85 * tt - 1.5); ph += 2 * Math.PI * f / SFX.sr; a[k] = (Math.sin(ph) + 0.35 * Math.sin(2 * ph) + 0.15 * Math.sin(3 * ph)) * Math.min(1, tt / 0.15) * Math.min(1, (1.9 - tt) / 0.35); }
+        return { d: bq(a, 'lp', 1800, 0.7), gain: 0.35, rv: 0.5 };
+      }
+      case 'click': return { d: click(S(0.04), 3200, 1, 0.004), gain: 0.18 };
+      case 'uiok': n = S(0.08); a = click(n, 2600, 0.8); mix(a, modal(n, [[900, 0.6, 0.02], [1800, 0.25, 0.012]]), 0.9); return { d: a, gain: 0.26 };
+      case 'deny': n = S(0.16); a = new Float32Array(n); mix(a, env(bq(N(n), 'lp', 260, 0.8), 0.001, 0.03), 1); mix(a, sine(n, 140, 110, 0.04), 0.5); mix(a, env(bq(N(S(0.08)), 'lp', 240, 0.8), 0.001, 0.025), 0.6, 0.075); return { d: a, gain: 0.32 };
+      case 'equip': n = S(0.2); a = rustle(n, 2000, 0.14, 0.5); mix(a, modal(S(0.1), [[2600, 0.5, 0.03], [4100, 0.3, 0.02]]), 0.7, 0.08); mix(a, click(S(0.03), 3000, 0.6), 1, 0.08); return { d: a, gain: 0.32 };
+      case 'coins': n = S(0.5); a = new Float32Array(n); for (k = 0; k < 4; k++) { var f2 = 3000 + Math.random() * 1300, at = Math.random() * 0.14; mix(a, modal(S(0.3), [[f2, 1, 0.1], [f2 * 2.76, 0.5, 0.06], [f2 * 5.4, 0.25, 0.035]]), 0.5, at); mix(a, click(S(0.02), 5000, 0.4), 1, at); } return { d: a, gain: 0.3 };
+      case 'upgrade': n = S(0.65); a = modal(n, [[640, 0.8, 0.25], [1520, 0.5, 0.18], [2710, 0.4, 0.12], [3900, 0.2, 0.08]]); mix(a, click(S(0.03), 2500, 1), 1); for (k = 0; k < 5; k++) mix(a, click(S(0.03), 2200, 0.5, 0.003), 1, 0.28 + k * 0.045); return { d: a, gain: 0.4, rv: 0.2 };
+      case 'medpick': n = S(0.25); a = modal(n, [[1800, 0.6, 0.03], [3100, 0.4, 0.02]]); mix(a, rustle(n, 2200, 0.15, 0.6), 1, 0.04); return { d: a, gain: 0.32 };
+      case 'ammopick': n = S(0.3); a = new Float32Array(n); mix(a, env(bq(N(n), 'lp', 400, 0.8), 0.001, 0.03), 0.7); for (k = 0; k < 6; k++) mix(a, modal(S(0.06), [[2400 + Math.random() * 1500, 0.5, 0.02]]), 0.6, Math.random() * 0.15); return { d: a, gain: 0.32 };
+      case 'heal': case 'use': { var len2 = name === 'heal' ? 0.32 : 0.24; n = S(len2 + 0.05); a = env(bq(N(n), 'bp', 900, 1.2, 2600), 0.01, len2 * 0.45); var gt = 1; am(a, function () { if (Math.random() < 0.15) gt = Math.random() < 0.4 ? 0.1 : 1; return gt; }); return { d: a, gain: 0.35 }; }
+      case 'pickup': n = S(0.15); a = rustle(n, 2400, 0.1, 0.7); mix(a, click(S(0.03), 2800, 0.4), 1); return { d: a, gain: 0.26 };
+      case 'drop': n = S(0.2); a = env(bq(N(n), 'lp', 320, 0.8), 0.002, 0.04); mix(a, rustle(n, 1800, 0.08, 0.4), 1, 0.01); return { d: a, gain: 0.35 };
+      case 'start': {   // a distant horn
+        n = S(1.5); a = new Float32Array(n); var p2 = 0;
+        for (k = 0; k < n; k++) { var t3 = k / SFX.sr, ff = 110 * (1 + 0.004 * Math.sin(2 * Math.PI * 5 * t3)); p2 += 2 * Math.PI * ff / SFX.sr; var s3 = 0; for (var h = 1; h <= 7; h++) s3 += Math.sin(p2 * h) / h; a[k] = s3 * Math.min(1, t3 / 0.18) * (t3 < 0.9 ? 1 : Math.exp(-(t3 - 0.9) / 0.18)); }
+        return { d: bq(a, 'lp', 1100, 0.7), gain: 0.32, rv: 0.6 };
+      }
+      case 'wind': n = S(2.4); a = env(bq(N(n), 'bp', 300, 0.6, 700), 0.9, 0.6, 0.2); return { d: a, gain: 0.35, rv: 0.2 };
+      case 'drum': if (o.big) { n = S(0.7); a = sine(n, 72, 44, 0.35); mix(a, env(bq(N(n), 'lp', 500, 0.8), 0.002, 0.12), 0.8); mix(a, env(bq(N(n), 'bp', 190, 2), 0.002, 0.15), 0.6); return { d: sat(a, 1.8), gain: 0.6, rv: 0.45 }; }
+        n = S(0.15); a = modal(n, [[820, 1, 0.05], [1650, 0.35, 0.03]]); mix(a, click(S(0.03), 2500, 0.6), 1); return { d: a, gain: 0.35, rv: 0.2 };
+      case 'hitmark': n = S(0.08); a = env(bq(N(n), 'lp', 900, 0.8), 0.0005, 0.025); mix(a, click(S(0.03), 2600, 0.5, 0.003), 1); return { d: sat(a, 1.4), gain: 0.42 };
+      case 'headshot': n = S(0.2); a = env(bq(N(n), 'lp', 900, 0.8), 0.0005, 0.025); mix(a, modal(n, [[3300, 0.6, 0.09], [5000, 0.3, 0.05]]), 0.7); return { d: a, gain: 0.5 };
+      case 'kill': n = S(0.3); a = env(bq(N(n), 'lp', 520, 0.8), 0.001, 0.05); mix(a, sine(n, 110, 70, 0.06), 0.6); mix(a, modal(n, [[2900, 0.4, 0.12], [4400, 0.2, 0.08]]), 0.6, 0.01); return { d: sat(a, 1.5), gain: 0.5 };
+      case 'swing': case 'throw': n = S(0.26); a = env(bq(N(n), 'bp', 350, 1.4, 1300), 0.09, 0.06); if (name === 'throw') mix(a, modal(S(0.05), [[3200, 0.4, 0.015]]), 1); return { d: a, gain: 0.3 };
+      case 'thud': n = S(0.1); a = env(bq(N(n), 'lp', 420, 0.8), 0.001, 0.035); mix(a, click(S(0.03), 1800, 0.4), 1); return { d: a, gain: 0.45 };
+      case 'chop': n = S(0.35); a = env(bq(N(n), 'hp', 1500, 0.7), 0.0005, 0.004); mix(a, env(bq(N(n), 'bp', 240, 4), 0.001, 0.09), 1.8); mix(a, env(bq(N(n), 'bp', 520, 3), 0.001, 0.06), 0.9); mix(a, env(bq(N(n), 'bp', 1800, 1.5), 0.001, 0.02), 0.5); return { d: sat(a, 1.5), gain: 0.6, rv: 0.15 };
+      case 'mine': n = S(0.45); a = env(bq(N(n), 'hp', 3000, 0.7), 0.0003, 0.003); mix(a, modal(n, [[2350, 0.5, 0.16], [3780, 0.35, 0.11], [5200, 0.2, 0.07]]), 0.8); mix(a, env(bq(N(n), 'bp', 1200, 1), 0.001, 0.05), 0.6); return { d: a, gain: 0.5, rv: 0.15 };
+      case 'treefall': {
+        n = S(2.3); a = new Float32Array(n);
+        var cr = am(bq(N(S(1.05)), 'bp', 320, 9), function (t) { return Math.min(1, t / 0.6) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 11 * t)); }); mix(a, cr, 0.9);
+        mix(a, env(bq(N(S(1.2)), 'lp', 700, 0.8), 0.005, 0.35), 2, 1.0); mix(a, sine(S(0.4), 62, 40, 0.15), 1, 1.0); mix(a, sine(S(0.4), 55, 38, 0.15), 0.7, 1.22);
+        mix(a, env(bq(N(S(1)), 'hp', 2200, 0.7), 0.02, 0.3), 0.35, 1.0);
+        return { d: sat(a, 1.6), gain: 0.6, rv: 0.45, far: 120 };
+      }
+      case 'rockbreak': n = S(0.9); a = env(bq(N(n), 'lp', 900, 0.8), 0.003, 0.18); for (k = 0; k < 14; k++) mix(a, modal(S(0.08), [[1800 + Math.random() * 2500, 0.5, 0.02]]), 0.4, Math.random() * 0.4); return { d: sat(a, 1.5), gain: 0.5, rv: 0.3 };
+      case 'latch': n = S(0.15); a = modal(n, [[1900, 0.5, 0.02], [3000, 0.3, 0.015]]); mix(a, modal(S(0.06), [[1600, 0.5, 0.02]]), 0.8, 0.06); mix(a, env(bq(N(n), 'lp', 300, 0.8), 0.001, 0.02), 0.5); return { d: a, gain: 0.35 };
+      case 'dooropen': n = S(0.6); a = am(bq(N(n), 'bp', 380, 12, 560), function (t) { return Math.min(1, t / 0.08) * Math.exp(-t / 0.35) * (0.7 + 0.3 * Math.sin(2 * Math.PI * 9 * t)); }); mix(a, modal(S(0.06), [[1900, 0.5, 0.02]]), 0.6); return { d: a, gain: 0.4, rv: 0.2, far: 50 };
+      case 'doorclose': n = S(0.3); a = env(bq(N(n), 'lp', 300, 0.8), 0.002, 0.08); mix(a, sine(n, 95, 60, 0.07), 0.6); mix(a, modal(S(0.06), [[1900, 0.5, 0.02]]), 0.6, 0.02); return { d: sat(a, 1.4), gain: 0.5, rv: 0.2, far: 50 };
+      case 'loot': n = S(0.35); a = env(bq(N(n), 'bp', 350, 3), 0.002, 0.06); mix(a, rustle(n, 2200, 0.2, 0.6), 1, 0.06); return { d: a, gain: 0.38 };
+      case 'zip': n = S(0.32); a = env(bq(N(n), 'bp', 3000, 1), 0.02, 0.12, 0.12); am(a, function (t) { var f = 95 - 40 * t; return (Math.sin(2 * Math.PI * f * t) > 0.2) ? 1 : 0.15; }); return { d: a, gain: 0.28 };
+      case 'collapse': n = S(1.5); a = env(bq(N(n), 'lp', 800, 0.8), 0.005, 0.3); mix(a, sine(S(0.5), 70, 40, 0.18), 1); for (k = 0; k < 20; k++) mix(a, env(bq(N(S(0.05)), 'bp', 300 + Math.random() * 700, 3), 0.001, 0.012), 0.8, Math.random() * 0.8); return { d: sat(a, 1.8), gain: 0.6, rv: 0.45, far: 120 };
+      case 'build': n = S(0.35); a = env(bq(N(n), 'bp', 300, 2.5), 0.001, 0.06); mix(a, sine(n, 110, 80, 0.05), 0.6); [0.12, 0.22].forEach(function (t) { mix(a, modal(S(0.06), [[1400, 0.6, 0.03], [2600, 0.3, 0.02]]), 0.6, t); mix(a, click(S(0.03), 2400, 0.5), 1, t); }); return { d: a, gain: 0.45, rv: 0.15 };
+      case 'hammer': n = S(0.15); a = env(bq(N(n), 'hp', 2000, 0.7), 0.0003, 0.003); mix(a, env(bq(N(n), 'bp', 900, 3), 0.001, 0.05), 1.4); mix(a, modal(n, [[1300, 0.4, 0.04]]), 0.6); return { d: a, gain: 0.45 };
+      case 'repair': n = S(0.3); a = new Float32Array(n); [0, 0.14].forEach(function (t) { mix(a, env(bq(N(S(0.12)), 'bp', 900, 3), 0.001, 0.05), 1.3, t); mix(a, modal(S(0.08), [[1300, 0.4, 0.04]]), 0.6, t); }); return { d: a, gain: 0.42 };
+      case 'bell': {
+        n = S(2); var f0 = 880, R2 = [0.5, 1, 1.183, 1.506, 2, 2.514, 2.662, 3.011], D2 = [1.6, 1.2, 1, 0.8, 0.7, 0.5, 0.45, 0.35];
+        a = modal(n, R2.map(function (r, i) { return [f0 * r, 1 / (i + 1.5), D2[i]]; })); mix(a, click(S(0.03), 4000, 0.4), 1);
+        return { d: a, gain: 0.3, rv: 0.5 };
+      }
+      case 'lid': n = S(0.3); a = am(bq(N(n), 'bp', 450, 10, 600), function (t) { return Math.min(1, t / 0.04) * Math.exp(-t / 0.1); }); mix(a, env(bq(N(n), 'lp', 320, 0.8), 0.002, 0.04), 0.8, 0.12); return { d: a, gain: 0.38 };
+      case 'stash': n = S(0.18); a = rustle(n, 1900, 0.12, 0.7); mix(a, env(bq(N(S(0.06)), 'lp', 300, 0.8), 0.001, 0.02), 0.5, 0.05); return { d: a, gain: 0.3 };
+      case 'craft': n = S(0.4); a = rustle(n, 2000, 0.3, 0.4); [0, 0.09, 0.2].forEach(function (t, i) { mix(a, modal(S(0.08), [[1500 + i * 600, 0.5, 0.025], [3100 + i * 300, 0.25, 0.015]]), 0.8, t); }); return { d: a, gain: 0.35 };
+      case 'rustle': n = S(0.35); a = env(bq(N(n), 'hp', 1500, 0.7), 0.02, 0.1, 0.05); var g4 = 1; am(a, function () { if (Math.random() < 0.06) g4 = 0.2 + Math.random() * 0.8; return g4; }); return { d: a, gain: 0.3 };
+      case 'bite': { n = S(0.32); var fq = o.w ? 45 : 32; a = am(bq(N(n), 'lp', o.w ? 900 : 500, 0.8), function (t) { return (0.5 + 0.5 * Math.sin(2 * Math.PI * fq * t)) * Math.min(1, t / 0.03) * Math.exp(-t / 0.12); }); mix(a, env(bq(N(n), 'lp', 300, 0.8), 0.002, 0.05), 0.9, 0.1); return { d: sat(a, 1.8), gain: 0.5 }; }
+      case 'snap': n = S(0.45); a = env(bq(N(n), 'hp', 2500, 0.7), 0.0003, 0.004); mix(a, modal(n, [[1450, 0.8, 0.2], [2300, 0.5, 0.14], [3600, 0.3, 0.09]]), 0.9); mix(a, env(bq(N(n), 'lp', 300, 0.8), 0.001, 0.03), 0.6); return { d: a, gain: 0.55 };
+      case 'keypad': n = S(0.08); a = sine(n, o.ok ? 2400 : 1850, o.ok ? 2400 : 1850, 0.5, 0.002); env(a, 0.002, 0.03, 0.035); return { d: a, gain: 0.16 };
+      case 'beep': n = S(0.1); a = sine(n, 2800, 2800, 0.5, 0.002); env(a, 0.002, 0.03, 0.05); return { d: a, gain: 0.22 };
+      case 'zap': { n = S(0.4); var g5 = 0; a = am(bq(N(n), 'hp', 1500, 0.7), function () { if (Math.random() < 0.02) g5 = Math.random() < 0.4 ? 1 : 0; return g5; }); var hum = new Float32Array(n); for (k = 0; k < n; k++) { var t5 = k / SFX.sr; hum[k] = (Math.sin(2 * Math.PI * 100 * t5) + Math.sin(2 * Math.PI * 300 * t5) / 3 + Math.sin(2 * Math.PI * 500 * t5) / 5) * Math.exp(-t5 / 0.15); } mix(a, hum, 0.35); return { d: env(a, 0.002, 0.15), gain: 0.45 }; }
+      case 'pin': n = S(0.08); a = click(n, 2200, 0.8); mix(a, env(bq(N(n), 'lp', 600, 0.8), 0.001, 0.015), 0.4); return { d: a, gain: 0.25 };
+      case 'paper': n = S(0.25); a = rustle(n, 2600, 0.2, 1); return { d: a, gain: 0.25 };
+      case 'empty': n = S(0.06); a = modal(n, [[3400, 0.6, 0.02], [5200, 0.3, 0.012]]); mix(a, click(S(0.03), 4000, 0.5), 1); return { d: a, gain: 0.3 };
+      case 'reload': {
+        n = S(0.25); a = new Float32Array(n);
+        if (o.g === 'shotgun' && o.s > 0) { mix(a, click(S(0.03), 2600, 0.6), 1); mix(a, env(bq(N(n), 'lp', 450, 0.8), 0.001, 0.03), 0.8, 0.02); }
+        else if (!o.s) { mix(a, modal(S(0.06), [[2100, 0.5, 0.02]]), 0.8); mix(a, env(bq(N(n), 'bp', 1500, 1, 900), 0.01, 0.05), 0.6, 0.02); }
+        else if (o.s === 1) { mix(a, env(bq(N(n), 'lp', 420, 0.8), 0.001, 0.04), 1); mix(a, modal(S(0.06), [[2200, 0.6, 0.02], [3500, 0.3, 0.015]]), 0.7, 0.01); }
+        else { mix(a, env(bq(N(n), 'bp', 800, 1, 2000), 0.01, 0.05), 0.7); mix(a, modal(S(0.08), [[1900, 0.6, 0.04], [3300, 0.4, 0.03]]), 0.8, 0.1); }
+        return { d: a, gain: 0.42 };
+      }
+    }
+    return null;
+  }
+  function sfx(name, o) {
+    var c = sfxCtx(); if (!c) return;
+    o = o || {};
+    var key = name + (o.g ? ':' + o.g : '') + (o.s !== undefined ? ':' + o.s : '') + (o.big ? ':b' : '') + (o.h ? ':h' : '') + (o.w ? ':w' : '') + (o.ok ? ':o' : '');
+    var now = c.currentTime;
+    if (SFX.last[key] && now - SFX.last[key] < 0.02) return;   // the same sound twice in one frame
+    SFX.last[key] = now;
+    var L = SFX.buf[key] || (SFX.buf[key] = []);
+    if (L.length < 3) {   // three variations, made the first three times
+      var r = null; try { r = sfxMake(name, o); } catch (e) { r = null; }
+      if (!r) return;
+      var pk = 0; for (var i = 0; i < r.d.length; i++) pk = Math.max(pk, Math.abs(r.d[i]));
+      var b = c.createBuffer(1, r.d.length, SFX.sr), cd = b.getChannelData(0), sc = pk > 0 ? 1 / pk : 1;
+      for (i = 0; i < r.d.length; i++) cd[i] = r.d[i] * sc;
+      L.push({ b: b, gain: r.gain || 0.4, rv: r.rv || 0, far: r.far || 90, pv: r.pv === undefined ? 0.08 : r.pv });
+    }
+    var R = L[(Math.random() * L.length) | 0];
+    var vol = name === 'shot' && o.v !== undefined ? Math.max(0.6, Math.min(1.25, o.v / 0.1)) : (o.v !== undefined ? o.v : 1);
+    var d = o.d, pan = 0;
+    if (o.x !== undefined && RW.on !== undefined) {
+      var dx = o.x - P.x, dz = o.z - P.z; d = Math.hypot(dx, (o.y === undefined ? P.y : o.y) - P.y, dz);
+      var rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw), hl = Math.hypot(dx, dz) || 1; pan = Math.max(-0.85, Math.min(0.85, (dx * rx + dz * rz) / hl * Math.min(1, hl / 4)));
+    }
+    var src = c.createBufferSource(); src.buffer = R.b; src.playbackRate.value = 1 + (Math.random() - 0.5) * R.pv;
+    var node = src;
+    if (d !== undefined) {
+      var fall = Math.max(0, 1 - d / R.far); vol *= fall * fall * 0.9 + (d < R.far ? 0.1 : 0);
+      if (vol < 0.01) return;
+      var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.max(600, 18000 * Math.exp(-d / 45)); node.connect(lp); node = lp;
+    }
+    var g = c.createGain(); g.gain.value = vol * R.gain; node.connect(g);
+    var out = g;
+    if (pan && c.createStereoPanner) { var pn = c.createStereoPanner(); pn.pan.value = pan; g.connect(pn); out = pn; }
+    out.connect(SFX.bus);
+    if (R.rv) { var sg = c.createGain(); sg.gain.value = R.rv * vol * R.gain * (d !== undefined ? 1 + Math.min(1.5, d / 50) : 1); g.connect(sg); sg.connect(SFX.rev); }
+    src.start();
+  }
+  function sfxWarm() {   // make the common sounds ahead of time so the first shot or swing does not hitch
+    if (SFX.warm) return; SFX.warm = 1;
+    var list = [['click'], ['uiok'], ['deny'], ['equip'], ['swing'], ['chop'], ['mine'], ['hitmark'], ['shot', { g: 'rifle' }], ['shot', { g: 'pistol' }], ['hurt'], ['pickup']], i = 0;
+    (function next() { if (i >= list.length) return; var q = list[i++]; try { var c = sfxCtx(); if (c) { var key = q[0] + (q[1] && q[1].g ? ':' + q[1].g : ''); if (!SFX.buf[key] || !SFX.buf[key].length) { var r = sfxMake(q[0], q[1] || {}); if (r) { var pk = 0, k; for (k = 0; k < r.d.length; k++) pk = Math.max(pk, Math.abs(r.d[k])); var b = c.createBuffer(1, r.d.length, SFX.sr), cd = b.getChannelData(0); for (k = 0; k < r.d.length; k++) cd[k] = r.d[k] / (pk || 1); (SFX.buf[key] = SFX.buf[key] || []).push({ b: b, gain: r.gain || 0.4, rv: r.rv || 0, far: r.far || 90, pv: r.pv === undefined ? 0.08 : r.pv }); } } } } catch (e) {} setTimeout(next, 30); })();
+  }
+  window.addEventListener('pointerdown', sfxWarm, { once: true }); window.addEventListener('keydown', sfxWarm, { once: true });
 
   /* ---- premium UI theme (ui.css): kept as the last stylesheet so it wins over panels that add their own CSS later ---- */
   var UICSS = "/* ================= PREMIUM UI THEME \u2014 one consistent look for every screen ================= */\n:root {\n  --acc: #ff7a1a; --acc-hi: #ffa24d; --acc-lo: #d9560a; --acc-a: rgba(255, 122, 26, .16);\n  --ink: #f1ebdd; --muted: #a49e90; --hair: rgba(255, 240, 220, .09); --hair2: rgba(255, 240, 220, .2);\n  --glass: linear-gradient(165deg, rgba(36, 38, 40, .93) 0%, rgba(18, 19, 21, .95) 52%, rgba(10, 11, 12, .97) 100%);\n  --brk: linear-gradient(var(--acc), var(--acc)) left top / 18px 2px no-repeat, linear-gradient(var(--acc), var(--acc)) left top / 2px 18px no-repeat,\n         linear-gradient(rgba(255,240,220,.45), rgba(255,240,220,.45)) right bottom / 18px 1px no-repeat, linear-gradient(rgba(255,240,220,.45), rgba(255,240,220,.45)) right bottom / 1px 18px no-repeat,\n         linear-gradient(45deg, transparent calc(50% - 1px), rgba(255,240,220,.22) 50%, transparent calc(50% + 1px)) right top / 18px 18px no-repeat,\n         linear-gradient(45deg, transparent calc(50% - 1px), rgba(255,240,220,.22) 50%, transparent calc(50% + 1px)) left bottom / 18px 18px no-repeat;\n  --topline: linear-gradient(90deg, var(--acc) 0, var(--acc-hi) 18%, rgba(255, 122, 26, .35) 45%, rgba(255, 122, 26, 0) 75%) left top / 100% 2px no-repeat;\n  --bevel: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));\n  --bevel-s: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);\n  --bevel-xs: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);\n  --f-head: 'Barlow Condensed', 'Arial Narrow', var(--font-cjk);\n  --noise: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\");\n}\n\n/* ---------- full-screen overlays: blurred world, vignette, film grain, letterbox ---------- */\n#menu, #shop, #bag {\n  background: radial-gradient(130% 95% at 50% 42%, rgba(12, 13, 15, .28) 0%, rgba(6, 6, 7, .72) 62%, rgba(2, 2, 3, .93) 100%) !important;\n  -webkit-backdrop-filter: blur(9px) saturate(.72) brightness(.82); backdrop-filter: blur(9px) saturate(.72) brightness(.82);\n}\n#menu::before, #shop::before, #bag::before {\n  content: \"\"; position: absolute; inset: -50%; pointer-events: none; z-index: 0; opacity: .07; mix-blend-mode: overlay;\n  background: var(--noise); animation: uiGrain 1.1s steps(6) infinite;\n}\n#menu::after, #shop::after, #bag::after {\n  content: \"\"; position: absolute; inset: 0; pointer-events: none; z-index: 0;\n  background: linear-gradient(180deg, rgba(0,0,0,.55) 0, rgba(0,0,0,0) 9%, rgba(0,0,0,0) 91%, rgba(0,0,0,.55) 100%),\n              linear-gradient(90deg, rgba(255,122,26,.05), rgba(255,122,26,0) 30%, rgba(255,122,26,0) 70%, rgba(255,122,26,.04));\n}\n@keyframes uiGrain { 0% { transform: translate(0, 0); } 20% { transform: translate(-3%, 2%); } 40% { transform: translate(2%, -4%); } 60% { transform: translate(-4%, -1%); } 80% { transform: translate(3%, 3%); } 100% { transform: translate(0, 0); } }\n\n/* ---------- the panel ---------- */\n.card {\n  position: relative; z-index: 1;\n  background: var(--brk), var(--topline), var(--glass) !important;\n  border: 1px solid var(--hair) !important; border-top: 1px solid var(--hair) !important;\n  clip-path: var(--bevel);\n  padding: 26px 28px 24px;\n  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), inset 0 0 0 1px rgba(0,0,0,.35);\n}\n.card.lobby::before { display: none; }\n.card.ui-in { animation: uiCardIn .42s cubic-bezier(.16, .84, .24, 1) both; }\n.card.ui-in > * { animation: uiChildIn .5s cubic-bezier(.16, .84, .24, 1) both; }\n.card.ui-in > :nth-child(1) { animation-delay: .04s; } .card.ui-in > :nth-child(2) { animation-delay: .08s; } .card.ui-in > :nth-child(3) { animation-delay: .12s; }\n.card.ui-in > :nth-child(4) { animation-delay: .16s; } .card.ui-in > :nth-child(5) { animation-delay: .2s; } .card.ui-in > :nth-child(6) { animation-delay: .24s; }\n.card.ui-in > :nth-child(n+7) { animation-delay: .28s; }\n@keyframes uiCardIn { from { opacity: 0; transform: translateY(14px) scale(.985); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }\n@keyframes uiChildIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }\n\n/* ---------- type ---------- */\n.eyebrow { display: flex; align-items: center; gap: 10px; font: 700 13px/1 var(--f-head); letter-spacing: .34em; color: var(--acc); text-transform: uppercase; }\n.eyebrow::before { content: \"\"; flex: 0 0 22px; height: 2px; background: var(--acc); box-shadow: 0 0 10px rgba(255,122,26,.8); }\n.card h1 {\n  font-family: var(--f-head); font-weight: 700; text-transform: uppercase; letter-spacing: .07em; line-height: 1.02;\n  background: linear-gradient(180deg, #fffaf0 0%, #ece2cd 52%, #a99c82 100%); -webkit-background-clip: text; background-clip: text; color: transparent;\n  filter: drop-shadow(0 2px 14px rgba(0,0,0,.55));\n}\n.card.lobby h1 { font-size: 58px; letter-spacing: .08em; }\n.card p { color: #b3ad9f; }\n.lobby-sec h2, .sgroup > h2, .card.lobby .sec-head h2, .dstep > b, .rwp h3 {\n  display: flex; align-items: center; gap: 12px; font: 700 12px/1 var(--f-head) !important; letter-spacing: .32em !important; text-transform: uppercase; color: var(--muted) !important;\n}\n.lobby-sec h2::after, .sgroup > h2::after, .dstep > b::after, .rwp h3::after { content: \"\"; flex: 1 1 auto; height: 1px; background: linear-gradient(90deg, var(--hair2), rgba(255,240,220,0)); }\n.dstep > b { color: var(--acc) !important; }\n.sgroup, .dstep { border-top: 0 !important; padding-top: 4px !important; }\n\n/* ---------- primary button ---------- */\n.go {\n  font: 700 17px/1 var(--f-head); letter-spacing: .28em; text-transform: uppercase;\n  padding: 16px 18px 16px calc(18px + .28em); color: #1b0c01;\n  background: linear-gradient(180deg, #ffab5a 0%, #ff7f22 46%, #ec650c 100%);\n  border: 0; clip-path: var(--bevel-s); animation: none !important;\n  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), inset 0 -3px 0 rgba(120,40,0,.28) !important;\n  text-shadow: 0 1px 0 rgba(255,220,180,.35);\n}\n.go:not(:disabled):hover { filter: brightness(1.1) saturate(1.05); transform: translateY(-1px); }\n.go:not(:disabled):active { transform: translateY(1px) scale(.985); filter: brightness(.95); }\n.go::after { background: linear-gradient(100deg, transparent, rgba(255,255,255,.65), transparent) !important; }\n.go:disabled { background: linear-gradient(180deg, #4a4741, #33312d); color: #8a857a; text-shadow: none; }\n.go.alt { background: linear-gradient(180deg, rgba(255,122,26,.14), rgba(255,122,26,.04)) !important; color: var(--acc-hi); border: 0 !important;\n  box-shadow: inset 0 0 0 1px rgba(255,122,26,.7) !important; text-shadow: none; }\n.go.alt:not(:disabled):hover { background: linear-gradient(180deg, rgba(255,122,26,.26), rgba(255,122,26,.08)) !important; color: #ffd2a8; }\n\n/* ---------- secondary button ---------- */\n.ghost, #langBtn {\n  font: 600 14px/1.2 var(--f-head); letter-spacing: .24em; text-transform: uppercase; color: var(--ink);\n  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.012)) !important;\n  border: 1px solid var(--hair2) !important; clip-path: var(--bevel-xs);\n}\n.ghost:not(:disabled):hover, #langBtn:hover { border-color: rgba(255,122,26,.6) !important; color: #fff;\n  background: linear-gradient(90deg, rgba(255,122,26,.18), rgba(255,122,26,.04)) !important; box-shadow: inset 3px 0 0 var(--acc) !important; }\n#langBtn { letter-spacing: .1em; padding: 9px 14px; }\n\n/* ---------- choice cards (maps, modes, characters, shop rows, crafting) ---------- */\n.modecard, .who, .opt, .shrow, .mapcard {\n  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012)) !important;\n  border: 1px solid var(--hair) !important; clip-path: var(--bevel-xs);\n}\n.modecard:hover, .who:hover, .opt:hover, .shrow:hover, .mapcard:hover { border-color: rgba(255,240,220,.26) !important; background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.02)) !important; }\n.modecard[aria-pressed=\"true\"], .who[aria-pressed=\"true\"], .opt[aria-pressed=\"true\"], .mapcard[aria-pressed=\"true\"] {\n  border-color: rgba(255,122,26,.7) !important;\n  background: linear-gradient(90deg, rgba(255,122,26,.22) 0%, rgba(255,122,26,.07) 60%, rgba(255,122,26,.03) 100%) !important;\n  box-shadow: inset 3px 0 0 var(--acc), 0 0 26px rgba(255,122,26,.14) !important;\n}\n.mapcard { clip-path: none; }\n.modecard b, .who b, .opt b, .shrow b, .mapname { font-family: var(--f-head); letter-spacing: .1em; font-size: 17px; text-transform: uppercase; }\n.mapfig { border-color: rgba(255,240,220,.1) !important; box-shadow: inset 0 0 30px rgba(0,0,0,.6); }\n\n/* segmented controls, difficulty, tabs, key bindings */\n.seg button, .diffbtn, .tab, .keybtn {\n  font-family: var(--f-head), var(--font-cjk); font-weight: 600; letter-spacing: .1em;\n  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.01)) !important; border: 1px solid var(--hair) !important; color: var(--ink);\n}\n.seg button:hover, .diffbtn:hover, .tab:hover, .keybtn:hover { border-color: rgba(255,240,220,.3) !important; }\n.seg button[aria-pressed=\"true\"], .tab.on, .diffbtn[data-v=\"normal\"][aria-pressed=\"true\"] {\n  border-color: rgba(255,122,26,.75) !important; color: #fff;\n  background: linear-gradient(180deg, rgba(255,122,26,.26), rgba(255,122,26,.08)) !important; box-shadow: inset 0 -2px 0 var(--acc), 0 0 16px rgba(255,122,26,.2) !important;\n}\n.diffbtn[data-v=\"easy\"][aria-pressed=\"true\"] { background: linear-gradient(180deg, rgba(111,207,111,.26), rgba(111,207,111,.06)) !important; border-color: #6fcf6f !important; box-shadow: inset 0 -2px 0 #6fcf6f !important; }\n.diffbtn[data-v=\"hard\"][aria-pressed=\"true\"] { background: linear-gradient(180deg, rgba(255,90,30,.34), rgba(255,90,30,.1)) !important; border-color: #ff6a2a !important; box-shadow: inset 0 -2px 0 #ff6a2a !important; }\n.diffbtn[data-v=\"hell\"][aria-pressed=\"true\"] { background: linear-gradient(180deg, rgba(220,30,20,.55), rgba(140,10,5,.3)) !important; border-color: #ff3b2f !important; }\n.tab { text-transform: uppercase; }\n.keybtn { min-width: 88px; box-shadow: inset 0 -2px 0 rgba(0,0,0,.45) !important; }\n.keybtn.listen { border-color: var(--acc) !important; color: var(--acc-hi); }\n\n/* shop */\n.buy { font-family: var(--f-head) !important; letter-spacing: .12em; text-transform: uppercase; clip-path: var(--bevel-xs);\n  background: linear-gradient(180deg, #ffab5a 0%, #ff7f22 46%, #ec650c 100%) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.45) !important; }\n.buy:disabled { background: linear-gradient(180deg, #3d3b37, #2c2a27) !important; color: #7d786d !important; box-shadow: none !important; }\n.shrow em { color: #9be05b; text-transform: uppercase; font-family: var(--f-head); letter-spacing: .18em; }\n\n/* fields */\n.duel-card input.dtext, .duel-card textarea, .card input[type=text], .card input[type=password] {\n  background: linear-gradient(180deg, rgba(0,0,0,.5), rgba(0,0,0,.32)) !important; border: 1px solid var(--hair2) !important; color: var(--ink);\n  box-shadow: inset 0 2px 6px rgba(0,0,0,.5); transition: border-color .15s, box-shadow .2s;\n}\n.duel-card input.dtext:focus, .duel-card textarea:focus, .card input[type=text]:focus, .card input[type=password]:focus { border-color: var(--acc) !important; box-shadow: inset 0 2px 6px rgba(0,0,0,.5), 0 0 0 3px rgba(255,122,26,.18); outline: none; }\n.dstat { padding: 8px 12px; background: rgba(0,0,0,.25); border-left: 2px solid var(--hair2); }\n.dstat:empty { padding: 0; border: 0; background: none; }\n.dstat.err { border-left-color: var(--danger); background: rgba(229,57,43,.08); }\n.dstat.ok { border-left-color: var(--ok); background: rgba(143,209,79,.07); }\n\n/* sliders */\n.srow input[type=range] { -webkit-appearance: none; appearance: none; height: 22px; background: transparent; cursor: pointer; }\n.srow input[type=range]::-webkit-slider-runnable-track { height: 4px; background: rgba(255,240,220,.16); box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }\n.srow input[type=range]::-moz-range-track { height: 4px; background: rgba(255,240,220,.16); }\n.srow input[type=range]::-moz-range-progress { height: 4px; background: var(--acc); }\n.srow input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; background: #fff3e4; border: 2px solid var(--acc); transform: rotate(45deg); box-shadow: 0 0 10px rgba(255,122,26,.7); }\n.srow input[type=range]::-moz-range-thumb { width: 12px; height: 12px; background: #fff3e4; border: 2px solid var(--acc); border-radius: 0; transform: rotate(45deg); }\n.srow output { color: var(--acc-hi); font-size: 16px; }\n\n/* scrollbars */\n.card *, .card, #rwInv * { scrollbar-width: thin; scrollbar-color: rgba(255,122,26,.45) rgba(0,0,0,.25); }\n.card ::-webkit-scrollbar, .card::-webkit-scrollbar, #rwInv ::-webkit-scrollbar { width: 6px; height: 6px; }\n.card ::-webkit-scrollbar-thumb, .card::-webkit-scrollbar-thumb, #rwInv ::-webkit-scrollbar-thumb { background: rgba(255,122,26,.45); }\n.card ::-webkit-scrollbar-track, .card::-webkit-scrollbar-track, #rwInv ::-webkit-scrollbar-track { background: rgba(0,0,0,.25); }\n\n/* lobby extras: hazard stripes and a faint topographic watermark */\n.card.lobby { background: var(--brk), var(--topline),\n  url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='300' fill='none' stroke='%23fff' stroke-opacity='.035'%3E%3Cpath d='M20 260c60-40 90-110 170-120s120 50 210 10'/%3E%3Cpath d='M0 220c70-30 110-90 180-96s130 40 240 4'/%3E%3Cpath d='M30 180c50-20 90-70 150-74s120 30 220 0'/%3E%3Cpath d='M60 140c40-14 70-46 120-50s100 20 180-4'/%3E%3Cpath d='M100 104c30-8 50-26 84-28s70 12 120-2'/%3E%3C/svg%3E\") right top / 520px auto no-repeat,\n  var(--glass) !important; }\n.lobby-head { position: relative; padding-bottom: 18px; border-bottom: 1px solid var(--hair); }\n.lobby-head::after { content: \"\"; position: absolute; left: 0; bottom: -3px; width: 132px; height: 5px;\n  background: repeating-linear-gradient(-45deg, var(--acc) 0 6px, transparent 6px 12px); opacity: .85; }\n.deploy .go { font-size: 20px; padding-block: 20px; }\n.best b { color: var(--acc-hi); }\n\n/* ---------- in-game HUD ---------- */\n.lab, #fortLab { font-family: var(--f-head); text-transform: uppercase; letter-spacing: .32em; }\n.stat b { text-shadow: 0 2px 12px rgba(0,0,0,.75), 0 0 1px rgba(0,0,0,.9); }\n.bar, .fbar { position: relative; height: 8px; background: rgba(0,0,0,.55) !important; border: 1px solid var(--hair2) !important; clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }\n.bar::after, .fbar::after { content: \"\"; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(0,0,0,.55) calc(10% - 2px) 10%); pointer-events: none; }\n.bar i::after, .fbar i::after { content: \"\"; display: block; height: 45%; background: linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,255,255,0)); }\n.slot { background: linear-gradient(180deg, rgba(30,32,34,.72), rgba(12,13,14,.72)) !important; border: 1px solid var(--hair2) !important; clip-path: var(--bevel-xs); }\n.slot.on { background: linear-gradient(180deg, rgba(255,122,26,.34), rgba(255,122,26,.1)) !important; border-color: var(--acc) !important; box-shadow: inset 0 -2px 0 var(--acc) !important; }\n#banner { font-family: var(--f-head), var(--font-cjk); text-transform: uppercase; text-shadow: 0 0 24px rgba(255,122,26,.55), 0 2px 10px rgba(0,0,0,.8) !important; }\n#prompt span, #bagHud { background: var(--glass) !important; border: 1px solid var(--hair2) !important; box-shadow: inset 3px 0 0 var(--acc); }\n#bagHud { clip-path: var(--bevel-xs); }\n.tbtn { background: radial-gradient(circle at 50% 35%, rgba(40,42,44,.7), rgba(10,11,12,.7)) !important; border-color: var(--hair2) !important; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }\n.tbtn:active, .tbtn.held { background: radial-gradient(circle at 50% 35%, #ffab5a, #ec650c) !important; }\n\n/* ---------- the wild: inventory, crafting, building, welcome, missions, chat, belt ---------- */\n#rwInv, #rwBuild { background: radial-gradient(130% 95% at 50% 45%, rgba(8,9,10,.4), rgba(3,3,4,.9)) !important; -webkit-backdrop-filter: blur(8px) saturate(.75); backdrop-filter: blur(8px) saturate(.75); }\n.rwp { background: var(--brk), var(--topline), var(--glass) !important; border: 1px solid var(--hair) !important; clip-path: var(--bevel); padding: 14px 15px !important; }\n.rwslot { background: linear-gradient(180deg, rgba(0,0,0,.34), rgba(255,255,255,.035)) !important; border: 1px solid rgba(255,240,220,.07) !important; box-shadow: inset 0 1px 3px rgba(0,0,0,.55); }\n.rwslot:hover { border-color: rgba(255,240,220,.28) !important; }\n.rwslot.hb { background: linear-gradient(180deg, rgba(0,0,0,.25), rgba(255,255,255,.06)) !important; }\n.rwslot.held { background: linear-gradient(180deg, rgba(255,122,26,.08), rgba(255,122,26,.2)) !important; }\n.rwslot.sel { border-color: var(--acc) !important; box-shadow: inset 0 0 0 1px var(--acc), 0 0 14px rgba(255,122,26,.35) !important; }\n.rwbtn { font-family: var(--f-head), var(--font-cjk) !important; font-weight: 700 !important; letter-spacing: .14em; text-transform: uppercase; clip-path: var(--bevel-xs);\n  background: linear-gradient(180deg, #ffab5a 0%, #ff7f22 46%, #ec650c 100%) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.45); }\n.rwbtn.alt { background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.015)) !important; box-shadow: none; }\n.rwbtn:disabled { background: linear-gradient(180deg, #3a3834, #2a2926) !important; box-shadow: none; }\n.rwcr, .rwbp { background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.01)) !important; border: 1px solid var(--hair) !important; clip-path: var(--bevel-xs); }\n.rwcr:hover, .rwbp:hover { border-color: rgba(255,240,220,.24) !important; }\n.rwbp.on { border-color: rgba(255,122,26,.75) !important; background: linear-gradient(90deg, rgba(255,122,26,.22), rgba(255,122,26,.05)) !important; box-shadow: inset 3px 0 0 var(--acc); }\n.rwdet .hd img { background: linear-gradient(180deg, rgba(0,0,0,.34), rgba(255,255,255,.05)) !important; border: 1px solid var(--hair); }\n.rwh { background: linear-gradient(180deg, rgba(30,32,34,.7), rgba(10,11,12,.72)) !important; border: 1px solid var(--hair2) !important; clip-path: var(--bevel-xs); }\n.rwh.on { background: linear-gradient(180deg, rgba(255,122,26,.3), rgba(255,122,26,.1)) !important; border-color: var(--acc) !important; box-shadow: inset 0 -2px 0 var(--acc) !important; }\n.rwnote { background: linear-gradient(90deg, rgba(20,22,24,.85), rgba(20,22,24,.45)) !important; }\n#rwPick .ic { background: var(--glass) !important; border: 1px solid var(--hair2) !important; clip-path: var(--bevel-xs); }\n#rwPick span, #rwPrompt span { background: var(--glass) !important; border: 1px solid var(--hair2) !important; box-shadow: inset 3px 0 0 var(--acc); font-family: var(--f-head), var(--font-cjk) !important; letter-spacing: .12em !important; }\n#rwWel { background: var(--brk), var(--topline), var(--glass) !important; border: 1px solid var(--hair) !important; clip-path: var(--bevel); }\n#rwWel::before { display: none !important; }\n#rwWel h2 { font-family: var(--f-head), var(--font-cjk) !important; text-transform: uppercase; background: linear-gradient(180deg, #fffaf0, #a99c82); -webkit-background-clip: text; background-clip: text; color: transparent !important; }\n#rwWel kbd { background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.03)) !important; border-color: var(--hair2) !important; border-bottom-color: rgba(0,0,0,.6) !important; }\n#rwMis { background: linear-gradient(180deg, rgba(22,24,26,.78), rgba(12,13,14,.62)) !important; border: 1px solid var(--hair) !important; border-left: 2px solid var(--acc) !important; clip-path: var(--bevel-xs); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }\n#rwMis .mb { height: 3px !important; }\n#rwMis .mb i { background: linear-gradient(90deg, var(--acc-lo), var(--acc-hi)) !important; box-shadow: 0 0 8px rgba(255,122,26,.6); }\n#rwChat .cm { background: linear-gradient(90deg, rgba(14,15,17,.72), rgba(14,15,17,.25)) !important; }\n#rwChatIn { background: var(--glass) !important; border: 1px solid rgba(255,122,26,.7) !important; box-shadow: 0 0 0 3px rgba(255,122,26,.14); }\n#banner.rwb { background: var(--glass) !important; border: 1px solid var(--hair2) !important; box-shadow: inset 3px 0 0 var(--acc) !important; text-transform: none; text-shadow: none !important; clip-path: var(--bevel-xs); }\n\n#rwBtns button { font: 600 13px/1 var(--f-head), var(--font-cjk) !important; letter-spacing: .12em !important; text-transform: uppercase; color: var(--ink) !important;\n  background: linear-gradient(180deg, rgba(30,32,34,.78), rgba(10,11,12,.78)) !important; border: 1px solid var(--hair2) !important; border-radius: 0 !important;\n  padding: 8px 12px !important; clip-path: var(--bevel-xs); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }\n#rwBtns button:hover { border-color: rgba(255,122,26,.65) !important; box-shadow: inset 0 -2px 0 var(--acc) !important; }\n#rwMini { border: 2px solid rgba(255,240,220,.28) !important; box-shadow: 0 0 0 4px rgba(0,0,0,.35), 0 0 0 5px rgba(255,122,26,.45), 0 6px 22px rgba(0,0,0,.6); }\n#rwInfo { font-family: var(--f-head), var(--font-cjk) !important; letter-spacing: .06em; font-size: 14px !important; }\n#rwMap { background: radial-gradient(120% 90% at 50% 45%, rgba(6,12,16,.55), rgba(2,4,6,.92)) !important; -webkit-backdrop-filter: blur(8px) saturate(.7); backdrop-filter: blur(8px) saturate(.7); }\n#rwBig { border: 1px solid var(--hair2) !important; border-radius: 0 !important; box-shadow: 0 0 0 6px rgba(0,0,0,.45), 0 0 0 7px rgba(255,122,26,.5), 0 30px 80px rgba(0,0,0,.7); clip-path: none; }\n#rwLegend { font-family: var(--f-head), var(--font-cjk); letter-spacing: .12em; margin-top: 16px !important; padding: 7px 14px; background: var(--glass); border: 1px solid var(--hair); }\n/* keyboard focus: an inset ring, so the cut corners never hide it */\n.go:focus-visible, .ghost:focus-visible, .buy:focus-visible, .rwbtn:focus-visible, .modecard:focus-visible, .who:focus-visible, .opt:focus-visible, .mapcard:focus-visible,\n.seg button:focus-visible, .diffbtn:focus-visible, .tab:focus-visible, .keybtn:focus-visible, .slot:focus-visible, #rwBtns button:focus-visible, #langBtn:focus-visible {\n  outline: 2px solid #fff3e4 !important; outline-offset: -5px !important;\n}\n\n@media (max-width: 760px) {\n  .card { padding: 20px 16px 18px; clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }\n  .card.lobby h1 { font-size: 40px; }\n}\n@media (prefers-reduced-motion: reduce) {\n  .card.ui-in, .card.ui-in > * { animation: none !important; }\n  #menu::before, #shop::before, #bag::before { animation: none; }\n}\n";
