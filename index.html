@@ -5354,6 +5354,8 @@ Object.assign(EN, {
       case 'RN': banner(zt('先把里面的东西拿空才能拆', 'Empty it before removing it'), 1400); delete RW.myX[m.id | 0]; break;
       case 'Rx': rwPieceDel(m.id | 0); break;
       case 'Ro': rwPieceDoor(m.id | 0, m.o | 0); break;
+      case 'RL': rwLockMsg(m); break;
+      case 'RW': rwWrongCode(m); break;
       case 'Ru': rwPieceGrade(m.id | 0, m.g | 0); break;
       case 'Rr': { var bc = RWB[m.k]; if (RWD[m.k]) rwGive(RWD[m.k], 1); else if (bc) { for (var ck in bc.c) rwGive(ck, bc.c[ck]); banner(zt('这里不能建造（被占用了）', 'Could not build there (taken)'), 1400); } break; }
       case 'Rk': { var vic = coins; coins += 80; banner(zt('击杀玩家 +80', 'Player kill +80'), 1500); tone(900, 1300, 0.12, 'sine', 0.07); break; }
@@ -5464,7 +5466,7 @@ Object.assign(EN, {
   /* ---- per frame ---- */
   function rwTick(dt) {
     RW.gatherCd = Math.max(0, RW.gatherCd - dt);
-    rwSaveTick(dt);
+    rwSaveTick(dt); rwTrapTick(dt);
     rwStream(P.x, P.z, false);
     rwTick2(dt);
     if (!coopG()) rwNpcTick(dt);
@@ -5478,7 +5480,7 @@ Object.assign(EN, {
     RW.uiT -= dt;
     if (RW.uiT <= 0) { RW.uiT = 0.2; rwUpdateUi(); }
   }
-  function rwSpeedMul() { return RW.on && P.y < RW_SEA + 0.3 ? 0.6 : 1; }
+  function rwSpeedMul() { return (RW.on && P.y < RW_SEA + 0.3 ? 0.6 : 1) * (RW.on && RW.trapT > gtime ? 0 : 1); }   // a bear trap holds you
 
   /* ---- HUD, mini map and the full live map ---- */
   function rwInitUi() {
@@ -6197,6 +6199,7 @@ Object.assign(EN, {
     } else if (id === 'sbag') {
       x.fillStyle = '#3e4a2c'; x.beginPath(); x.ellipse(32, 38, 24, 14, 0, 0, 7); x.fill(); x.strokeStyle = '#26301a'; x.lineWidth = 2; x.beginPath(); x.ellipse(32, 38, 15, 8, 0, 0, 7); x.stroke();
       x.fillStyle = '#8a8460'; x.fillRect(26, 22, 14, 8); x.strokeStyle = '#8a6a3a'; x.lineWidth = 3; x.beginPath(); x.moveTo(20, 30); x.lineTo(20, 46); x.moveTo(44, 30); x.lineTo(44, 46); x.stroke();
+    } else if (RWICO2[id]) { RWICO2[id](x, poly);
     } else if (id === 'bag') {
       poly([[14, 24], [50, 24], [56, 56], [8, 56]], '#7a6440', '#33281a', 2.5); poly([[22, 24], [26, 12], [38, 12], [42, 24]], '#5e4c30');
     } else if (d.gun !== undefined) {
@@ -6381,6 +6384,7 @@ Object.assign(EN, {
   function rwCraft(id) {
     var r = null; RW_CRAFT.forEach(function (q) { if (q[0] === id) r = q; });
     if (!r) return;
+    if (RW_BENCH[id] && !rwNearBench()) { tone(150, 120, 0.06, 'square', 0.04); banner(zt('要站在工作台旁边才能制作', 'Stand next to a workbench to craft this'), 1500); return; }
     if (!rwPay(r[1])) { tone(150, 120, 0.06, 'square', 0.04); banner(zt('材料不够', 'Not enough materials'), 1000); return; }
     var left = rwGive(id, 1);
     if (left > 0) { var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw); rwDropAdd([{ id: id, n: left }], P.x + fx, P.z + fz, null, 600, groundAt(P.x + fx, P.z + fz, P.y + 0.7)); banner(zt('背包满了，东西放在脚边', 'Inventory full: dropped at your feet'), 1500); }
@@ -6618,7 +6622,7 @@ Object.assign(EN, {
   });
   function vmAx() { return Math.max(0.25, Math.min(1, camera.aspect / 1.6)); }   // narrow / upright screens cut the sides off, so held things move inwards
   function vmPose(hk) {   // per-frame first-person animation for hands / tools
-    var hands = hk === 'hands' || hk === 'item' || hk === 'dep' || hk === 'bomb';
+    var hands = hk === 'hands' || hk === 'item' || hk === 'dep' || hk === 'bomb' || hk === 'lock';
     if (VM.kind !== hk) {
       VM.kind = hk;
       for (var k in VM.tools) VM.tools[k].visible = k === hk;
@@ -6671,6 +6675,7 @@ Object.assign(EN, {
     else if (hk === 'item') { if (want && !latched) { latched = true; rwUseSlot(RW_HOT0 + RW.hot); } }
     else if (hk === 'dep') { if (want && !latched) { latched = true; rwPlaceDep(); } }
     else if (hk === 'bomb') { if (want && !latched) { latched = true; rwThrowBomb(); } }
+    else if (hk === 'lock') { if (want && !latched) { latched = true; rwLockUse(); } }
   }
   function heldAlt() {   // right click / aim button with something that is not a gun
     var hk = heldKind();
@@ -6738,12 +6743,18 @@ Object.assign(EN, {
   function rwInteract() {
     if (!RW.on || RW.dead || state !== 'playing') return false;
     var pc = rwPieceRay(3.2);
-    if (pc && pc.k === 'dr') {
+    if (pc && rwIsDoor(pc.k)) {
       if (rwCanDoor(pc)) { dSend({ t: 'Ro', id: pc.id }); tone(260, 180, 0.08, 'square', 0.05); }
+      else if (pc.lock) rwCodeOpen(pc, 'try');
       else { banner(zt('门锁着：只有建门的人或在领地柜上授权的人能打开', 'Locked: only the builder or people authorised on the tool cupboard can open it'), 1600); tone(150, 120, 0.06, 'square', 0.04); }
       return true;
     }
-    if (pc && (pc.k === 'bx' || pc.k === 'fu')) { rwContOpen(pc); return true; }
+    if (pc && rwIsCont(pc.k)) { rwContOpen(pc); return true; }
+    if (pc && (pc.k === 'ln' || (pc.k === 'bt' && pc.op))) {
+      if (rwSafeFrom(pc)) { dSend({ t: 'Ro', id: pc.id }); tone(400, 600, 0.06, 'triangle', 0.05); if (pc.k === 'bt') RW.trig[pc.id] = 0; }
+      else banner(zt('这不是你的', 'This is not yours'), 1100);
+      return true;
+    }
     if (pc && pc.k === 'tc') { dSend({ t: 'Ra', id: pc.id }); tone(500, 700, 0.08, 'triangle', 0.05); return true; }
     var dp = rwDropTarget(); if (dp) { rwDropPick(dp); return true; }
     var hm = rwFindNode(function (q) { return q.kind === 'hemp'; }); if (hm) { rwPickHemp(hm); return true; }
@@ -6755,10 +6766,10 @@ Object.assign(EN, {
     var s = RW.on ? rwHeldSlot() : null;
     setText('hWeap', hk === 'hands' ? zt('空手', 'Hands') : s ? rwIN(s.id) : '');
     var res = hk === 'item' && s && RW_RES_TOOL[s.id];
-    setText('hAmmo', (hk === 'item' || hk === 'dep' || hk === 'bomb') && s ? '×' + s.n : hk === 'plan' ? zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]) : '—');
+    setText('hAmmo', (hk === 'item' || hk === 'dep' || hk === 'bomb' || hk === 'lock') && s ? '×' + s.n : hk === 'plan' ? zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]) : '—');
     var L = KF(), R = KA();
     setText('hRel', hk === 'hands' ? L + zt(' 出拳', ' punch') : hk === 'plan' ? L + zt(' 放置 · ', ' place · ') + R + zt(' 选部件 · ', ' parts · ') + keyLabel(KB.reload) + zt(' 旋转', ' rotate')
-      : hk === 'hammer' ? L + zt(' 修理 / 升级 · ', ' repair / upgrade · ') + R + zt(' 拆除', ' remove') : hk === 'dep' ? L + zt(' 放下', ' place') : hk === 'bomb' ? L + zt(' 扔出去', ' throw') : res ? L + (s.id === 'wood' ? zt(' 拿出建筑图纸去建房子', ' take out the building plan') : zt(' 拿出锤子升级建筑', ' take out the hammer')) : hk === 'item' ? L + zt(' 使用', ' use') : L + zt(' 挥动采集', ' swing to gather'));
+      : hk === 'hammer' ? L + zt(' 修理 / 升级 · ', ' repair / upgrade · ') + R + zt(' 拆除', ' remove') : hk === 'dep' ? L + zt(' 放下', ' place') : hk === 'bomb' ? L + zt(' 扔出去', ' throw') : hk === 'lock' ? L + zt(' 装到门上', ' fit to a door') : res ? L + (s.id === 'wood' ? zt(' 拿出建筑图纸去建房子', ' take out the building plan') : zt(' 拿出锤子升级建筑', ' take out the hammer')) : hk === 'item' ? L + zt(' 使用', ' use') : L + zt(' 挥动采集', ' swing to gather'));
   }
   function rwLoot(n) {
     var near = rwMonNear(n.x, n.z), rich = !!near, r = Math.random(), items = [];
@@ -6848,7 +6859,7 @@ Object.assign(EN, {
   }
   function rwInvNav(c) {   // arrow keys move the selection: 4 backpack rows + the belt row (and into an open box / furnace on the right)
     if (RW.cont && RW.cont.s && RW.cfoc >= 0) {
-      var nC = RW.cont.s.length, cols = RW.cont.k === 'fu' ? 4 : 6, cr = Math.floor(RW.cfoc / cols), cc = RW.cfoc % cols, rows = Math.ceil(nC / cols);
+      var nC = RW.cont.s.length, cols = rwIsFurn(RW.cont.k) ? 4 : 6, cr = Math.floor(RW.cfoc / cols), cc = RW.cfoc % cols, rows = Math.ceil(nC / cols);
       if (c === 'ArrowLeft') { if (cc === 0) { RW.cfoc = -1; rwInvRender(); return; } cc--; }
       else if (c === 'ArrowRight') cc = Math.min(cols - 1, cc + 1); else if (c === 'ArrowUp') cr = (cr + rows - 1) % rows; else if (c === 'ArrowDown') cr = (cr + 1) % rows;
       RW.cfoc = Math.min(nC - 1, cr * cols + cc); rwInvRender(); return;
@@ -6877,6 +6888,7 @@ Object.assign(EN, {
     rwContClose();
     if (RW.invEl) RW.invEl.style.display = 'none';
     if (RW.buildEl) RW.buildEl.style.display = 'none';
+    if (RW.codeEl) RW.codeEl.style.display = 'none'; RW.code = null;
     if (rwDrag && rwDrag.ghost && rwDrag.ghost.parentNode) rwDrag.ghost.parentNode.removeChild(rwDrag.ghost);
     rwDrag = null;
     var was = RW.ui; RW.ui = '';
@@ -6923,7 +6935,7 @@ Object.assign(EN, {
       if (s.n > 1) dh += '<button class="rwbtn alt" data-a="split" type="button">' + zt('拆分', 'Split') + '</button>';
       if (s.n > 1) dh += '<button class="rwbtn alt" data-a="drop1" type="button">' + zt('丢 1 个', 'Drop 1') + '</button>';
       dh += '<button class="rwbtn alt" data-a="drop" type="button">' + zt('丢在地上', 'Drop') + '</button></div>';
-      if (RW.cont && RW.cont.s) dh += '<div class="rwacts"><button class="rwbtn" data-a="put" type="button">' + (RW.cont.k === 'fu' ? zt('放进熔炉', 'Put in furnace') : zt('放进箱子', 'Put in box')) + (isTouch ? '' : ' [Enter]') + '</button></div>';
+      if (RW.cont && RW.cont.s) dh += '<div class="rwacts"><button class="rwbtn" data-a="put" type="button">' + (rwIsFurn(RW.cont.k) ? zt('放进去', 'Put in') : zt('放进箱子', 'Put in box')) + (isTouch ? '' : ' [Enter]') + '</button></div>';
     }
     $('rwiDet').innerHTML = dh;
     // crafting, or the box / furnace you have open
@@ -6932,9 +6944,10 @@ Object.assign(EN, {
     else {
     $('rwiCraft').style.maxHeight = ''; rp.style.width = '290px'; rp.style.maxWidth = '';
     h = '';
+    var bench = rwNearBench();
     RW_CRAFT.forEach(function (q) {
-      var ok = rwHas(q[1]);
-      h += '<div class="rwcr"><img src="' + rwIconUrl(q[0]) + '" alt=""><div>' + duEsc(rwIN(q[0])) + '<small>' + rwCostTxt(q[1], true) + '</small></div><button class="rwbtn" data-c="' + q[0] + '" type="button"' + (ok ? '' : ' disabled') + '>' + zt('制作', 'Craft') + '</button></div>';
+      var nb = RW_BENCH[q[0]] && !bench, ok = rwHas(q[1]) && !nb;
+      h += '<div class="rwcr"><img src="' + rwIconUrl(q[0]) + '" alt=""><div>' + duEsc(rwIN(q[0])) + '<small>' + rwCostTxt(q[1], true) + (RW_BENCH[q[0]] ? ' · <em class="' + (nb ? 'no' : '') + '">' + zt('需要工作台', 'needs a workbench') + '</em>' : '') + '</small></div><button class="rwbtn" data-c="' + q[0] + '" type="button"' + (ok ? '' : ' disabled') + '>' + zt('制作', 'Craft') + '</button></div>';
     });
     $('rwiCraft').innerHTML = h;
     }
@@ -6954,7 +6967,8 @@ Object.assign(EN, {
     st: '<path d="M8 40V32h8v-8h8v-8h8V8h8v32Z" fill="#8a6a4a"/>',
     dr: '<rect x="14" y="6" width="20" height="36" fill="#6a4a2a"/><circle cx="29" cy="25" r="2" fill="#e8d28a"/>'
   };
-  function rwIsWall(k) { return k === 'wl' || k === 'dw' || k === 'wn'; }
+  function rwIsWall(k) { return !!RW_WALLS[k]; }
+  function rwIsFullWall(k) { return k === 'wl' || k === 'dw' || k === 'wn' || k === 'wf' || k === 'dd'; }   // walls you can stack on or put a floor on
   function rwBuildTex(kind) {
     var c = document.createElement('canvas'); c.width = c.height = 128;
     var x = c.getContext('2d'), i, j;
@@ -6989,6 +7003,7 @@ Object.assign(EN, {
   }
   function rwPieceParts(k, r, dep) {   // boxes [cx, cy, cz, w, h, d, solid] relative to the part's origin
     if (RWD[k]) return rwDepParts(k, r);
+    var L2 = rwPieceParts2(k, r, dep); if (L2) return L2;
     var L = [];
     function W(u, y0, y1, len) { var cy = (y0 + y1) / 2, h = y1 - y0; if (r === 0) L.push([u, cy, 0, len, h, 0.2, 1]); else L.push([0, cy, u, 0.2, h, len, 1]); }
     if (k === 'fd') { L.push([0, -dep / 2, 0, 3, dep, 3, 1]); L.push([0, -0.06, 0, 3.04, 0.12, 3.04, 0]); }
@@ -7001,8 +7016,10 @@ Object.assign(EN, {
     return L;
   }
   function rwPieceGeo(k, r, dep) {
+    if (k === 'rf') return rwRoofGeo();
     var pos = [], nor = [], uvs = [];
     rwPieceParts(k, r, dep).forEach(function (q) {
+      if (q[7]) return;   // collision-only part
       var g = rwTexBox(q[3], q[4], q[5]); g.translate(q[0], q[1], q[2]);
       var ng = g.toNonIndexed(), pa = ng.attributes.position.array, na = ng.attributes.normal.array, ua = ng.attributes.uv.array, i;
       for (i = 0; i < pa.length; i++) { pos.push(pa[i]); nor.push(na[i]); }
@@ -7034,7 +7051,7 @@ Object.assign(EN, {
     var i;
     if (on && !p.cb.length) {
       p.parts.forEach(function (q) {
-        if (!q[6]) return;
+        if (!q[6] || (q[8] && p.op)) return;   // an open door leaf lets you through
         var x = p.x + q[0], y = p.y + q[1], z = p.z + q[2], hw = q[3] / 2, hh = q[4] / 2, hd = q[5] / 2;
         var b = { minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd, y0: y - hh, h: y + hh, rwp: 1 }, k = { minX: x - hw, maxX: x + hw, minY: y - hh, maxY: y + hh, minZ: z - hd, maxZ: z + hd };
         boxes.push(b); blockers.push(k); p.cb.push(b); p.bl.push(k);
@@ -7052,23 +7069,18 @@ Object.assign(EN, {
     rwBuildMats();
     var p = { id: id, k: k, x: +a[2], y: +a[3], z: +a[4], r: (a[5] | 0) & 3, g: Math.max(0, Math.min(2, a[6] | 0)), o: String(a[7] || ''), op: a[8] | 0, cb: [], bl: [], ang: 0 };
     p.hmax = rwMaxHp(k, p.g); p.hp = +a[9] > 0 ? +a[9] : p.hmax; if (k === 'tc') p.auth = (a[10] && a[10].a) || [p.o];
-    if (rwIsWall(k) || k === 'dr') p.r &= 1;
-    p.dep = k === 'fd' ? rwFdDepth(p.x, p.z, p.y) : 0;
+    p.lock = rwIsDoor(k) && a[10] && a[10].l ? (a[10].a || []).map(String) : null;
+    if (rwIsWall(k) || RW_HOST[k] || RW_XW[k]) p.r &= 1;
+    p.dep = k === 'fd' ? rwFdDepth(p.x, p.z, p.y) : k === 'ft' ? rwFtDepth(p.x, p.z, p.y, p.r) : 0;
     p.parts = rwPieceParts(k, p.r, p.dep);
-    if (k === 'dr') {
-      var piv = new THREE.Group(), slab = new THREE.Mesh(rwTexBox(1.16, 2.18, 0.08), RW.dmat), knob = new THREE.Mesh(gBox(0.05, 0.05, 0.14), RW.hmat);
-      slab.position.set(0.58, 1.09, 0); knob.position.set(1.0, 1.0, 0); piv.add(slab); piv.add(knob);
-      var root = new THREE.Group(); root.add(piv); p.piv = piv;
-      if (p.r === 0) { piv.position.set(-0.58, 0, 0); } else { piv.position.set(0, 0, 0.58); piv.rotation.y = Math.PI / 2; p.base = Math.PI / 2; }
-      p.base = p.r === 0 ? 0 : Math.PI / 2; p.ang = p.op ? 1 : 0; piv.rotation.y = p.base - (p.op ? Math.PI / 2 : 0);
-      p.m = root;
-    } else if (RWD[k]) p.m = rwDepMesh(p);
+    if (rwIsDoor(k)) p.m = rwDoorMesh(p);
+    else if (RWD[k]) p.m = rwDepMesh(p);
     else p.m = new THREE.Mesh(rwPieceGeo(k, p.r, p.dep), RW.bmat[p.g]);
     p.m.position.set(p.x, p.y, p.z);
     RW.bgroup.add(p.m);
     p.pk = p.parts.map(function (q) { return { minX: p.x + q[0] - q[3] / 2, maxX: p.x + q[0] + q[3] / 2, minY: p.y + q[1] - q[4] / 2, maxY: p.y + q[1] + q[4] / 2, minZ: p.z + q[2] - q[5] / 2, maxZ: p.z + q[2] + q[5] / 2 }; });
-    if (k === 'dr') { var q0 = p.pk[0]; q0.minX -= 0.3; q0.maxX += 0.3; q0.minZ -= 0.3; q0.maxZ += 0.3; }
-    if (!(k === 'dr' && p.op)) rwPieceSolid(p, true);
+    p.parts.forEach(function (q, i) { if (q[8]) { var b = p.pk[i]; b.minX -= 0.3; b.maxX += 0.3; b.minZ -= 0.3; b.maxZ += 0.3; } });   // door leaves are easy to aim at
+    rwPieceSolid(p, true);
     RW.pieces[id] = p; RW.plist.push(p);
     if (k === 'fd') rwFdChanged(p);
     if (p.o === RW.me && RW.pendB && RW.pendB.length) RW.pendB.shift();
@@ -7084,16 +7096,16 @@ Object.assign(EN, {
     if (!RW.myX[id] && !RW.tearing && Math.hypot(p.x - P.x, p.z - P.z) < 80) { burst(new THREE.Vector3(p.x, p.y + 1, p.z), 14, partMatG, 6); tone(120, 50, 0.3, 'sawtooth', 0.08); }
     if (RW.myX[id] && RWD[p.k]) { delete RW.myX[id]; if (rwGive(RWD[p.k], 1) === 0) rwNote(RWD[p.k], 1); }
     if (RW.cont && RW.cont.id === id) { RW.cont = null; if (RW.ui === 'inv') rwInvRender(); }
-    if (RW.myX[id]) { delete RW.myX[id]; var back = Math.floor((RWB[p.k].c.wood || 0) / 2); if (back > 0) { var left = rwGive('wood', back); if (back - left > 0) rwNote('wood', back - left); } }
+    if (RW.myX[id]) { delete RW.myX[id]; var cst = RWB[p.k].c; for (var rk in cst) { var back = Math.floor(cst[rk] / 2); if (back > 0) { var left = rwGive(rk, back); if (back - left > 0) rwNote(rk, back - left); } } }   // half the cost back
   }
-  function rwPieceDoor(id, op) {
-    var p = RW.pieces[id]; if (!p || p.k !== 'dr') return;
+  function rwPieceDoor(id, op) {   // doors open and close; lanterns and bear traps switch
+    var p = RW.pieces[id]; if (!p) return;
     p.op = op ? 1 : 0;
-    rwPieceSolid(p, !p.op);
-    if (Math.hypot(p.x - P.x, p.z - P.z) < 40) tone(p.op ? 220 : 180, p.op ? 300 : 120, 0.12, 'triangle', 0.05);
+    if (rwIsDoor(p.k)) { rwPieceSolid(p, false); rwPieceSolid(p, true); if (Math.hypot(p.x - P.x, p.z - P.z) < 40) tone(p.op ? 220 : 180, p.op ? 300 : 120, 0.12, 'triangle', 0.05); }
+    else rwToggleShow(p);
   }
   function rwPieceGrade(id, g) {
-    var p = RW.pieces[id]; if (!p || p.k === 'dr' || RWD[p.k]) return;
+    var p = RW.pieces[id]; if (!p || rwNoUp(p.k)) return;
     p.g = Math.max(0, Math.min(2, g | 0)); p.m.material = RW.bmat[p.g]; p.hmax = rwMaxHp(p.k, p.g); p.hp = p.hmax;
     if (Math.hypot(p.x - P.x, p.z - P.z) < 40) burst(new THREE.Vector3(p.x, p.y + 1.5, p.z), 8, partMatG, 3);
   }
@@ -7106,7 +7118,7 @@ Object.assign(EN, {
     var i, p;
     for (i = 0; i < RW.plist.length; i++) {
       p = RW.plist[i];
-      if (p.k === 'dr') { var tg = p.op ? 1 : 0; if (Math.abs(p.ang - tg) > 0.001) { p.ang += (tg - p.ang) * Math.min(1, dt * 9); p.piv.rotation.y = p.base - p.ang * Math.PI / 2; } }
+      if (p.leaves) { var tg = p.op ? 1 : 0; if (Math.abs(p.ang - tg) > 0.001) { p.ang += (tg - p.ang) * Math.min(1, dt * (p.k === 'xg' || p.k === 'gd' ? 4 : 9)); rwDoorAnim(p, p.ang); } }
     }
     RW.pcull -= dt;
     if (RW.pcull <= 0) { RW.pcull = 0.5; for (i = 0; i < RW.plist.length; i++) { p = RW.plist[i]; p.m.visible = Math.abs(p.x - P.x) < 330 && Math.abs(p.z - P.z) < 330; } }
@@ -7140,14 +7152,15 @@ Object.assign(EN, {
       if (k === 'fd' && p.k === 'fd') [[3, 0], [-3, 0], [0, 3], [0, -3]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: 0, snap: true }, p.x + q[0], p.y, p.z + q[1]); });
       if (rwIsWall(k)) {
         if (p.k === 'fd' || p.k === 'fl') [[1.5, 0, 1], [-1.5, 0, 1], [0, 1.5, 0], [0, -1.5, 0]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: q[2] }, p.x + q[0], p.y + 1.5, p.z + q[1]); });
-        if (rwIsWall(p.k)) consider({ x: p.x, y: p.y + 3, z: p.z, r: p.r }, p.x, p.y + 4.5, p.z);
+        if (rwIsFullWall(p.k)) consider({ x: p.x, y: p.y + 3, z: p.z, r: p.r }, p.x, p.y + 4.5, p.z);
       }
-      if (k === 'fl') {
-        if (rwIsWall(p.k)) { var sx = p.r === 1 ? 1.5 : 0, sz = p.r === 0 ? 1.5 : 0; consider({ x: p.x + sx, y: p.y + 3, z: p.z + sz, r: 0 }, p.x + sx, p.y + 3, p.z + sz); consider({ x: p.x - sx, y: p.y + 3, z: p.z - sz, r: 0 }, p.x - sx, p.y + 3, p.z - sz); }
-        if (p.k === 'fl') [[3, 0], [-3, 0], [0, 3], [0, -3]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: 0 }, p.x + q[0], p.y, p.z + q[1]); });
+      if (k === 'ft' && p.k === 'fd') [0, 1, 2, 3].forEach(function (rr) { var dx = [1, 0, -1, 0][rr], dz = [0, 1, 0, -1][rr]; consider({ x: p.x + dx * 2.25, y: p.y, z: p.z + dz * 2.25, r: rr }, p.x + dx * 2.25, p.y - 0.3, p.z + dz * 2.25); });
+      if (k === 'fl' || k === 'rf') {
+        if (rwIsFullWall(p.k)) { var sx = p.r === 1 ? 1.5 : 0, sz = p.r === 0 ? 1.5 : 0; consider({ x: p.x + sx, y: p.y + 3, z: p.z + sz, r: 0 }, p.x + sx, p.y + 3, p.z + sz); consider({ x: p.x - sx, y: p.y + 3, z: p.z - sz, r: 0 }, p.x - sx, p.y + 3, p.z - sz); }
+        if (k === 'fl' && p.k === 'fl') [[3, 0], [-3, 0], [0, 3], [0, -3]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: 0 }, p.x + q[0], p.y, p.z + q[1]); });
       }
       if (k === 'st' && (p.k === 'fd' || p.k === 'fl')) consider({ x: p.x, y: p.y, z: p.z, r: RW.brot }, p.x, p.y + 0.6, p.z);
-      if (k === 'dr' && p.k === 'dw') consider({ x: p.x, y: p.y, z: p.z, r: p.r }, p.x, p.y + 1.1, p.z);
+      if (RW_HOST[k] && p.k === RW_HOST[k]) consider({ x: p.x, y: p.y, z: p.z, r: p.r }, p.x, p.y + (k === 'wb' ? 1.5 : 1.1), p.z);
     });
     if (!best && k === 'fd' && hit && dir.y < 0) {   // free foundation: keep it in front of you, never on top of you
       var hx = ax - P.x, hz = az - P.z, hl = Math.hypot(hx, hz);
@@ -7162,7 +7175,7 @@ Object.assign(EN, {
       best.tmin = mn; best.tmax = mx;
       if (!best.snap) best.y = mx + 0.15;
       best.dep = Math.max(0.5, best.y - mn + 0.6);
-    } else best.dep = 0;
+    } else best.dep = k === 'ft' ? rwFtDepth(best.x, best.z, best.y, best.r) : 0;
     best.why = rwBuildWhy(best);
     return best;
   }
@@ -7177,7 +7190,8 @@ Object.assign(EN, {
       if (Math.abs(p.x - c.x) > 3.2 || Math.abs(p.z - c.z) > 3.2 || Math.abs(p.y - c.y) > 3.2) continue;
       var same = Math.abs(p.x - c.x) < 0.3 && Math.abs(p.z - c.z) < 0.3 && Math.abs(p.y - c.y) < 0.3;
       if (k === 'fd' && p.k === 'fd' && Math.abs(p.x - c.x) < 2.9 && Math.abs(p.z - c.z) < 2.9 && Math.abs(p.y - c.y) < 3) return zt('和别的地基重叠了', 'Overlaps another foundation');
-      if (same && ((rwIsWall(k) && rwIsWall(p.k)) || (k === p.k) || (k === 'fl' && p.k === 'fd'))) return zt('这里已经有了', 'Something is already here');
+      if (same && ((rwIsWall(k) && rwIsWall(p.k)) || (k === p.k) || (RW_HOST[k] && RW_HOST[p.k] === RW_HOST[k]) || ((k === 'fl' || k === 'rf') && (p.k === 'fd' || p.k === 'fl' || p.k === 'rf')))) return zt('这里已经有了', 'Something is already here');
+      if (k === 'ft' && p.k === 'fd' && Math.abs(p.x - c.x) < 2.2 && Math.abs(p.z - c.z) < 2.2 && Math.abs(p.y - c.y) < 0.6) return zt('被旁边的地基挡住了', 'Another foundation is in the way');
     }
     if (k === 'fd') {
       if (c.tmin < 0.25) return zt('不能建在水里或沙滩上', 'Not in the water or on the beach');
@@ -7196,7 +7210,7 @@ Object.assign(EN, {
       var nx = Math.max(cx - q[3] / 2, Math.min(P.x, cx + q[3] / 2)), nz = Math.max(cz - q[5] / 2, Math.min(P.z, cz + q[5] / 2));
       if (Math.hypot(P.x - nx, P.z - nz) < 0.42 && cy + q[4] / 2 > P.y + 0.1 && cy - q[4] / 2 < P.y + 1.8) return zt('你站在这里，会卡住自己', 'You are standing in the way');
     }
-    if (!rwHas(RWB[k].c)) return zt('材料不够：', 'Not enough: ') + rwIN('wood') + ' ' + RWB[k].c.wood;
+    if (!rwHas(RWB[k].c)) return zt('材料不够：', 'Not enough: ') + rwCostPlain(RWB[k].c);
     return '';
   }
   function rwBuildTick() {
@@ -7205,7 +7219,7 @@ Object.assign(EN, {
     var c = rwBuildCand(); RW.bc = c;
     if (!c) { if (RW.ghost) RW.ghost.visible = false; return; }
     rwBuildMats();
-    var key = c.k + c.r + (c.k === 'fd' ? '_' + Math.round(c.dep * 4) : '');
+    var key = c.k + c.r + (c.k === 'fd' || c.k === 'ft' ? '_' + Math.round(c.dep * 4) : '');
     RW.gcache = RW.gcache || {};
     var geo = RW.gcache[key] || (RW.gcache[key] = rwPieceGeo(c.k, c.r, Math.round(c.dep * 4) / 4 || 1));
     if (!RW.ghost) { RW.ghost = new THREE.Mesh(geo, RW.gOk); RW.ghost.renderOrder = 5; RW.group.add(RW.ghost); }
@@ -7216,7 +7230,7 @@ Object.assign(EN, {
   function rwPlace() {
     if (heldKind() === 'dep') { rwPlaceDep(); return; }
     var c = RW.bc;
-    if (!c) { banner(RW.bsel === 'fd' ? zt('对着地面放地基', 'Aim at the ground to place a foundation') : RW.bsel === 'dr' ? zt('门要装在门框墙上', 'Doors go into a doorway') : RW.bsel === 'st' ? zt('楼梯要放在地基或楼板上', 'Stairs go on a foundation or floor') : RW.bsel === 'fl' ? zt('楼板要搭在墙顶上', 'Floors sit on top of walls') : zt('墙要放在地基或楼板的边上', 'Walls go on the edge of a foundation or floor'), 1400); tone(150, 120, 0.06, 'square', 0.04); return; }
+    if (!c) { banner(rwPlaceHint(RW.bsel), 1400); tone(150, 120, 0.06, 'square', 0.04); return; }
     if (c.why) { banner(c.why, 1300); tone(150, 120, 0.06, 'square', 0.04); return; }
     if (!rwPay(RWB[c.k].c)) return;
     var R = function (v) { return Math.round(v * 100) / 100; };
@@ -7235,7 +7249,7 @@ Object.assign(EN, {
       dSend({ t: 'Rq', id: p.id }); tone(500, 800, 0.08, 'triangle', 0.06); return;
     }
     if (p.o !== RW.me) { banner(zt('只有主人能升级', 'Only the owner can upgrade'), 1200); return; }
-    if (p.k === 'dr' || RWD[p.k]) { banner(zt('这个不能升级', 'This cannot be upgraded'), 1200); return; }
+    if (rwNoUp(p.k)) { banner(zt('这个不能升级', 'This cannot be upgraded'), 1200); return; }
     if (p.g >= 2) { banner(zt('已经是金属了', 'Already metal'), 1200); return; }
     var cost = rwUpCost(p.k, p.g + 1);
     if (!rwPay(cost)) { banner(zt('升级需要 ', 'Upgrade needs ') + Object.keys(cost).map(function (kk) { return rwIN(kk) + ' ' + cost[kk]; }).join(', '), 1500); return; }
@@ -7260,11 +7274,15 @@ Object.assign(EN, {
         if (b || e.target === el || (e.target.closest && e.target.closest('[data-x]'))) rwUiClose();
       });
     }
-    var h = '<div class="rwp" style="max-width:560px;width:100%"><h3>' + zt('建筑图纸 · 选择部件', 'BUILDING PLAN · PICK A PART') + '</h3><div class="rwbg">';
-    RWB_ORDER.forEach(function (k) {
-      h += '<button class="rwbp' + (k === RW.bsel ? ' on' : '') + '" data-k="' + k + '" type="button"><svg viewBox="0 0 48 48" width="48" height="48">' + RWB_SVG[k] + '</svg>' + zt(RWB[k].n[0], RWB[k].n[1]) + '<small>' + rwCostTxt(RWB[k].c, true) + '</small></button>';
+    var h = '<div class="rwp" style="max-width:780px;width:100%;max-height:calc(100vh - 40px);overflow-y:auto"><h3>' + zt('建筑图纸 · 选择部件', 'BUILDING PLAN · PICK A PART') + '</h3><div class="rwbg2">';
+    RWB_GROUPS.forEach(function (gp) {
+      h += '<h4>' + zt(gp[0][0], gp[0][1]) + '</h4><div class="rwbg">';
+      gp[1].forEach(function (k) {
+        h += '<button class="rwbp' + (k === RW.bsel ? ' on' : '') + '" data-k="' + k + '" type="button"><svg viewBox="0 0 48 48" width="48" height="48">' + RWB_SVG[k] + '</svg>' + zt(RWB[k].n[0], RWB[k].n[1]) + '<small>' + rwCostTxt(RWB[k].c, true) + '</small></button>';
+      });
+      h += '</div>';
     });
-    h += '</div><p>' + zt('地基放在平地上，旁边的地基会自动对齐；墙放在地基或楼板的边上；楼板搭在墙顶上；门装进门框墙。' + keyLabel(KB.reload) + ' 旋转楼梯。拿锤子：' + KF() + ' 升级成石头或金属，连按两下 ' + KA() + ' 拆除自己的建筑。门只有建门的人能开关。', 'Foundations go on fairly flat ground and snap to each other; walls go on foundation or floor edges; floors sit on top of walls; doors go into doorways. ' + keyLabel(KB.reload) + ' turns stairs. With the hammer: ' + KF() + ' upgrades to stone or metal, ' + KA() + ' twice removes your own parts. Only the builder can open a door.') + '</p>' +
+    h += '</div><p>' + zt('地基放在平地上，旁边的地基会自动对齐；地基台阶接在地基边上；墙放在地基或楼板的边上；楼板和屋顶搭在墙顶上；门装进门框墙，双开门装进双开门框，车库门装进墙框，栏杆装进窗户墙。' + keyLabel(KB.reload) + ' 旋转楼梯。拿锤子：' + KF() + ' 升级成石头或金属，连按两下 ' + KA() + ' 拆除自己的建筑。高墙、工作台、陷阱、家具在背包里制作。', 'Foundations snap to each other; steps go on a foundation edge; walls go on foundation or floor edges; floors and roofs sit on top of walls; doors go into doorways, double doors into double doorways, garage doors into wall frames, bars into window walls. ' + keyLabel(KB.reload) + ' turns stairs. With the hammer: ' + KF() + ' upgrades to stone or metal, ' + KA() + ' twice removes your own parts. High walls, the workbench, traps and furniture are crafted in the inventory.') + '</p>' +
       '<button class="rwbtn alt" data-x="1" type="button">' + zt('关闭', 'Close') + '</button></div>';
     RW.buildEl.innerHTML = h;
     state = 'bag'; RW.ui = 'build'; releaseInput();
@@ -7279,18 +7297,22 @@ Object.assign(EN, {
     var txt = '', pick = null;
     if (state === 'playing' && !RW.dead) {
       var hk = heldKind(), pc = rwPieceRay(3.2);
-      if (pc && pc.k === 'dr') txt = rwCanDoor(pc) ? KE() + ' ' + (pc.op ? zt('关门', 'Close the door') : zt('开门', 'Open the door')) : zt('这扇门锁着', 'Locked door');
-      else if (pc && pc.k === 'bx') txt = KE() + ' ' + zt('打开储物箱', 'Open the box');
-      else if (pc && pc.k === 'fu') txt = KE() + ' ' + zt('打开熔炉', 'Open the furnace') + (pc.op ? zt('（正在燃烧）', ' (burning)') : '');
+      if (pc && rwIsDoor(pc.k)) txt = rwCanDoor(pc) ? KE() + ' ' + (pc.op ? zt('关上', 'Close') : zt('打开', 'Open')) + ' ' + zt(RWB[pc.k].n[0], RWB[pc.k].n[1]) + (pc.lock ? zt(' · 有密码锁', ' · code lock') : '') : pc.lock ? KE() + ' ' + zt('输入密码', 'Enter the code') : zt('锁着', 'Locked');
+      else if (pc && (pc.k === 'bx' || pc.k === 'lb')) txt = KE() + ' ' + zt('打开', 'Open') + ' ' + zt(RWB[pc.k].n[0], RWB[pc.k].n[1]);
+      else if (pc && rwIsFurn(pc.k)) txt = KE() + ' ' + zt('打开', 'Open') + ' ' + zt(RWB[pc.k].n[0], RWB[pc.k].n[1]) + (pc.op ? zt('（正在燃烧）', ' (burning)') : '');
+      else if (pc && pc.k === 'wk') txt = zt('工作台：站在旁边可以制作弹药、护甲、炸药、密码锁和陷阱', 'Workbench: stand here to craft ammo, armor, explosives, code locks and traps');
+      else if (pc && pc.k === 'ln') txt = rwSafeFrom(pc) ? KE() + ' ' + (pc.op ? zt('熄灭灯笼', 'Put out the lantern') : zt('点亮灯笼', 'Light the lantern')) : zt('灯笼', 'Lantern');
+      else if (pc && pc.k === 'bt' && pc.op && rwSafeFrom(pc)) txt = KE() + ' ' + zt('重新布置捕兽夹', 'Re-arm the bear trap');
       else if (pc && pc.k === 'tc') txt = KE() + ' ' + ((pc.auth || []).indexOf(RW.me) >= 0 ? zt('取消在领地柜上的授权', 'Remove your authorisation') : zt('在领地柜上授权自己（25 米内可以建造和开门）', 'Authorise yourself (build and open doors within 25 m)')) + ' · ' + zt('已授权 ', 'authorised: ') + (pc.auth || []).length;
       else if (pc && pc.k === 'sb') txt = pc.o === RW.me ? zt('你的睡袋：死了可以在这里重生', 'Your sleeping bag: respawn here after dying') : zt('别人的睡袋', "Someone else's sleeping bag");
       var dp = !txt ? rwDropTarget() : null; if (dp) pick = dp;
       if (!txt && !dp) { var hmp = rwFindNode(function (q) { return q.kind === 'hemp'; }); if (hmp) txt = KE() + ' ' + zt('采集麻（布 ×10）', 'Pick hemp (cloth ×10)'); }
       if (!txt && !dp) { var cr = rwFindNode(function (q) { return q.kind === 'crate'; }); if (cr) txt = KE() + ' ' + zt('打开补给箱', 'Open the crate'); }
       if (!txt && hk === 'dep') { var dc = RW.bc, ds = rwHeldSlot(); txt = (ds ? rwIN(ds.id) : '') + ' · ' + (dc ? (dc.why || KL1() + zt(' 放下', ' place')) : zt('对着地面', 'aim at the ground')); }
+      if (!txt && hk === 'lock') txt = pc && rwIsDoor(pc.k) && pc.o === RW.me ? KL1() + zt(' 给这扇门设密码', ' set a code on this door') : zt('对着自己的门或大门', 'Aim at your own door or gate');
       if (!txt && hk === 'bomb') txt = KL1() + zt(' 扔出去，粘住后几秒爆炸，快跑开！', ' throw: it sticks and blows after a few seconds. Run!');
-      if (!txt && hk === 'plan') { var c = RW.bc, nm = zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]); txt = nm + ' · ' + rwIN('wood') + ' ' + RWB[RW.bsel].c.wood + ' (' + rwCount('wood') + ')' + (c && c.why ? ' · ' + c.why : c ? ' · ' + KL1() + zt(' 放置', ' place') : '') + ' · ' + KR() + zt(' 换部件', ' parts'); }
-      if (!txt && hk === 'hammer' && pc) txt = zt(RWB[pc.k].n[0], RWB[pc.k].n[1]) + ' · ' + (RWD[pc.k] || pc.k === 'dr' ? '' : zt(RW_GRADE[pc.g][0], RW_GRADE[pc.g][1]) + ' · ') + zt('生命 ', 'HP ') + Math.ceil(pc.hp) + '/' + pc.hmax + (pc.hp < pc.hmax && (pc.o === RW.me || rwTcCovered(pc.x, pc.z)) ? ' · ' + KL1() + zt(' 修理', ' repair') : '') + (pc.o === RW.me ? (pc.g < 2 && pc.k !== 'dr' ? ' · ' + KL1() + zt(' 升级', ' upgrade') + '（' + Object.keys(rwUpCost(pc.k, pc.g + 1)).map(function (kk) { return rwIN(kk) + ' ' + rwUpCost(pc.k, pc.g + 1)[kk]; }).join('') + '）' : '') + ' · ' + KR() + zt(' 拆除', ' remove') : ' · ' + zt('别人的', "someone else's"));
+      if (!txt && hk === 'plan') { var c = RW.bc, nm = zt(RWB[RW.bsel].n[0], RWB[RW.bsel].n[1]); txt = nm + ' · ' + rwCostPlain(RWB[RW.bsel].c) + (c && c.why ? ' · ' + c.why : c ? ' · ' + KL1() + zt(' 放置', ' place') : '') + ' · ' + KR() + zt(' 换部件', ' parts'); }
+      if (!txt && hk === 'hammer' && pc) txt = zt(RWB[pc.k].n[0], RWB[pc.k].n[1]) + ' · ' + (rwNoUp(pc.k) ? '' : zt(RW_GRADE[pc.g][0], RW_GRADE[pc.g][1]) + ' · ') + zt('生命 ', 'HP ') + Math.ceil(pc.hp) + '/' + pc.hmax + (pc.hp < pc.hmax && (pc.o === RW.me || rwTcCovered(pc.x, pc.z)) ? ' · ' + KL1() + zt(' 修理', ' repair') : '') + (pc.o === RW.me ? (pc.g < 2 && !rwNoUp(pc.k) ? ' · ' + KL1() + zt(' 升级', ' upgrade') + '（' + Object.keys(rwUpCost(pc.k, pc.g + 1)).map(function (kk) { return rwIN(kk) + ' ' + rwUpCost(pc.k, pc.g + 1)[kk]; }).join('') + '）' : '') + ' · ' + KR() + zt(' 拆除', ' remove') : ' · ' + zt('别人的', "someone else's"));
       if (!txt && VT[hk] && hk !== 'hammer') { var n = rwFindNode(function (q) { return q.kind !== 'crate' && q.kind !== 'hemp'; }); if (n) txt = KL() + ' ' + (n.kind === 'tree' ? zt('砍树，得到木材', 'chop: wood') : n.kind === 'rock' ? zt('敲石头，得到石头', 'mine: stone') : zt('开采，得到金属矿', 'mine: metal ore')); }
     }
     rwPickShow(pick);
@@ -7665,7 +7687,8 @@ Object.assign(EN, {
   RW_RES_TOOL.frags = 'hammer'; delete RW_RES_TOOL.metal;
   var RWD = { bx: 'box', fu: 'furnace', tc: 'tc', sb: 'sbag' }, TC_RANGE = 25;
   Object.assign(RWB, { bx: { c: {}, n: ['储物箱', 'Storage Box'] }, fu: { c: {}, n: ['熔炉', 'Furnace'] }, tc: { c: {}, n: ['领地柜', 'Tool Cupboard'] }, sb: { c: {}, n: ['睡袋', 'Sleeping Bag'] } });
-  function rwMaxHp(k, g) { return k === 'dr' ? 200 : k === 'bx' ? 150 : k === 'fu' || k === 'tc' ? 300 : k === 'sb' ? 60 : [250, 500, 1000][g | 0] || 250; }
+  var RW_HP = { dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
+  function rwMaxHp(k, g) { return RW_HP[k] || [250, 500, 1000][g | 0] || 250; }
   function rwIsDep(k) { return !!RWD[k]; }
   function rwCurK() { var hk = heldKind(); if (hk === 'plan') return RW.bsel; if (hk === 'dep') { var s = rwHeldSlot(); return s ? RWI[s.id].dep : null; } return null; }
   function rwTcBlocked(x, z) {   // an unfriendly tool cupboard covers x,z
@@ -7676,14 +7699,16 @@ Object.assign(EN, {
     for (var i = 0; i < RW.plist.length; i++) { var p = RW.plist[i]; if (p.k === 'tc' && Math.hypot(p.x - x, p.z - z) < TC_RANGE && (p.auth || []).indexOf(RW.me) >= 0) return true; }
     return false;
   }
-  function rwCanDoor(p) { return p.o === RW.me || rwTcCovered(p.x, p.z); }
+  function rwCanDoor(p) { if (p.lock) return p.lock.indexOf(RW.me) >= 0; return p.o === RW.me || rwTcCovered(p.x, p.z); }   // a code lock decides on its own
 
   /* ---- deployables: placement ---- */
   function rwDepParts(k, r) {
+    var P2 = rwDepParts2(k, r); if (P2) return P2;
     var s = (r & 1) === 1, D = { bx: [1.0, 0.62, 0.6, 1], fu: [1.0, 1.35, 1.0, 1], tc: [0.85, 1.6, 0.5, 1], sb: [0.85, 0.12, 2.0, 0] }[k];
     return [[0, D[1] / 2, 0, s ? D[2] : D[0], D[1], s ? D[0] : D[2], D[3]]];
   }
   function rwDepCand(k) {
+    if (RW_XW[k]) return rwXwCand(k);
     var o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     var tw = rayWall(o.x, o.y, o.z, dir.x, dir.y, dir.z, 5);
     if (tw >= 5 || dir.y > -0.05) return null;
@@ -7699,9 +7724,13 @@ Object.assign(EN, {
     if (rwNearMon(c.x, c.z, 8)) return zt('离据点太近了', 'Too close to a monument');
     if (c.k !== 'tc' && rwTcBlocked(c.x, c.z)) return zt('这里在别人的领地柜范围内', "Inside someone else's tool cupboard range");
     if (c.k === 'tc' && rwTcBlocked(c.x, c.z)) return zt('这里已经有别人的领地柜了', 'Someone else already owns this area');
-    var q = rwDepParts(c.k, c.r)[0], x0 = c.x - q[3] / 2, x1 = c.x + q[3] / 2, z0 = c.z - q[5] / 2, z1 = c.z + q[5] / 2, y0 = c.y + 0.05, y1 = c.y + q[4];
-    for (var i = 0; i < boxes.length; i++) { var b = boxes[i]; if (b.maxX > x0 && b.minX < x1 && b.maxZ > z0 && b.minZ < z1 && b.h > y0 && b.y0 < y1) return zt('被挡住了', 'Something is in the way'); }
-    if (q[6]) { var nx = Math.max(x0, Math.min(P.x, x1)), nz = Math.max(z0, Math.min(P.z, z1)); if (Math.hypot(P.x - nx, P.z - nz) < 0.45 && y1 > P.y + 0.1 && y0 < P.y + 1.8) return zt('你站在这里', 'You are standing there'); }
+    var parts = rwDepParts(c.k, c.r), e = 0.06;   // e: walls snapped end to end only touch
+    for (var j = 0; j < parts.length; j++) {
+      var q = parts[j], x0 = c.x + q[0] - q[3] / 2 + e, x1 = c.x + q[0] + q[3] / 2 - e, z0 = c.z + q[2] - q[5] / 2 + e, z1 = c.z + q[2] + q[5] / 2 - e;
+      var y0 = Math.max(c.y + 0.05, c.y + q[1] - q[4] / 2), y1 = c.y + q[1] + q[4] / 2;
+      for (var i = 0; i < boxes.length; i++) { var b = boxes[i]; if (b.maxX > x0 && b.minX < x1 && b.maxZ > z0 && b.minZ < z1 && b.h > y0 && b.y0 < y1) return zt('被挡住了', 'Something is in the way'); }
+      if (q[6]) { var nx = Math.max(x0, Math.min(P.x, x1)), nz = Math.max(z0, Math.min(P.z, z1)); if (Math.hypot(P.x - nx, P.z - nz) < 0.45 && y1 > P.y + 0.1 && y0 < P.y + 1.8) return zt('你站在这里', 'You are standing there'); }
+    }
     return '';
   }
   function rwPlaceDep() {
@@ -7717,6 +7746,7 @@ Object.assign(EN, {
     var g = new THREE.Group(), inner = new THREE.Group(); g.add(inner); inner.rotation.y = -p.r * Math.PI / 2;
     function B(w, h, d, mat, x, y, z) { var m = new THREE.Mesh(gBox(w, h, d), mat); m.position.set(x, y, z); inner.add(m); return m; }
     var M = rwDepMats();
+    if (rwDepMesh2(p, B, M, inner)) return g;
     if (p.k === 'bx') { B(1.0, 0.5, 0.6, RW.dmat, 0, 0.25, 0); B(1.04, 0.12, 0.64, M.trim, 0, 0.56, 0); B(0.14, 0.12, 0.05, M.metal, 0, 0.42, 0.32); [-0.48, 0.48].forEach(function (x) { B(0.06, 0.6, 0.62, M.trim, x, 0.3, 0); }); }
     else if (p.k === 'fu') {
       var stone = RW.bmat[1]; B(1.0, 1.0, 1.0, stone, 0, 0.5, 0); B(0.8, 0.15, 0.8, M.trim, 0, 1.07, 0); B(0.32, 0.5, 0.32, stone, 0.2, 1.4, -0.2);
@@ -7735,6 +7765,7 @@ Object.assign(EN, {
       bag: new THREE.MeshStandardMaterial({ color: 0x3e4a2c, roughness: 1 }), pillow: new THREE.MeshStandardMaterial({ color: 0x8a8460, roughness: 1 }) });
   }
   function rwFurnaceLit(p) {
+    if (p.flame) { p.flame.visible = !!p.op; return; }   // campfire
     if (!p.glow) return;
     p.glow.color.setHex(p.op ? 0xff8a2a : 0x1a1410); p.glow.emissive.setHex(p.op ? 0xff5a10 : 0); if ('emissiveIntensity' in p.glow) p.glow.emissiveIntensity = p.op ? 1.4 : 0;
   }
@@ -7751,22 +7782,23 @@ Object.assign(EN, {
   function rwContPut(i) {
     var s = RW.inv[i]; if (!s || !RW.cont || !RW.cont.s) return;
     if (RW.cont.k === 'fu' && s.id !== 'wood' && s.id !== 'metal' && s.id !== 'meat') { banner(zt('熔炉只能放木材、金属矿、生肉', 'The furnace takes wood, metal ore and raw meat'), 1400); return; }
+    if (RW.cont.k === 'cf' && s.id !== 'wood' && s.id !== 'meat') { banner(zt('篝火只能放木材和生肉', 'The campfire takes wood and raw meat'), 1400); return; }
     dSend({ t: 'Bp', id: RW.cont.id, it: s.id, n: s.n });
     RW.inv[i] = null; rwInvChanged();
     tone(300, 380, 0.05, 'square', 0.04);
   }
   function rwContTake(j) { if (RW.cont && RW.cont.s && RW.cont.s[j]) { dSend({ t: 'Bt', id: RW.cont.id, s: j }); tone(380, 300, 0.05, 'square', 0.04); } }
-  function rwContLight() { if (RW.cont && RW.cont.k === 'fu') dSend({ t: 'Bl', id: RW.cont.id }); }
+  function rwContLight() { if (RW.cont && rwIsFurn(RW.cont.k)) dSend({ t: 'Bl', id: RW.cont.id }); }
   function rwContHtml() {
     var C = RW.cont, h = '', i;
-    var title = C.k === 'fu' ? zt('熔炉', 'FURNACE') : zt('储物箱', 'STORAGE BOX');
+    var title = zt(RWB[C.k].n[0], RWB[C.k].n[1].toUpperCase());
     h += '<h3>' + title + '</h3>';
     if (!C.s) return h + '<p>' + zt('正在打开……', 'Opening…') + '</p>';
     function slot(j, label) { var q = C.s[j], cls = 'rwslot' + (RW.cfoc === j ? ' sel' : ''); return '<div class="' + cls + '" data-cs="' + j + '">' + (label ? '<i>' + label + '</i>' : '') + (q ? '<img src="' + rwIconUrl(q[0]) + '" alt=""><b>' + q[1] + '</b>' : '') + '</div>'; }
-    if (C.k === 'bx') { h += '<div class="rwgrid" id="rwiCont">'; for (i = 0; i < C.s.length; i++) h += slot(i); h += '</div>'; }
+    if (!rwIsFurn(C.k)) { h += '<div class="rwgrid" id="rwiCont">'; for (i = 0; i < C.s.length; i++) h += slot(i); h += '</div>'; }
     else {
       h += '<div class="rwgrid" id="rwiCont" style="grid-template-columns:repeat(4,var(--s))">' + slot(0, zt('燃料', 'FUEL')) + slot(1, zt('原料', 'IN')) + slot(2, zt('产出', 'OUT')) + slot(3, zt('产出', 'OUT')) + '</div>';
-      h += '<p>' + (C.lit ? '<b style="color:#ff9a3a">' + zt('正在燃烧', 'Burning') + '</b> · ' : '') + zt('木材当燃料，放金属矿炼成金属碎片、放生肉烤成熟肉。每秒炼 1 个，每 2 秒烧 1 个木材。', 'Wood is fuel. Metal ore becomes fragments, raw meat gets cooked: 1 per second, 1 wood every 2 seconds.') + '</p>';
+      h += '<p>' + (C.lit ? '<b style="color:#ff9a3a">' + zt('正在燃烧', 'Burning') + '</b> · ' : '') + (C.k === 'cf' ? zt('木材当燃料，放生肉烤成熟肉。每秒烤 1 个，每 2 秒烧 1 个木材。', 'Wood is fuel, raw meat gets cooked: 1 per second, 1 wood every 2 seconds.') : zt('木材当燃料，放金属矿炼成金属碎片、放生肉烤成熟肉。每秒炼 1 个，每 2 秒烧 1 个木材。', 'Wood is fuel. Metal ore becomes fragments, raw meat gets cooked: 1 per second, 1 wood every 2 seconds.')) + '</p>';
       h += '<div class="rwacts"><button class="rwbtn" data-a="light" type="button">' + (C.lit ? zt('熄火', 'Put out') : zt('点火', 'Light')) + (isTouch ? '' : ' [' + keyLabel(KB.reload) + ']') + '</button></div>';
     }
     h += '<p>' + (isTouch ? zt('点背包里的物品再点「放进去」，点这里的格子拿出来。', 'Tap an item, then Put in. Tap a slot here to take it out.')
@@ -7927,7 +7959,7 @@ Object.assign(EN, {
     var was = p.hp; p.hp = hp;
     if (hp < was && Math.hypot(p.x - P.x, p.z - P.z) < 60) burst(new THREE.Vector3(p.x, p.y + 1.2, p.z), 6, partMatG, 4);
   }
-  function rwRepairCost(p) { return p.g === 2 ? { frags: 10 } : p.g === 1 ? { stone: 15 } : { wood: 15 }; }
+  function rwRepairCost(p) { return p.g === 2 || p.k === 'sd' || p.k === 'gd' || p.k === 'bt' ? { frags: 10 } : p.g === 1 || p.k === 'xs' ? { stone: 15 } : { wood: 15 }; }
 
   /* ---- hemp: walk up and pick it for cloth ---- */
   function rwPickHemp(n) {
@@ -8267,6 +8299,414 @@ Object.assign(EN, {
     for (id in RW.nst) if (!(id in K.nst)) chk(id);
     RW.unparked = (RW.unparked | 0) + 1;
     return true;
+  }
+
+  /* ================= BUILDING 2.0: more parts, doors and code locks, high external walls, workbench, traps, furniture ================= */
+  var RW_WALLS = { wl: 1, dw: 1, wn: 1, hw: 1, lw: 1, wf: 1, dd: 1 };           // pieces that sit in a wall slot
+  var RW_DOORS = { dr: 1, sd: 1, d2: 1, gd: 1, xg: 1 };                         // pieces that open and close
+  var RW_HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // inserts and the wall they go into
+  var RW_CONT = { bx: 18, lb: 30, fu: 4, cf: 4 };                               // containers and their slots
+  var RW_XW = { xw: 1, xs: 1, xg: 1 };                                          // high external walls / gate: 3 m pieces snapping end to end
+  var RW_BENCH = { ammo: 1, armor: 1, satchel: 1, c4: 1, mine: 1, lock: 1, trap: 1 };   // crafted only next to a workbench
+  function rwIsDoor(k) { return !!RW_DOORS[k]; }
+  function rwIsCont(k) { return !!RW_CONT[k]; }
+  function rwIsFurn(k) { return k === 'fu' || k === 'cf'; }
+  function rwNoUp(k) { return !!RW_HOST[k] || !!RWD[k]; }   // doors, inserts and placeables are not upgraded with the hammer
+
+  Object.assign(RWI, {
+    lock: { n: ['密码锁', 'Code Lock'], st: 5, tool: 'lock', d: ['拿在手上对着自己的门按开火键，设一个 4 位密码。知道密码的人输入一次就能一直开这扇门。输错会被电一下。', 'Hold it, aim at your own door and press fire to set a 4-digit code. Anyone who enters the code once can open that door. A wrong code gives a shock.'] },
+    bench: { n: ['工作台', 'Workbench'], st: 1, dep: 'wk', d: ['放在家里。站在它旁边才能制作弹药、护甲、炸药、密码锁、地雷和捕兽夹。', 'Put it in your base. Ammo, armor, explosives, code locks, landmines and bear traps can only be crafted next to it.'] },
+    campfire: { n: ['篝火', 'Campfire'], st: 5, dep: 'cf', d: ['便宜的烤肉工具：放木材当燃料、放生肉，点火后烤成熟肉。', 'A cheap way to cook: wood as fuel, raw meat in, light it.'] },
+    lbox: { n: ['大储物箱', 'Large Box'], st: 3, dep: 'lb', d: ['能放 30 格东西，存在服务器上。', 'Holds 30 slots, kept on the server.'] },
+    barri: { n: ['木路障', 'Wooden Barricade'], st: 5, dep: 'bc', d: ['挡路、挡子弹的掩体，放在地上或地基上。', 'Cover that blocks movement and bullets.'] },
+    spikes: { n: ['尖刺路障', 'Spike Barricade'], st: 5, dep: 'sk', d: ['碰到的人会被扎伤（自己和领地柜授权的人不会）。', 'Hurts anyone who touches it (not you or people authorised on your tool cupboard).'] },
+    mine: { n: ['地雷', 'Landmine'], st: 5, dep: 'lm', d: ['别人踩上去会爆炸，伤害很高，爆了就没了。', 'Explodes under anyone else who steps on it. Single use.'] },
+    trap: { n: ['捕兽夹', 'Bear Trap'], st: 5, dep: 'bt', d: ['别人踩上去会被夹住几秒并受伤。夹过以后你按交互键重新布置。', 'Catches and hurts anyone else who steps on it. Re-arm it with Use.'] },
+    lantern: { n: ['灯笼', 'Lantern'], st: 5, dep: 'ln', d: ['按交互键点亮或熄灭，晚上看得见家里。', 'Light it or put it out with Use.'] },
+    chair: { n: ['椅子', 'Chair'], st: 5, dep: 'ch', d: ['家具。', 'Furniture.'] },
+    table: { n: ['桌子', 'Table'], st: 5, dep: 'tb', d: ['家具。', 'Furniture.'] },
+    rug: { n: ['地毯', 'Rug'], st: 5, dep: 'rg', d: ['铺在地上的装饰。', 'A rug for your floor.'] },
+    hwall: { n: ['高木墙', 'High External Wooden Wall'], st: 10, dep: 'xw', d: ['直接放在地面上的 5.5 米高墙，一段接一段自动对齐，用来围住整个基地。', 'A 5.5 m wall placed straight on the ground. Pieces snap end to end so you can ring your whole base.'] },
+    hswall: { n: ['高石墙', 'High External Stone Wall'], st: 10, dep: 'xs', d: ['和高木墙一样，但是更结实（1500 生命）。', 'Like the wooden one but much tougher (1500 HP).'] },
+    hgate: { n: ['高墙大门', 'High External Gate'], st: 5, dep: 'xg', d: ['接在高墙中间的大门，可以开关，也能装密码锁。', 'A gate that fits into a run of high walls. Opens and closes and takes a code lock.'] }
+  });
+  (function () {   // building things go right after the tool cupboard in the crafting list
+    var add = [['bench', { wood: 300, stone: 100 }], ['lbox', { wood: 250, frags: 50 }], ['campfire', { wood: 100 }], ['lock', { frags: 100 }],
+      ['hwall', { wood: 300 }], ['hswall', { stone: 300 }], ['hgate', { wood: 450 }], ['barri', { wood: 150 }], ['spikes', { wood: 300 }],
+      ['trap', { frags: 80 }], ['mine', { frags: 50, cloth: 5 }], ['lantern', { frags: 20, cloth: 5 }], ['chair', { wood: 60 }], ['table', { wood: 100 }], ['rug', { cloth: 20 }]];
+    var at = RW_CRAFT.length; RW_CRAFT.forEach(function (r, j) { if (r[0] === 'tc') at = j + 1; });
+    Array.prototype.splice.apply(RW_CRAFT, [at, 0].concat(add));
+  })();
+  RW_SELL.push(['lantern', 15]);
+  Object.assign(RWD, { wk: 'bench', cf: 'campfire', lb: 'lbox', bc: 'barri', sk: 'spikes', lm: 'mine', bt: 'trap', ln: 'lantern', ch: 'chair', tb: 'table', rg: 'rug', xw: 'hwall', xs: 'hswall', xg: 'hgate' });
+  Object.keys(RWD).forEach(function (k) { if (!RWB[k]) RWB[k] = { c: {}, n: RWI[RWD[k]].n }; });
+  // new parts on the building plan
+  Object.assign(RWB, {
+    hw: { c: { wood: 30 }, n: ['半墙', 'Half Wall'] }, lw: { c: { wood: 20 }, n: ['矮墙', 'Low Wall'] },
+    wf: { c: { wood: 30 }, n: ['墙框', 'Wall Frame'] }, dd: { c: { wood: 45 }, n: ['双开门框', 'Double Doorway'] },
+    rf: { c: { wood: 40 }, n: ['屋顶', 'Roof'] }, ft: { c: { wood: 30 }, n: ['地基台阶', 'Foundation Steps'] },
+    wb: { c: { wood: 25 }, n: ['窗户栏杆', 'Window Bars'] }, sd: { c: { frags: 150 }, n: ['铁皮门', 'Sheet Metal Door'] },
+    d2: { c: { wood: 120 }, n: ['双开木门', 'Double Door'] }, gd: { c: { frags: 300 }, n: ['车库门', 'Garage Door'] }
+  });
+  RWB_ORDER.length = 0;
+  ['fd', 'ft', 'fl', 'rf', 'st', 'wl', 'hw', 'lw', 'dw', 'wn', 'dd', 'wf', 'dr', 'sd', 'd2', 'gd', 'wb'].forEach(function (k) { RWB_ORDER.push(k); });
+  var RWB_GROUPS = [[['地基与楼层', 'FOUNDATIONS & FLOORS'], ['fd', 'ft', 'fl', 'rf', 'st']], [['墙', 'WALLS'], ['wl', 'hw', 'lw', 'dw', 'wn', 'dd', 'wf']], [['门与窗', 'DOORS & WINDOWS'], ['dr', 'sd', 'd2', 'gd', 'wb']]];
+  Object.assign(RWB_SVG, {
+    hw: '<rect x="8" y="24" width="32" height="16" fill="#8a6a4a"/><path d="M16 24v16M24 24v16M32 24v16" stroke="#5a4636"/>',
+    lw: '<rect x="8" y="30" width="32" height="10" fill="#8a6a4a"/><path d="M16 30v10M24 30v10M32 30v10" stroke="#5a4636"/>',
+    wf: '<path d="M8 8h32v32h-3V13H11v27H8Z" fill="#8a6a4a"/>',
+    dd: '<path d="M8 8h32v32h-4V20H12v20H8Z" fill="#8a6a4a"/>',
+    rf: '<path d="M4 34 24 12 44 34Z" fill="#8a6a4a"/><path d="M24 12 44 34H30Z" fill="#5a4636"/>',
+    ft: '<path d="M8 40V34h10v-6h10v-6h12v18Z" fill="#8a6a4a"/><path d="M28 22h12v-6H28Z" fill="#5a4636"/>',
+    wb: '<path d="M8 8h32v32H8ZM18 18v10h12V18Z" fill="#8a6a4a" fill-rule="evenodd"/><path d="M20 18v10M24 18v10M28 18v10" stroke="#3a3a3a" stroke-width="1.6"/>',
+    sd: '<rect x="14" y="6" width="20" height="36" fill="#7a8088"/><path d="M14 18h20M14 30h20" stroke="#4a4e54"/><rect x="28" y="23" width="4" height="4" fill="#d8d0b8"/>',
+    d2: '<rect x="8" y="8" width="15" height="34" fill="#6a4a2a"/><rect x="25" y="8" width="15" height="34" fill="#6a4a2a"/><circle cx="20" cy="26" r="1.8" fill="#e8d28a"/><circle cx="28" cy="26" r="1.8" fill="#e8d28a"/>',
+    gd: '<rect x="8" y="8" width="32" height="32" fill="#7a8088"/><path d="M8 14h32M8 20h32M8 26h32M8 32h32" stroke="#4a4e54" stroke-width="1.5"/>'
+  });
+
+  /* ---- item icons for the new things ---- */
+  var RWICO2 = {
+    lock: function (x, poly) { x.fillStyle = '#9aa1a8'; x.fillRect(14, 16, 36, 38); x.fillStyle = '#2b2e32'; x.fillRect(19, 21, 26, 10); x.fillStyle = '#7fe08a'; x.fillRect(21, 23, 22, 6);
+      x.fillStyle = '#3c4044'; for (var i = 0; i < 9; i++) x.fillRect(19 + (i % 3) * 9, 35 + Math.floor(i / 3) * 6, 7, 4); },
+    bench: function (x) { x.fillStyle = '#8a6239'; x.fillRect(6, 26, 52, 8); x.fillStyle = '#5a3c22'; x.fillRect(10, 34, 5, 20); x.fillRect(49, 34, 5, 20); x.fillRect(10, 46, 44, 4);
+      x.fillStyle = '#9aa1a8'; x.fillRect(40, 18, 10, 8); x.fillRect(14, 20, 18, 3); },
+    campfire: function (x) { x.fillStyle = '#7d7a72'; for (var i = 0; i < 7; i++) { x.beginPath(); x.arc(14 + i * 6, 52 - (i % 2) * 2, 5, 0, 7); x.fill(); }
+      x.strokeStyle = '#6a4424'; x.lineWidth = 6; x.beginPath(); x.moveTo(14, 50); x.lineTo(50, 36); x.moveTo(50, 50); x.lineTo(14, 36); x.stroke();
+      x.fillStyle = '#ff7a1a'; x.beginPath(); x.moveTo(20, 44); x.quadraticCurveTo(26, 22, 32, 8); x.quadraticCurveTo(40, 24, 44, 44); x.fill(); x.fillStyle = '#ffd23a'; x.beginPath(); x.moveTo(27, 44); x.quadraticCurveTo(30, 30, 32, 22); x.quadraticCurveTo(36, 32, 38, 44); x.fill(); },
+    lbox: function (x) { x.fillStyle = '#8a6239'; x.fillRect(4, 22, 56, 32); x.fillStyle = '#5a3c22'; x.fillRect(4, 22, 56, 8); x.fillStyle = '#9aa1a8'; x.fillRect(4, 22, 6, 32); x.fillRect(54, 22, 6, 32); x.fillRect(28, 30, 8, 7); },
+    barri: function (x) { x.fillStyle = '#5a3c22'; x.fillRect(8, 16, 6, 40); x.fillRect(50, 16, 6, 40); x.fillStyle = '#8a6239'; x.fillRect(6, 22, 52, 9); x.fillRect(6, 38, 52, 9); },
+    spikes: function (x) { x.fillStyle = '#5a3c22'; x.fillRect(6, 44, 52, 10); x.fillStyle = '#a8814d'; for (var i = 0; i < 6; i++) { x.beginPath(); x.moveTo(8 + i * 9, 46); x.lineTo(14 + i * 9, 10 + (i % 2) * 8); x.lineTo(16 + i * 9, 46); x.fill(); } },
+    mine: function (x) { x.fillStyle = '#4a5236'; x.beginPath(); x.ellipse(32, 40, 24, 12, 0, 0, 7); x.fill(); x.fillStyle = '#5e6844'; x.beginPath(); x.ellipse(32, 36, 22, 10, 0, 0, 7); x.fill();
+      x.fillStyle = '#2a2e22'; x.beginPath(); x.ellipse(32, 34, 7, 4, 0, 0, 7); x.fill(); x.fillStyle = '#d8342a'; x.fillRect(30, 26, 4, 6); },
+    trap: function (x) { x.strokeStyle = '#7a8088'; x.lineWidth = 4; x.beginPath(); x.arc(32, 36, 20, 0.15, Math.PI - 0.15); x.stroke(); x.beginPath(); x.arc(32, 36, 20, Math.PI + 0.15, -0.15); x.stroke();
+      x.fillStyle = '#c8cdd2'; for (var i = 0; i < 6; i++) { x.beginPath(); x.moveTo(16 + i * 6, 40); x.lineTo(19 + i * 6, 33); x.lineTo(22 + i * 6, 40); x.fill(); } x.fillStyle = '#5a5e64'; x.fillRect(26, 34, 12, 6); },
+    lantern: function (x) { x.fillStyle = '#3a3e42'; x.fillRect(20, 50, 24, 6); x.fillRect(22, 14, 20, 6); x.fillStyle = '#ffd884'; x.fillRect(23, 20, 18, 30); x.fillStyle = '#ffb43a'; x.fillRect(28, 28, 8, 14);
+      x.strokeStyle = '#3a3e42'; x.lineWidth = 2.5; x.beginPath(); x.moveTo(23, 20); x.lineTo(23, 50); x.moveTo(41, 20); x.lineTo(41, 50); x.moveTo(26, 14); x.quadraticCurveTo(32, 2, 38, 14); x.stroke(); },
+    chair: function (x) { x.fillStyle = '#8a6239'; x.fillRect(18, 32, 28, 6); x.fillRect(18, 8, 6, 30); x.fillStyle = '#5a3c22'; x.fillRect(18, 38, 5, 18); x.fillRect(41, 38, 5, 18); },
+    table: function (x) { x.fillStyle = '#8a6239'; x.fillRect(6, 24, 52, 7); x.fillStyle = '#5a3c22'; x.fillRect(10, 31, 5, 24); x.fillRect(49, 31, 5, 24); },
+    rug: function (x) { x.fillStyle = '#8a3a2a'; x.fillRect(8, 16, 48, 34); x.strokeStyle = '#e8c88a'; x.lineWidth = 3; x.strokeRect(13, 21, 38, 24); x.fillStyle = '#2a4a6a'; x.beginPath(); x.moveTo(32, 25); x.lineTo(42, 33); x.lineTo(32, 41); x.lineTo(22, 33); x.fill(); },
+    hwall: function (x) { x.fillStyle = '#8a6239'; for (var i = 0; i < 6; i++) { x.fillRect(8 + i * 8, 16, 7, 42); x.beginPath(); x.moveTo(8 + i * 8, 16); x.lineTo(11.5 + i * 8, 6); x.lineTo(15 + i * 8, 16); x.fill(); } x.fillStyle = '#5a3c22'; x.fillRect(6, 26, 52, 4); x.fillRect(6, 44, 52, 4); },
+    hswall: function (x) { x.fillStyle = '#8c8a84'; x.fillRect(8, 8, 48, 50); x.strokeStyle = '#5c5a54'; x.lineWidth = 2; for (var j = 0; j < 5; j++) { x.beginPath(); x.moveTo(8, 18 + j * 10); x.lineTo(56, 18 + j * 10); x.stroke(); for (var i = 0; i < 3; i++) { var bx = 8 + i * 16 + (j % 2) * 8; x.beginPath(); x.moveTo(bx, 8 + j * 10); x.lineTo(bx, 18 + j * 10); x.stroke(); } } },
+    hgate: function (x) { x.fillStyle = '#5a3c22'; x.fillRect(4, 6, 8, 52); x.fillRect(52, 6, 8, 52); x.fillRect(4, 6, 56, 8); x.fillStyle = '#8a6239'; x.fillRect(13, 16, 18, 42); x.fillRect(33, 16, 18, 42); x.fillStyle = '#3a3a3a'; x.fillRect(28, 34, 3, 6); x.fillRect(33, 34, 3, 6); }
+  };
+
+  /* ---- geometry of the new building-plan parts ---- */
+  function rwPartsAlong(list, r, sgn) {   // parts given along the wall [u, cy, v, len, h, th, solid, hidden, leaf] -> world boxes
+    return list.map(function (q) { var o = (r & 1) ? [sgn * -q[2], q[1], sgn * q[0], q[5], q[4], q[3]] : [q[0], q[1], q[2], q[3], q[4], q[5]]; return o.concat([q[6] === undefined ? 1 : q[6], q[7] || 0, q[8] || 0]); });
+  }
+  function rwFtDepth(x, z, y, r) {   // how far the foundation steps go down to the ground
+    var dx = [1, 0, -1, 0][r & 3], dz = [0, 1, 0, -1][r & 3], mn = 1e9;
+    for (var a = -1; a <= 1; a += 2) for (var b = -1; b <= 1; b += 2) mn = Math.min(mn, rwH(x + dx * 0.75 * a + dz * 1.45 * b, z + dz * 0.75 * a + dx * 1.45 * b));
+    return Math.max(0.3, y - mn);
+  }
+  function rwPieceParts2(k, r, dep) {   // called from rwPieceParts for the new kinds; null = not one of them
+    var A = function (l) { return rwPartsAlong(l, r, 1); };
+    if (k === 'hw') return A([[0, 0.75, 0, 3, 1.5, 0.2]]);
+    if (k === 'lw') return A([[0, 0.5, 0, 3, 1.0, 0.2]]);
+    if (k === 'wf') return A([[-1.4, 1.5, 0, 0.2, 3, 0.2], [1.4, 1.5, 0, 0.2, 3, 0.2], [0, 2.8, 0, 2.6, 0.4, 0.2]]);
+    if (k === 'dd') return A([[-1.3, 1.5, 0, 0.4, 3, 0.2], [1.3, 1.5, 0, 0.4, 3, 0.2], [0, 2.65, 0, 2.2, 0.7, 0.2]]);
+    if (k === 'wb') { var L = [[0, 1.5, 0, 1.2, 1.0, 0.08, 1, 1]]; for (var i = 0; i < 5; i++) L.push([-0.48 + i * 0.24, 1.5, 0, 0.05, 1.0, 0.05, 0]); L.push([0, 1.25, 0, 1.2, 0.05, 0.05, 0], [0, 1.75, 0, 1.2, 0.05, 0.05, 0]); return A(L); }
+    if (k === 'sd' || k === 'dr') return A([[0, 1.09, 0, 1.16, 2.18, 0.08, 1, 0, 1]]);
+    if (k === 'd2') return A([[0, 1.14, 0, 2.2, 2.28, 0.08, 1, 0, 1]]);
+    if (k === 'gd') return A([[0, 1.3, 0, 2.6, 2.6, 0.1, 1, 0, 1]]);
+    if (k === 'rf') return [[0, 0.15, 0, 3, 0.3, 3, 1, 1], [0, 0.55, 0, 2, 0.5, 2, 1, 1], [0, 1.05, 0, 1, 0.5, 1, 1, 1], [0, 0, 0, 3, 0.02, 3, 0, 1]];
+    if (k === 'ft') {
+      var dx = [1, 0, -1, 0][r & 3], dz = [0, 1, 0, -1][r & 3], h = dep || 1, n = Math.max(1, Math.round(h / 0.38)), sd = 1.5 / n, out = [];
+      for (var j = 0; j < n; j++) { var top = -h * (j + 1) / (n + 1), bot = -h - 0.3, off = -0.75 + (j + 0.5) * sd; out.push([dx * off, (top + bot) / 2, dz * off, dx ? sd : 3, top - bot, dz ? sd : 3, 1]); }
+      return out;
+    }
+    return null;
+  }
+  function rwRoofGeo() {   // a hipped roof over one 3 x 3 floor slot, with eaves and a ceiling underneath
+    var pos = [], nor = [], uv = [], B = 1.65, H = 1.5, y0 = 0.02;
+    function tri(a, b, c, ua, ub, uc) {
+      var e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]], n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]], l = Math.hypot(n[0], n[1], n[2]) || 1;
+      [a, b, c].forEach(function (v, i) { pos.push(v[0], v[1], v[2]); nor.push(n[0] / l, n[1] / l, n[2] / l); var u = [ua, ub, uc][i]; uv.push(u[0], u[1]); });
+    }
+    var C = [[-B, y0, -B], [B, y0, -B], [B, y0, B], [-B, y0, B]], T = [0, H, 0], sl = Math.hypot(B, H) / 1.5;
+    for (var i = 0; i < 4; i++) { var a = C[i], b = C[(i + 1) % 4]; tri(b, a, T, [0, 0], [2 * B / 1.5, 0], [B / 1.5, sl]); }
+    tri([-1.5, 0, -1.5], [1.5, 0, -1.5], [1.5, 0, 1.5], [0, 0], [2, 0], [2, 2]); tri([-1.5, 0, -1.5], [1.5, 0, 1.5], [-1.5, 0, 1.5], [0, 0], [2, 2], [0, 2]);
+    var G = new THREE.BufferGeometry();
+    G.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); G.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); G.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    G.computeBoundingSphere();
+    return G;
+  }
+
+  /* ---- doors: single, sheet metal, double, garage, high gate ---- */
+  function rwDoorMesh(p) {
+    var M = rwDepMats(), root = new THREE.Group(), inner = new THREE.Group(); root.add(inner);
+    inner.rotation.y = (p.r & 1) ? -Math.PI / 2 : 0;
+    p.leaves = []; p.roll = null;
+    function leaf(hx, w, h, mat, s, th) {
+      var piv = new THREE.Group(); piv.position.set(hx, 0, 0);
+      var sl = new THREE.Mesh(rwTexBox(w, h, th || 0.08), mat); sl.position.set(s * w / 2, h / 2, 0); piv.add(sl);
+      inner.add(piv); p.leaves.push({ piv: piv, s: s }); return piv;
+    }
+    function knob(piv, x, y) { var kn = new THREE.Mesh(gBox(0.05, 0.05, 0.14), RW.hmat); kn.position.set(x, y, 0); piv.add(kn); }
+    if (p.k === 'dr') knob(leaf(-0.58, 1.16, 2.18, RW.dmat, 1), 1.0, 1.0);
+    else if (p.k === 'sd') {
+      var lv = leaf(-0.58, 1.16, 2.18, RW.bmat[2], 1, 0.09); knob(lv, 1.0, 1.0);
+      [0.5, 1.6].forEach(function (y) { var st = new THREE.Mesh(gBox(1.12, 0.08, 0.11), M.metal); st.position.set(0.58, y, 0); lv.add(st); });
+    } else if (p.k === 'd2') { knob(leaf(-1.1, 1.1, 2.28, RW.dmat, 1), 0.95, 1.05); knob(leaf(1.1, 1.1, 2.28, RW.dmat, -1), -0.95, 1.05); }
+    else if (p.k === 'gd') {
+      var g = new THREE.Group(); g.position.y = 2.6; inner.add(g); p.roll = g;
+      var pan = new THREE.Mesh(rwTexBox(2.6, 2.6, 0.1), RW.bmat[2]); pan.position.y = -1.3; g.add(pan);
+      for (var i = 1; i < 8; i++) { var rb = new THREE.Mesh(gBox(2.6, 0.05, 0.13), M.metal); rb.position.set(0, -i * 0.325, 0); g.add(rb); }
+    } else if (p.k === 'xg') {
+      [-1.3, 1.3].forEach(function (x) { var po = new THREE.Mesh(rwTexBox(0.4, 6.5, 0.7), M.wood); po.position.set(x, 2.25, 0); inner.add(po); });
+      var li = new THREE.Mesh(rwTexBox(2.2, 1.2, 0.5), M.wood); li.position.set(0, 4.9, 0); inner.add(li);
+      var l1 = leaf(-1.1, 1.1, 4.3, RW.dmat, 1, 0.25), l2 = leaf(1.1, 1.1, 4.3, RW.dmat, -1, 0.25);
+      [l1, l2].forEach(function (lv, j) { [0.9, 3.2].forEach(function (y) { var br = new THREE.Mesh(gBox(1.06, 0.18, 0.3), M.trim); br.position.set((j ? -1 : 1) * 0.55, y, 0); lv.add(br); }); });
+    }
+    p.ang = p.op ? 1 : 0; rwDoorAnim(p, p.ang);
+    return root;
+  }
+  function rwDoorAnim(p, a) {
+    if (p.roll) { p.roll.scale.y = 1 - 0.92 * a; return; }
+    (p.leaves || []).forEach(function (L) { L.piv.rotation.y = -L.s * a * Math.PI / 2; });
+  }
+
+  /* ---- placeables: sizes and models ---- */
+  var RW_DEPSZ = { wk: [2.0, 0.95, 0.9, 1], cf: [1.1, 0.45, 1.1, 1], lb: [1.6, 0.9, 0.85, 1], bc: [2.4, 1.3, 0.5, 1], sk: [2.4, 1.0, 0.9, 1], lm: [0.5, 0.12, 0.5, 0],
+    bt: [0.9, 0.16, 0.6, 0], ln: [0.3, 0.55, 0.3, 0], ch: [0.6, 1.0, 0.6, 1], tb: [1.6, 0.8, 0.9, 1], rg: [2.0, 0.03, 1.4, 0] };
+  function rwDepParts2(k, r) {
+    if (k === 'xw' || k === 'xs') return rwPartsAlong([[0, 2.25, 0, 3, 6.5, 0.6]], r, 1);
+    if (k === 'xg') return rwPartsAlong([[-1.3, 2.25, 0, 0.4, 6.5, 0.7], [1.3, 2.25, 0, 0.4, 6.5, 0.7], [0, 4.9, 0, 2.2, 1.2, 0.5], [0, 2.15, 0, 2.2, 4.3, 0.25, 1, 0, 1]], r, 1);
+    var D = RW_DEPSZ[k]; if (!D) return null;
+    var s = (r & 1) === 1; return [[0, D[1] / 2, 0, s ? D[2] : D[0], D[1], s ? D[0] : D[2], D[3]]];
+  }
+  var RWGEO2 = {};
+  function rwCyl(r0, r1, h, seg) { var key = [r0, r1, h, seg].join(); return RWGEO2[key] || (RWGEO2[key] = new THREE.CylinderGeometry(r0, r1, h, seg)); }
+  var RWGLOW = null;
+  function rwGlowTex() {
+    if (RWGLOW) return RWGLOW;
+    var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,214,140,1)'); g.addColorStop(0.35, 'rgba(255,170,70,.45)'); g.addColorStop(1, 'rgba(255,140,40,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    return (RWGLOW = new THREE.CanvasTexture(c));
+  }
+  function rwDepMesh2(p, B, M, inner) {   // models for the new placeables; false = not one of them
+    var k = p.k, i;
+    M.rug = M.rug || new THREE.MeshStandardMaterial({ color: 0x8a3a2a, roughness: 1 }); M.rug2 = M.rug2 || new THREE.MeshStandardMaterial({ color: 0xe0c48a, roughness: 1 });
+    M.mine = M.mine || new THREE.MeshStandardMaterial({ color: 0x4e573a, roughness: 0.8 }); M.dark = M.dark || new THREE.MeshStandardMaterial({ color: 0x2a2c2e, roughness: 0.6, metalness: 0.4 });
+    M.stoneT = M.stoneT || new THREE.MeshStandardMaterial({ color: 0x77736a, roughness: 1 });
+    function C(r0, r1, h, seg, mat, x, y, z) { var m = new THREE.Mesh(rwCyl(r0, r1, h, seg), mat); m.position.set(x, y, z); inner.add(m); return m; }
+    if (k === 'wk') {
+      B(2.0, 0.1, 0.9, M.wood, 0, 0.9, 0); [-0.9, 0.9].forEach(function (x) { [-0.36, 0.36].forEach(function (z) { B(0.1, 0.85, 0.1, M.trim, x, 0.425, z); }); });
+      B(1.8, 0.05, 0.7, M.trim, 0, 0.3, 0); B(0.22, 0.16, 0.2, M.metal, 0.75, 1.03, 0.28); B(0.6, 0.02, 0.14, M.metal, -0.4, 0.96, 0.12); B(0.06, 0.06, 0.32, M.wood, 0.15, 0.98, -0.12); B(0.12, 0.08, 0.06, M.metal, 0.15, 0.99, -0.3);
+      B(1.9, 0.6, 0.05, M.trim, 0, 1.25, -0.43);
+    } else if (k === 'cf') {
+      for (i = 0; i < 9; i++) { var a = i / 9 * Math.PI * 2; B(0.2, 0.16, 0.18, M.stoneT, Math.cos(a) * 0.45, 0.08, Math.sin(a) * 0.45).rotation.y = -a; }
+      [0.6, -0.6].forEach(function (ry) { var lg = B(0.85, 0.11, 0.11, M.wood, 0, 0.12, 0); lg.rotation.y = ry; lg.rotation.z = 0.12; });
+      var fl = new THREE.Group(); inner.add(fl); p.flame = fl;
+      p.glow = new THREE.MeshStandardMaterial({ color: 0xff8a2a, emissive: 0xff5a10, emissiveIntensity: 1.6, roughness: 1 });
+      var y2 = new THREE.MeshBasicMaterial({ color: 0xffd23a });
+      [[0, 0.3, 0, 0.16, 0.5, p.glow], [0.08, 0.26, 0.05, 0.1, 0.36, y2], [-0.09, 0.24, -0.04, 0.1, 0.3, p.glow]].forEach(function (q) { var m = new THREE.Mesh(rwCyl(0, q[3], q[4], 6), q[5]); m.position.set(q[0], q[1], q[2]); fl.add(m); });
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: rwGlowTex(), color: 0xffb060, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); sp.scale.set(2.6, 2.6, 1); sp.position.y = 0.4; fl.add(sp);
+      fl.visible = !!p.op;
+    } else if (k === 'lb') {
+      B(1.6, 0.75, 0.85, RW.dmat, 0, 0.375, 0); B(1.64, 0.13, 0.89, M.trim, 0, 0.81, 0);
+      [-0.78, 0.78].forEach(function (x) { B(0.06, 0.9, 0.88, M.metal, x, 0.45, 0); }); B(0.18, 0.14, 0.05, M.metal, 0, 0.62, 0.45);
+    } else if (k === 'bc') {
+      [-1.1, 1.1].forEach(function (x) { B(0.15, 1.3, 0.15, M.trim, x, 0.65, 0); });
+      B(2.4, 0.26, 0.12, M.wood, 0, 0.95, 0.06); B(2.4, 0.26, 0.12, M.wood, 0, 0.45, 0.06);
+      var x1 = B(2.3, 0.16, 0.08, M.trim, 0, 0.7, -0.06); x1.rotation.z = 0.42; var x2 = B(2.3, 0.16, 0.08, M.trim, 0, 0.7, -0.06); x2.rotation.z = -0.42;
+    } else if (k === 'sk') {
+      B(2.4, 0.26, 0.3, M.trim, 0, 0.16, -0.1);
+      for (i = 0; i < 9; i++) { var s = B(0.08, 1.15, 0.08, M.wood, -1.1 + i * 0.275, 0.55, 0.1); s.rotation.x = 0.5 + (i % 2) * 0.25; }
+    } else if (k === 'lm') {
+      C(0.2, 0.24, 0.07, 14, M.mine, 0, 0.035, 0); C(0.07, 0.08, 0.04, 10, M.dark, 0, 0.09, 0);
+    } else if (k === 'bt') {
+      B(0.18, 0.04, 0.18, M.dark, 0, 0.02, 0);
+      p.jaws = [-1, 1].map(function (sd) {
+        var g = new THREE.Group(); g.position.set(0, 0.03, 0); inner.add(g);
+        var j = new THREE.Mesh(gBox(0.8, 0.03, 0.04), M.metal); j.position.set(0, 0, sd * 0.24); g.add(j);
+        for (var t = 0; t < 6; t++) { var th = new THREE.Mesh(gBox(0.03, 0.08, 0.03), M.metal); th.position.set(-0.3 + t * 0.12, 0.04, sd * 0.22); g.add(th); }
+        g.userData.sd = sd; return g;
+      });
+      rwTrapPose(p);
+    } else if (k === 'ln') {
+      B(0.26, 0.05, 0.26, M.dark, 0, 0.025, 0); B(0.22, 0.05, 0.22, M.dark, 0, 0.42, 0);
+      p.glow = new THREE.MeshStandardMaterial({ color: 0x8a7a58, emissive: 0x000000, roughness: 0.3, transparent: true, opacity: 0.85 }); B(0.2, 0.34, 0.2, p.glow, 0, 0.22, 0);
+      [-0.1, 0.1].forEach(function (x) { [-0.1, 0.1].forEach(function (z) { B(0.02, 0.36, 0.02, M.dark, x, 0.22, z); }); });
+      var hd = B(0.14, 0.12, 0.02, M.dark, 0, 0.5, 0); hd.rotation.z = 0;
+      var gs = new THREE.Sprite(new THREE.SpriteMaterial({ map: rwGlowTex(), color: 0xffc070, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); gs.scale.set(2.2, 2.2, 1); gs.position.y = 0.25; inner.add(gs); p.halo = gs;
+      rwLampLit(p);
+    } else if (k === 'ch') {
+      B(0.55, 0.06, 0.55, M.wood, 0, 0.45, 0); [-0.24, 0.24].forEach(function (x) { [-0.24, 0.24].forEach(function (z) { B(0.05, 0.45, 0.05, M.trim, x, 0.225, z); }); });
+      B(0.55, 0.5, 0.05, M.wood, 0, 0.75, -0.25);
+    } else if (k === 'tb') {
+      B(1.6, 0.07, 0.9, M.wood, 0, 0.765, 0); [-0.72, 0.72].forEach(function (x) { [-0.36, 0.36].forEach(function (z) { B(0.07, 0.73, 0.07, M.trim, x, 0.365, z); }); });
+    } else if (k === 'rg') {
+      B(2.0, 0.02, 1.4, M.rug, 0, 0.012, 0); B(1.7, 0.022, 0.06, M.rug2, 0, 0.014, 0.52); B(1.7, 0.022, 0.06, M.rug2, 0, 0.014, -0.52); B(0.06, 0.022, 1.1, M.rug2, 0.82, 0.014, 0); B(0.06, 0.022, 1.1, M.rug2, -0.82, 0.014, 0);
+    } else if (k === 'xw') {
+      for (i = 0; i < 8; i++) { var x = -1.31 + i * 0.375; C(0.19, 0.2, 6.5, 7, M.wood, x, 2.25, 0); C(0, 0.19, 0.5, 7, M.wood, x, 5.75, 0); }
+      B(3.0, 0.22, 0.16, M.trim, 0, 1.2, -0.24); B(3.0, 0.22, 0.16, M.trim, 0, 4.0, -0.24);
+    } else if (k === 'xs') {
+      var wl = new THREE.Mesh(rwTexBox(3.0, 6.5, 0.6), RW.bmat[1]); wl.position.set(0, 2.25, 0); inner.add(wl);
+      var cp = new THREE.Mesh(rwTexBox(3.04, 0.3, 0.8), RW.bmat[1]); cp.position.set(0, 5.6, 0); inner.add(cp);
+    } else return false;
+    return true;
+  }
+  function rwTrapPose(p) { (p.jaws || []).forEach(function (g) { g.rotation.x = g.userData.sd * (p.op ? -0.05 : 1.45); g.position.y = p.op ? 0.12 : 0.03; }); }
+  function rwLampLit(p) {
+    if (!p.glow) return;
+    p.glow.emissive.setHex(p.op ? 0xffa040 : 0); p.glow.color.setHex(p.op ? 0xffe0a0 : 0x8a7a58); if ('emissiveIntensity' in p.glow) p.glow.emissiveIntensity = p.op ? 1.5 : 0;
+    if (p.halo) p.halo.visible = !!p.op;
+  }
+  function rwToggleShow(p) {   // the look of an on/off placeable changed
+    if (p.k === 'ln') rwLampLit(p);
+    else if (p.k === 'bt') rwTrapPose(p);
+    else if (rwIsFurn(p.k)) rwFurnaceLit(p);
+  }
+
+  /* ---- placing high external walls and the gate: snap end to end ---- */
+  function rwXwCand(k) {
+    var o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    var tw = rayWall(o.x, o.y, o.z, dir.x, dir.y, dir.z, 9);
+    var tt = Math.min(tw, 7), ax = o.x + dir.x * tt, az = o.z + dir.z * tt;
+    var r = ((Math.round(P.yaw / (Math.PI / 2)) % 2) + 2) % 2, best = null, bd = 2.4;
+    for (var i = 0; i < RW.plist.length; i++) {
+      var p = RW.plist[i]; if (!RW_XW[p.k] || Math.abs(p.x - ax) > 6 || Math.abs(p.z - az) > 6) continue;
+      var ux = (p.r & 1) ? 0 : 1, uz = (p.r & 1) ? 1 : 0;
+      [-1, 1].forEach(function (s) { var x = p.x + ux * 3 * s, z = p.z + uz * 3 * s, d = Math.hypot(x - ax, z - az); if (d < bd) { bd = d; best = { x: x, z: z, r: p.r & 1, snap: true }; } });
+    }
+    if (!best) { if (tw >= 9 && dir.y > -0.05) return null; best = { x: ax, z: az, r: r, snap: false }; }
+    var ex = (best.r & 1) ? 0 : 1.45, ez = (best.r & 1) ? 1.45 : 0, h0 = rwH(best.x - ex, best.z - ez), h1 = rwH(best.x + ex, best.z + ez);
+    var c = { k: k, x: best.x, y: Math.min(h0, h1, rwH(best.x, best.z)), z: best.z, r: best.r, dep: 0, snap: best.snap, slope: Math.abs(h0 - h1), onWall: false };
+    c.why = rwDepWhy(c);
+    if (!c.why && c.slope > 1.6) c.why = zt('地面太陡', 'The ground is too steep');
+    if (!c.why && Math.hypot(c.x - P.x, c.z - P.z) > 10) c.why = zt('太远了', 'Too far away');
+    if (!c.why) {   // trees and rocks in the way
+      var pcx = Math.floor(c.x / RW_CH), pcz = Math.floor(c.z / RW_CH), hx = (c.r & 1) ? 0.4 : 1.6, hz = (c.r & 1) ? 1.6 : 0.4;
+      for (var bz = -1; bz <= 1 && !c.why; bz++) for (var bx = -1; bx <= 1 && !c.why; bx++) {
+        var ch = RW.chunks[(pcx + bx) + ',' + (pcz + bz)]; if (!ch) continue;
+        for (var j = 0; j < ch.nodes.length; j++) { var n = ch.nodes[j]; if (rwNodeAlive(n) && n.kind !== 'hemp' && Math.abs(n.x - c.x) < hx + n.r && Math.abs(n.z - c.z) < hz + n.r) { c.why = zt('有树或石头挡着', 'A tree or rock is in the way'); break; } }
+      }
+    }
+    return c;
+  }
+
+  /* ---- workbench ---- */
+  function rwNearBench() {
+    for (var i = 0; i < RW.plist.length; i++) { var p = RW.plist[i]; if (p.k === 'wk' && Math.hypot(p.x - P.x, p.z - P.z) < 3.5 && Math.abs(p.y - P.y) < 2.5) return true; }
+    return false;
+  }
+
+  /* ---- traps: spikes, landmines, bear traps ---- */
+  RW.trig = {}; RW.spikeT = 0; RW.trapT = 0;
+  function rwSafeFrom(p) { return p.o === RW.me || rwTcCovered(p.x, p.z); }
+  function rwTrapTick(dt) {
+    if (!RW.on || RW.dead || state === 'over') return;
+    RW.spikeT -= dt;
+    for (var i = 0; i < RW.plist.length; i++) {
+      var p = RW.plist[i]; if (Math.abs(p.x - P.x) > 3 || Math.abs(p.z - P.z) > 3) continue;
+      if (p.k !== 'sk' && p.k !== 'lm' && p.k !== 'bt') continue;
+      if (rwSafeFrom(p)) continue;
+      var dy = P.y - p.y;
+      if (p.k === 'sk') {
+        if (RW.spikeT > 0 || dy < -0.5 || dy > 1.0) continue;
+        var b = p.pk[0], m = 0.32;
+        if (P.x > b.minX - m && P.x < b.maxX + m && P.z > b.minZ - m && P.z < b.maxZ + m) { RW.spikeT = 0.5; RW.lastNpc = 'spikes'; RW.lastNpcT = gtime; damage(10); burst(new THREE.Vector3(P.x, P.y + 0.6, P.z), 5, partMatO, 2); }
+      } else if (!RW.trig[p.id] && Math.hypot(p.x - P.x, p.z - P.z) < (p.k === 'lm' ? 0.6 : 0.5) && dy > -0.4 && dy < 0.7) {
+        if (p.k === 'bt' && p.op) continue;
+        RW.trig[p.id] = gtime;
+        dSend({ t: 'Rt', id: p.id });
+        if (p.k === 'lm') { RW.noBlast = true; explode(p.x, p.y + 0.3, p.z, 3, 0, false); RW.noBlast = false; RW.lastNpc = 'mine'; RW.lastNpcT = gtime; damage(60); VM.shake = 0.6; }
+        else { p.op = 1; rwTrapPose(p); RW.trapT = gtime + 2.5; RW.lastNpc = 'trap'; RW.lastNpcT = gtime; damage(30); tone(900, 200, 0.12, 'square', 0.12); banner(zt('被捕兽夹夹住了！', 'Caught in a bear trap!'), 1500); }
+      }
+    }
+  }
+
+  /* ---- code locks ---- */
+  function rwLockUse() {   // fire with a code lock in hand
+    var p = rwPieceRay(3.2);
+    if (!p || !rwIsDoor(p.k)) { banner(zt('对着自己的门或大门按开火键装密码锁', 'Aim at your own door or gate and press fire'), 1400); tone(150, 120, 0.06, 'square', 0.04); return; }
+    if (p.o !== RW.me) { banner(zt('只能装在自己的门上', 'Only on your own door'), 1300); return; }
+    rwCodeOpen(p, 'set');
+  }
+  function rwCodeOpen(p, mode) {
+    RW.code = { id: p.id, mode: mode, v: '' };
+    if (!RW.codeEl) {
+      var el = document.createElement('div'); el.id = 'rwCode'; stage.appendChild(el); RW.codeEl = el;
+      el.addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('[data-ck]') : null;
+        if (b) { rwCodeKey(b.getAttribute('data-ck')); return; }
+        if (e.target === el) rwUiClose();
+      });
+    }
+    rwCodeRender();
+    state = 'bag'; RW.ui = 'code'; releaseInput();
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    RW.codeEl.style.display = 'flex';
+    if (RW.promptEl) RW.promptEl.style.display = 'none';
+  }
+  function rwCodeRender() {
+    var C = RW.code; if (!C || !RW.codeEl) return;
+    var set = C.mode === 'set', d = '';
+    for (var i = 0; i < 4; i++) d += '<span class="' + (i < C.v.length ? 'on' : '') + '">' + (i < C.v.length ? (set ? C.v[i] : '•') : '') + '</span>';
+    var keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'b', '0', 'ok'], kp = '';
+    keys.forEach(function (k) { kp += '<button type="button" class="' + (k === 'ok' ? 'ok' : k === 'b' ? 'bk' : '') + '" data-ck="' + k + '">' + (k === 'b' ? '⌫' : k === 'ok' ? '✓' : k) + '</button>'; });
+    RW.codeEl.innerHTML = '<div class="rwp rwcode"><h3>' + (set ? zt('设置密码锁', 'SET A CODE') : zt('输入密码', 'ENTER THE CODE')) + '</h3>' +
+      '<div class="cd">' + d + '</div><div class="kp">' + kp + '</div>' +
+      '<p>' + (set ? zt('设一个 4 位数字密码。把密码告诉朋友，他们输入一次就能一直开这扇门。', 'Pick a 4-digit code. Friends who enter it once can open this door from then on.')
+        : zt('输对了就能一直开这扇门；输错会被电一下。', 'The right code lets you open this door from now on. A wrong code gives a shock.')) +
+      (isTouch ? '' : ' ' + zt('可以直接按数字键，Enter 确定，Esc 取消。', 'Type digits, Enter to confirm, Esc to cancel.')) + '</p></div>';
+  }
+  function rwCodeKey(k) {
+    var C = RW.code; if (!C) return;
+    if (k === 'b') C.v = C.v.slice(0, -1);
+    else if (k === 'ok') { if (C.v.length === 4) { rwCodeSubmit(); return; } }
+    else if (/^\d$/.test(k) && C.v.length < 4) C.v += k;
+    tone(k === 'ok' ? 700 : 520, 520, 0.03, 'square', 0.03);
+    rwCodeRender();
+  }
+  function rwCodeSubmit() {
+    var C = RW.code; if (!C) return;
+    if (C.mode === 'set') {
+      var s = rwHeldSlot();
+      if (!s || s.id !== 'lock') { banner(zt('手里要拿着密码锁', 'Hold a code lock'), 1200); rwUiClose(); return; }
+      s.n--; if (s.n <= 0) RW.inv[RW_HOT0 + RW.hot] = null; rwInvChanged();
+      dSend({ t: 'Rz', id: C.id, code: C.v });
+      banner(zt('密码锁已装好，密码 ', 'Code lock fitted, code ') + C.v, 2200); tone(600, 900, 0.1, 'triangle', 0.06);
+    } else dSend({ t: 'Ry', id: C.id, code: C.v });
+    rwUiClose();
+  }
+  window.addEventListener('keydown', function (e) {
+    if (RW.ui !== 'code') return;
+    var k = e.code || '';
+    if (/^(Digit|Numpad)\d$/.test(k)) rwCodeKey(k.slice(-1));
+    else if (k === 'Backspace') rwCodeKey('b');
+    else if (k === 'Enter' || k === 'NumpadEnter') rwCodeKey('ok');
+    else if (k === 'Escape' || k === 'Tab') rwUiClose();
+    else return;
+    e.preventDefault(); e.stopImmediatePropagation();
+  }, true);
+  function rwLockMsg(m) {   // a door's code lock and who may open it
+    var p = RW.pieces[m.id | 0]; if (!p) return;
+    var was = p.lock && p.lock.indexOf(RW.me) >= 0;
+    p.lock = m.l ? (m.a || []).map(String) : null;
+    if (p.lock && !was && p.lock.indexOf(RW.me) >= 0 && p.o !== RW.me) banner(zt('密码正确：以后可以直接开这扇门', 'Code accepted: you can open this door from now on'), 1800);
+  }
+  function rwWrongCode() { RW.lastNpc = 'lock'; RW.lastNpcT = gtime; damage(10); banner(zt('密码错误！被电了一下', 'Wrong code! Zap'), 1400); tone(1600, 200, 0.18, 'sawtooth', 0.1); VM.shake = 0.4; }
+
+  var RWCSS4 = '#rwCode{position:absolute;inset:0;z-index:12;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);pointer-events:auto}' +
+    '.rwcode{width:300px;text-align:center}.rwcode .cd{display:flex;gap:8px;justify-content:center;margin:6px 0 14px}' +
+    '.rwcode .cd span{width:44px;height:54px;display:grid;place-items:center;font:700 28px/1 ui-monospace,monospace;color:#7fe08a;background:#0c100e;border:1px solid rgba(127,224,138,.25);box-shadow:inset 0 2px 8px rgba(0,0,0,.7)}' +
+    '.rwcode .cd span.on{border-color:rgba(127,224,138,.7);text-shadow:0 0 10px rgba(127,224,138,.7)}' +
+    '.rwcode .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.rwcode .kp button{height:46px;font-weight:700;font-size:20px;line-height:1;font-family:inherit;color:#ece6d6;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02));border:1px solid rgba(255,240,220,.16);cursor:pointer}' +
+    '.rwcode .kp button:hover{border-color:rgba(255,122,26,.6)}.rwcode .kp .ok{background:linear-gradient(180deg,#ffab5a,#ec650c);color:#1b0c01}.rwcode .kp .bk{color:#e0a0a0}' +
+    '.rwcode p{font-size:12px;opacity:.75;margin:12px 0 0;line-height:1.5}' +
+    '#rwBuild .rwbg{grid-template-columns:repeat(5,minmax(0,1fr))}#rwBuild .rwbp{padding:8px 4px}@media (max-width:640px){#rwBuild .rwbg{grid-template-columns:repeat(3,minmax(0,1fr))}}' +
+    '.rwbg2 h4{margin:12px 0 6px;font:700 11px/1 var(--f-head,inherit);letter-spacing:.28em;color:#a49e90;text-transform:uppercase}';
+  (function () { var st = document.createElement('style'); st.textContent = RWCSS4; document.head.appendChild(st); })();
+  Object.assign(RW_NPCN, { spikes: ['尖刺路障', 'a spike barricade'], mine: ['地雷', 'a landmine'], trap: ['捕兽夹', 'a bear trap'], lock: ['密码锁', 'a code lock'] });
+  function rwCostPlain(c) { return Object.keys(c).map(function (k) { return rwIN(k) + ' ' + c[k] + ' (' + rwCount(k) + ')'; }).join(' · '); }
+  function rwPlaceHint(k) {
+    var H = { fd: ['对着地面放地基', 'Aim at the ground to place a foundation'], ft: ['地基台阶要接在地基的边上', 'Steps go on the edge of a foundation'],
+      fl: ['楼板要搭在墙顶上', 'Floors sit on top of walls'], rf: ['屋顶要搭在墙顶上', 'Roofs sit on top of walls'], st: ['楼梯要放在地基或楼板上', 'Stairs go on a foundation or floor'],
+      dr: ['门要装在门框墙上', 'Doors go into a doorway'], sd: ['门要装在门框墙上', 'Doors go into a doorway'], d2: ['双开门要装在双开门框上', 'Double doors go into a double doorway'],
+      gd: ['车库门要装在墙框上', 'Garage doors go into a wall frame'], wb: ['栏杆要装在窗户墙上', 'Bars go into a window wall'] }[k] || ['墙要放在地基或楼板的边上', 'Walls go on the edge of a foundation or floor'];
+    return zt(H[0], H[1]);
   }
 
   /* ---- premium UI theme (ui.css): kept as the last stylesheet so it wins over panels that add their own CSS later ---- */
