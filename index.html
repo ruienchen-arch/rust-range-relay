@@ -619,7 +619,7 @@ Object.assign(EN, {
   var mapGroup = new THREE.Group(); scene.add(mapGroup);
   var hazardBasic = new THREE.MeshBasicMaterial({ color: 0xff7a1a });
   var matCache = {}, basicCache = {}, glassCache = {};
-  function matFor(c) { return matCache[c] || (matCache[c] = new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 })); }
+  function matFor(c) { return matCache[c] || (matCache[c] = new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, map: mapGrunge() })); }
   function basicMat(c) { return basicCache[c] || (basicCache[c] = new THREE.MeshBasicMaterial({ color: c })); }
   function glassMat(c) { return glassCache[c] || (glassCache[c] = new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.3, depthWrite: false })); }
 
@@ -638,7 +638,7 @@ Object.assign(EN, {
   // batched box centred on x,y,z. opt: solid (stops bullets), glass, basic (unlit), edge (outline colour)
   function bb(x, y, z, w, h, d, col, opt, rot) {
     opt = opt || {};
-    var g = new THREE.BoxGeometry(w, h, d);
+    var g = gUvBox(w, h, d);
     if (rot) { if (rot.z) g.rotateZ(rot.z); if (rot.x) g.rotateX(rot.x); if (rot.y) g.rotateY(rot.y); }
     g.translate(x, y, z);
     if (opt.edge) {
@@ -680,6 +680,7 @@ Object.assign(EN, {
       mapGroup.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: +k })));
     });
     lineBatches = {};
+    mapFlushDecor();
   }
 
   // collidable block from y0 to y1 (y0 > 0 makes a floating slab people can walk under)
@@ -713,15 +714,8 @@ Object.assign(EN, {
   }
 
   // outdoor scenery
-  function tree(x, z, big) {
-    var h = big ? rr(5.5, 7.5) : rr(4, 5.5), c = pick([0x3d5a34, 0x46633a, 0x35502e, 0x4f6a3c]);
-    solid(x, z, 0.7, 0.7, 0, h * 0.6, 0x5a4332);
-    var s = big ? 4.6 : 3.6;
-    deco(x, h * 0.6 + 0.9, z, s, 1.8, s, c);
-    deco(x, h * 0.6 + 2.2, z, s * 0.7, 1.6, s * 0.7, c);
-    deco(x, h * 0.6 + 3.3, z, s * 0.4, 1.2, s * 0.4, c);
-  }
-  function bush(x, z) { deco(x, 0.4, z, rr(1, 1.5), 0.8, rr(1, 1.5), pick([0x3a5a30, 0x2f4d2a, 0x486b3a])); }
+  function tree(x, z, big) { mapTree(x, z, big); }   // low-poly trees (see mapTree)
+  function bush(x, z) { mapBush(x, z); }
   function lamp(x, z) {
     solid(x, z, 0.25, 0.25, 0, 4.4, 0x2e3338);
     deco(x, 4.5, z, 0.8, 0.18, 0.8, 0xffe2a8, { basic: true });
@@ -1440,6 +1434,7 @@ Object.assign(EN, {
     cLight.position.set(0, 7, 0);
     buildBounds();
     def.gen();
+    mapGrass(def);
     NAV.dirty = true;
     MINI[id] = { view: id === 'fort' ? 45 : A, fog: def.fog, spawn: def.spawn, roads: roadList.slice(),
       blds: bldList.map(function (b) { return { kind: b.kind, x: b.x, z: b.z, w: b.w, d: b.d, door: b.door }; }),
@@ -3612,7 +3607,7 @@ Object.assign(EN, {
     else { aiming = false; W.reload = 0; vmAction(hk, want); }
     if (!want) latched = false;
 
-    recoil = Math.max(0, recoil - dt * 9); drawT = Math.max(0, drawT - dt * 3.2);
+    recoil = Math.max(0, recoil - dt * 9); drawT = Math.max(0, drawT - Math.max(dt, RDT) * 3.2);
     aimT += ((aiming ? 1 : 0) - aimT) * Math.min(1, dt * 12);
     var scoped = WDEF[cur].id === 'sniper' && aimT > 0.7;
     if (scoped !== scopedOn) { scopedOn = scoped; $('scope').hidden = !scoped; $('cross').hidden = scoped || retOn; }
@@ -5430,7 +5425,7 @@ Object.assign(EN, {
     nades.forEach(function (n) { scene.remove(n.m); }); nades = []; rockets.forEach(function (n) { scene.remove(n.m); }); rockets = []; blasts.forEach(function (b) { scene.remove(b.m); }); blasts = [];
     pickups.forEach(function (p) { p.cool = 0; p.g.visible = true; });
     gunAcc.color.setHex(CH.color);
-    grenades = 2; coins = 120; adrenT = 0; vit = 0; resetInv(); resetLoadout(); updateSlots(); rwInvReset(true);
+    grenades = 2; coins = 120; adrenT = 0; vit = 0; resetInv(); resetLoadout(); updateSlots(); rwInvReset(true); drawT = 0; RW.lastHeld = rwHeldSlot() ? rwHeldSlot().id : '';
     P.maxHp = CH.hp; P.armor = 0; P.hp = P.maxHp;
     var sp = rwSpawnPoint(); P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; P.yaw = Math.atan2(P.x, P.z) + Math.PI; P.pitch = 0; RW.px = P.x; RW.pz = P.z;
     W.cd = 0; W.reload = 0; aiming = false; aimT = 0; latched = false;
@@ -5441,6 +5436,7 @@ Object.assign(EN, {
     state = 'playing'; $('menu').hidden = true; $('hud').hidden = false; $('cross').hidden = false;
     requestLock(); tone(200, 400, 0.1, 'square', 0.05);
     $('banner').classList.add('rwb'); rwMStart(); rwWelcomeShow();
+    try { renderer.compile(scene, camera); } catch (e) {}   // build every shader now instead of stalling the first frames
     RW.safeNow = false; RW.cullT = 0;
   }
   function rwTeardown() {
@@ -7311,12 +7307,14 @@ Object.assign(EN, {
   [hemi, sun, cLight].concat(cornerLights.map(function (o) { return o.l; })).forEach(function (l) { l.layers.enable(1); });
   renderer.autoClear = false;
   function renderFrame() {
+    GRASS.uT.value = performance.now() / 1000;
     for (var i = 0; i < camera.children.length; i++) camera.children[i].traverse(function (o) {
       o.layers.set(1); o.frustumCulled = false;                       // never culled: they always sit right in front of the eye
       if (o.material && o.material.depthTest === false) o.material.depthTest = true;
     });
     renderer.clear();
-    camera.layers.set(0); renderer.render(scene, camera);           // pass 1: the world
+    camera.layers.set(0);
+    try { renderer.render(scene, camera); } catch (e) { if (!RW.rerr) { RW.rerr = 1; console.error(e); } }   // pass 1: the world (a failure here must never hide your hands)
     var bg = scene.background; scene.background = null;              // a colour background makes three.js wipe the screen on every render call
     renderer.clearDepth();
     camera.layers.set(1); renderer.render(scene, camera);           // pass 2: hands, tools and guns on top, with proper depth among themselves
@@ -7595,8 +7593,8 @@ Object.assign(EN, {
 
   /* ---- the welcome card when you enter the wild ---- */
   var RWCSS2 = '' +
-    '#rwWel{position:absolute;left:50%;top:50%;transform:translate(-50%,-46%);width:min(540px,90vw);box-sizing:border-box;padding:26px 28px 20px;background:linear-gradient(160deg,rgba(30,32,28,.95),rgba(11,12,10,.95));border:1px solid rgba(236,230,214,.14);box-shadow:0 30px 90px rgba(0,0,0,.6);opacity:0;transition:opacity .55s,transform .55s;pointer-events:none;z-index:7;color:#ece6d6;text-shadow:none}' +
-    '#rwWel.on{opacity:1;transform:translate(-50%,-50%)}#rwWel::before{content:"";position:absolute;left:-1px;top:-1px;width:76px;height:3px;background:#ff7a1a}' +
+    '#rwWel{position:absolute;left:50%;top:8%;transform:translate(-50%,10px);max-height:58vh;overflow:hidden;width:min(540px,90vw);box-sizing:border-box;padding:26px 28px 20px;background:linear-gradient(160deg,rgba(30,32,28,.95),rgba(11,12,10,.95));border:1px solid rgba(236,230,214,.14);box-shadow:0 30px 90px rgba(0,0,0,.6);opacity:0;transition:opacity .55s,transform .55s;pointer-events:none;z-index:7;color:#ece6d6;text-shadow:none}' +
+    '#rwWel.on{opacity:1;transform:translate(-50%,0)}#rwWel::before{content:"";position:absolute;left:-1px;top:-1px;width:76px;height:3px;background:#ff7a1a}' +
     '#rwWel .we{display:flex;justify-content:space-between;font:700 12px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.32em;color:#ff7a1a}#rwWel .we span{color:#8d887b;letter-spacing:.18em}' +
     '#rwWel h2{margin:8px 0 6px;font:700 34px/1.1 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;letter-spacing:.1em;color:#f4eee0}' +
     '#rwWel p{margin:0 0 18px;color:#b3ad9f;font:500 14px/1.65 system-ui,"PingFang SC","Microsoft YaHei",sans-serif}' +
@@ -7611,7 +7609,7 @@ Object.assign(EN, {
     '#rwMis .mt{font:600 13px/1.35 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#ece6d6}' +
     '#rwMis .mb{height:4px;margin:5px 0 3px;background:rgba(236,230,214,.12)}#rwMis .mb i{display:block;height:100%;background:#ff7a1a;transition:width .3s}' +
     '#rwMis .mm{display:flex;justify-content:space-between;font:600 11px "Barlow Condensed",system-ui,sans-serif;letter-spacing:.04em;color:#a39e90}' +
-    '@media (max-width:760px){#rwMis{top:112px;width:190px;padding:7px 9px}#rwMis .mt{font-size:12px}#rwWel{padding:18px 18px 14px}#rwWel h2{font-size:26px}#rwWel .wk{grid-template-columns:minmax(0,1fr)}}';
+    '@media (max-width:760px),(max-height:560px){#rwMis{top:112px;width:190px;padding:7px 9px}#rwMis .mt{font-size:12px}#rwWel{top:4%;padding:14px 16px 12px;max-height:54vh}#rwWel h2{font-size:22px;margin:4px 0}#rwWel p{margin-bottom:10px;font-size:13px}#rwWel .wk{gap:5px 14px}#rwWel .wf{margin-top:10px;padding-top:8px}}';
   function rwWelcomeShow() {
     if (!RW.hud) return;
     if (!RW.welEl) {
@@ -8005,6 +8003,116 @@ Object.assign(EN, {
   }
   function rwNpcHurtMe(TP, ty) { if (TP === P) { RW.lastNpc = ty; RW.lastNpcT = gtime; } }
 
+  /* ---- the small maps get the same scenery treatment: textures, low-poly trees and bushes, grass ---- */
+  var RDT = 0.016;   // real frame time (not capped), so animations like raising your hands do not crawl when the first frames are slow
+  var GRUNGE_T, MAPB, MAPDM;
+  function mapGrunge() {   // light grey weathering multiplied over every building / prop colour
+    if (GRUNGE_T) return GRUNGE_T;
+    var c = document.createElement('canvas'); c.width = c.height = 256;
+    var x = c.getContext('2d'), img = x.createImageData(256, 256), d = img.data, i;
+    for (i = 0; i < 256 * 256; i++) { var v = 226 + Math.random() * 29; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; }
+    x.putImageData(img, 0, 0);
+    for (i = 0; i < 26; i++) { var sx = Math.random() * 256, g = x.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, 'rgba(60,50,40,.16)'); g.addColorStop(1, 'rgba(60,50,40,0)'); x.fillStyle = g; x.fillRect(sx, Math.random() * 120, 2 + Math.random() * 8, 60 + Math.random() * 140); }
+    for (i = 0; i < 40; i++) { x.fillStyle = 'rgba(40,34,28,' + (0.04 + Math.random() * 0.08) + ')'; x.beginPath(); x.arc(Math.random() * 256, Math.random() * 256, 4 + Math.random() * 18, 0, 7); x.fill(); }
+    x.strokeStyle = 'rgba(30,26,22,.18)'; x.lineWidth = 1;
+    for (i = 0; i < 10; i++) { var px = Math.random() * 256, py = Math.random() * 256; x.beginPath(); x.moveTo(px, py); for (var k = 0; k < 5; k++) { px += (Math.random() - 0.5) * 30; py += Math.random() * 18; x.lineTo(px, py); } x.stroke(); }
+    GRUNGE_T = new THREE.CanvasTexture(c); GRUNGE_T.wrapS = GRUNGE_T.wrapT = THREE.RepeatWrapping;
+    try { GRUNGE_T.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
+    return GRUNGE_T;
+  }
+  function gUvBox(w, h, d) {   // box with its texture kept at a 2.5 m tile on every face
+    var g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv, nr = g.attributes.normal;
+    for (var i = 0; i < uv.count; i++) {
+      var ax = Math.abs(nr.getX(i)), ay = Math.abs(nr.getY(i)), su, sv;
+      if (ax > 0.5) { su = d; sv = h; } else if (ay > 0.5) { su = w; sv = d; } else { su = w; sv = h; }
+      uv.setXY(i, uv.getX(i) * su / 2.5, uv.getY(i) * sv / 2.5);
+    }
+    return g;
+  }
+  function makeGround2(kind) {   // richer ground textures, same overall colours as before
+    var S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+    var x = c.getContext('2d'), i, k;
+    function speck(n, cols, w0, w1, a) { for (var j = 0; j < n; j++) { x.fillStyle = cols[Math.floor(Math.random() * cols.length)]; x.globalAlpha = a; var w = w0 + Math.random() * (w1 - w0); x.fillRect(Math.random() * S, Math.random() * S, w, w * (0.6 + Math.random())); } x.globalAlpha = 1; }
+    if (kind === 'grass') {
+      x.fillStyle = '#3d4a2b'; x.fillRect(0, 0, S, S);
+      for (i = 0; i < 18; i++) { x.fillStyle = Math.random() < 0.5 ? 'rgba(70,90,45,.25)' : 'rgba(40,48,26,.3)'; x.beginPath(); x.arc(Math.random() * S, Math.random() * S, 20 + Math.random() * 50, 0, 7); x.fill(); }
+      for (i = 0; i < 3200; i++) { var gx = Math.random() * S, gy = Math.random() * S, l = 3 + Math.random() * 6; x.strokeStyle = 'rgba(' + (55 + Math.random() * 50 | 0) + ',' + (78 + Math.random() * 60 | 0) + ',' + (30 + Math.random() * 20 | 0) + ',.55)'; x.lineWidth = 1; x.beginPath(); x.moveTo(gx, gy); x.lineTo(gx + (Math.random() - 0.5) * 3, gy - l); x.stroke(); }
+      speck(60, ['#5a4a32', '#4a3d2a'], 2, 5, 0.5);
+    } else if (kind === 'dirt') {
+      x.fillStyle = '#4a3b2b'; x.fillRect(0, 0, S, S);
+      for (i = 0; i < 16; i++) { x.fillStyle = Math.random() < 0.5 ? 'rgba(90,72,50,.25)' : 'rgba(40,30,20,.3)'; x.beginPath(); x.arc(Math.random() * S, Math.random() * S, 20 + Math.random() * 60, 0, 7); x.fill(); }
+      speck(1400, ['#6a5638', '#3a2e20', '#5a4a34', '#7a6648'], 1, 3, 0.55);
+      speck(120, ['#8a8478', '#6a665e', '#9a9488'], 2, 5, 0.8);   // pebbles
+      x.strokeStyle = 'rgba(30,22,14,.25)'; x.lineWidth = 6; for (k = 0; k < 2; k++) { x.beginPath(); x.moveTo(0, 60 + k * 120); x.bezierCurveTo(80, 40 + k * 120, 170, 90 + k * 120, S, 70 + k * 120); x.stroke(); }
+    } else if (kind === 'asphalt') {
+      x.fillStyle = '#383733'; x.fillRect(0, 0, S, S);
+      speck(5000, ['#4a4944', '#2c2b28', '#55534d', '#3f3e39'], 1, 2, 0.6);
+      for (i = 0; i < 6; i++) { x.fillStyle = 'rgba(25,25,23,.35)'; x.fillRect(Math.random() * S, Math.random() * S, 20 + Math.random() * 50, 16 + Math.random() * 40); }
+      x.strokeStyle = 'rgba(15,15,14,.6)'; x.lineWidth = 1.2;
+      for (i = 0; i < 7; i++) { var ax = Math.random() * S, ay = Math.random() * S; x.beginPath(); x.moveTo(ax, ay); for (k = 0; k < 6; k++) { ax += (Math.random() - 0.5) * 34; ay += (Math.random() - 0.5) * 34; x.lineTo(ax, ay); } x.stroke(); }
+    } else {   // concrete slabs
+      x.fillStyle = '#2d2c29'; x.fillRect(0, 0, S, S);
+      for (i = 0; i < 2; i++) for (k = 0; k < 2; k++) { var sh = 40 + Math.random() * 10 | 0; x.fillStyle = 'rgb(' + sh + ',' + (sh - 1) + ',' + (sh - 4) + ')'; x.fillRect(i * 128 + 2, k * 128 + 2, 124, 124); }
+      speck(3000, ['#3a3934', '#252421', '#44423d'], 1, 2, 0.5);
+      for (i = 0; i < 10; i++) { x.fillStyle = 'rgba(20,18,15,' + (0.1 + Math.random() * 0.15) + ')'; x.beginPath(); x.arc(Math.random() * S, Math.random() * S, 6 + Math.random() * 26, 0, 7); x.fill(); }
+      x.fillStyle = '#1c1b19'; x.fillRect(0, 0, S, 3); x.fillRect(0, 127, S, 3); x.fillRect(0, 0, 3, S); x.fillRect(127, 0, 3, S);
+      x.strokeStyle = 'rgba(15,14,12,.55)'; x.lineWidth = 1;
+      for (i = 0; i < 5; i++) { var cx = Math.random() * S, cy = Math.random() * S; x.beginPath(); x.moveTo(cx, cy); for (k = 0; k < 5; k++) { cx += (Math.random() - 0.5) * 30; cy += (Math.random() - 0.5) * 30; x.lineTo(cx, cy); } x.stroke(); }
+    }
+    var t2 = new THREE.CanvasTexture(c); t2.wrapS = t2.wrapT = THREE.RepeatWrapping;
+    try { t2.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
+    return t2;
+  }
+  ['tile', 'grass', 'asphalt', 'dirt'].forEach(function (k) { groundTex[k] = makeGround2(k); });
+  function mapB() { return MAPB || (MAPB = rwNewB()); }
+  function mapFlushDecor() {   // called from flushBatches(): one vertex-coloured mesh for all trees and bushes
+    if (!MAPB || !MAPB.p.length) { MAPB = null; return; }
+    MAPDM = MAPDM || new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
+    var m = new THREE.Mesh(rwDecorGeo(MAPB), MAPDM); mapGroup.add(m); MAPB = null;
+  }
+  function mapTree(x, z, big) {
+    var h = big ? rr(5.5, 7.5) : rr(4, 5.5), tr = 0.32;
+    boxes.push({ minX: x - tr, maxX: x + tr, minZ: z - tr, maxZ: z + tr, y0: 0, h: h * 0.6 });   // only the trunk is solid, as before
+    blockers.push({ minX: x - tr, maxX: x + tr, minY: 0, maxY: h * 0.6, minZ: z - tr, maxZ: z + tr });
+    var B = mapB(), bark = [0.3 + rng() * 0.05, 0.21, 0.13], i;
+    if (rng() < 0.55) {   // conifer
+      rwFrustumB(B, x, -0.1, z, 0.34, 0.1, h + 1.2, 7, bark);
+      var gc = rwGreen(rng() * 0.5), tiers = 4, base = h * 0.32, sc = big ? 1.25 : 1;
+      for (i = 0; i < tiers; i++) { var f = i / tiers; rwConeB2(B, x, base + i * 1.15 * sc, z, (2.2 - f * 1.55) * sc, (1.9 - f * 0.5) * sc, 9, [gc[0] * (0.75 + f * 0.35), gc[1] * (0.78 + f * 0.3), gc[2] * (0.8 + f * 0.25)], rng); }
+    } else {   // broadleaf
+      rwFrustumB(B, x, -0.1, z, 0.36, 0.2, h * 0.75, 7, bark);
+      var top = h * 0.7, lc = [0.22 + rng() * 0.1, 0.38 + rng() * 0.1, 0.16], s2 = big ? 1.3 : 1.05;
+      for (i = 0; i < 3; i++) { var la = i / 3 * 6.28 + rng(); rwLimbB(B, [x, h * 0.5, z], [x + Math.cos(la) * 1.1 * s2, top + 0.4, z + Math.sin(la) * 1.1 * s2], 0.09, bark); }
+      for (i = 0; i < 6; i++) { var ba = rng() * 6.28, bd = i === 0 ? 0 : (0.7 + rng() * 0.8) * s2, bs = (1.2 + rng() * 0.6) * s2, cv = 0.85 + rng() * 0.3; rwBlobB(B, x + Math.cos(ba) * bd, top + (0.6 + rng() * 1.0) * s2 + (i === 0 ? 0.6 : 0), z + Math.sin(ba) * bd, bs, bs * 0.8, bs, [lc[0] * cv, lc[1] * cv, lc[2] * cv], rng, 0.2); }
+    }
+  }
+  function mapBush(x, z) {
+    var B = mapB(), bc = rwGreen(rng() * 0.4), n = 2 + Math.floor(rng() * 2), s = 0.5 + rng() * 0.35;
+    for (var k = 0; k < n; k++) rwBlobB(B, x + (rng() - 0.5) * s * 1.3, s * 0.6, z + (rng() - 0.5) * s * 1.3, s, s * 0.75, s, [bc[0] * 0.8, bc[1] * 0.85, bc[2] * 0.8], rng, 0.22);
+  }
+  function mapGrass(def) {   // swaying tufts on the grass and dirt maps, kept off buildings and roads
+    if (def.ground !== 'grass' && def.ground !== 'dirt') return;
+    if (!GRASS) return;   // the very first map build happens before the grass system exists; the next loadMap adds it
+    rwGrassInit();
+    var dens = SET.res === 0 ? 0.3 : SET.res === 1 ? 0.6 : 1, dry = def.ground === 'dirt';
+    var N = Math.min(16000, Math.round(A * A * 4 * (dry ? 0.22 : 0.85) * dens)), mesh = new THREE.InstancedMesh(GRASS.geo, GRASS.mat, N);
+    var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), col = new THREE.Color(), n = 0, rg = seeded(hashStr('mg' + mapId));
+    for (var i = 0; i < N * 1.6 && n < N; i++) {
+      var x = (rg() * 2 - 1) * (A - 1.5), z = (rg() * 2 - 1) * (A - 1.5);
+      if (!isFree(x, z, 0.3) && Math.abs(x) < A - 3 && Math.abs(z) < A - 3) continue;
+      var onRoad = false; for (var r = 0; r < roadList.length; r++) { var rd = roadList[r]; if (Math.abs(x - rd.x) < rd.w / 2 + 0.3 && Math.abs(z - rd.z) < rd.d / 2 + 0.3) { onRoad = true; break; } }
+      if (onRoad || (fortRect && x > fortRect.x0 - 2 && x < fortRect.x1 + 2 && z > fortRect.z0 - 2 && z < fortRect.z1 + 2)) continue;
+      if (rg() > 0.45 + 0.55 * Math.sin(x * 0.11 + 1.3) * Math.cos(z * 0.09)) continue;   // patchy
+      var v = (rg() - 0.5) * 0.08;
+      if (dry) col.setRGB(0.55 + v, 0.48 + v, 0.26); else col.setRGB(0.3 + v, 0.42 + v, 0.18 + v * 0.5);
+      e.set(0, rg() * 6.28, 0); q.setFromEuler(e);
+      var sc = 0.7 + rg() * 0.6; sv.set(sc, sc * (dry ? 0.5 + rg() * 0.4 : 0.6 + rg() * 0.6), sc); pv.set(x, 0, z);
+      m4.compose(pv, q, sv); mesh.setMatrixAt(n, m4); mesh.setColorAt(n, col); n++;
+    }
+    mesh.count = n; mesh.frustumCulled = false; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mapGroup.add(mesh);
+  }
+
   EN['收购'] = 'Sell';
 
   /* ---------- loop ---------- */
@@ -8018,7 +8126,7 @@ Object.assign(EN, {
       if (el < minDt - 1) return;                    // too early: skip this display refresh to hold the cap
       last = now - (el % minDt);
     } else last = now;
-    var dt = Math.min(0.05, el / 1000);
+    var dt = Math.min(0.05, el / 1000); RDT = Math.min(0.5, el / 1000);
     if (SET.showFps) {
       fpsN++; fpsT += el;
       if (fpsT >= 500) { fpsMeter.textContent = Math.round(fpsN * 1000 / fpsT) + ' FPS'; fpsN = 0; fpsT = 0; }
