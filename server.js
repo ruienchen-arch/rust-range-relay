@@ -35,12 +35,12 @@ const rooms = new Map();
 const WORLD_SIZE = +process.env.WORLD_SIZE || 1500;
 const INTEREST = 420;
 const world = { clients: new Map(), nextId: 1, auth: 0, nodes: new Map(), drops: new Map(), dropSeq: 0 };
-const RESPAWN_MS = { tree: 600000, rock: 600000, ore: 900000, crate: 900000, hemp: 300000 };
-// ---- seasons: the island is wiped and a new one generated every SEASON_DAYS days (default 15) ----
+const RESPAWN_MS = { tree: 600000, rock: 600000, ore: 900000, crate: 900000, hemp: 300000, barrel: 300000 };
+// ---- seasons: the island is wiped and a new one generated every SEASON_DAYS days (default 30) ----
 // The island comes from the season number, not from a file, so it stays the same across server restarts
 // (free hosts restart often and lose their disk) and changes by itself when a season ends.
 // SEASON_DAYS=0 keeps one island for ever. SEASON_START sets when season 1 began. WORLD_SEED changes every island.
-const SEASON_DAYS = process.env.SEASON_DAYS !== undefined && process.env.SEASON_DAYS !== '' ? Math.max(0, +process.env.SEASON_DAYS || 0) : 15;
+const SEASON_DAYS = process.env.SEASON_DAYS !== undefined && process.env.SEASON_DAYS !== '' ? Math.max(0, +process.env.SEASON_DAYS || 0) : 30;
 const SEASON_MS = SEASON_DAYS * 86400000;
 const SEASON_START = Date.parse(process.env.SEASON_START || '2026-11-09T00:00:00+11:00') || 0;
 function seasonNow(now) {
@@ -49,7 +49,8 @@ function seasonNow(now) {
   const i = Math.max(0, Math.floor((now - SEASON_START) / SEASON_MS));
   return { i: i + 1, start: SEASON_START + i * SEASON_MS, end: SEASON_START + (i + 1) * SEASON_MS, days: SEASON_DAYS };
 }
-function worldSeed() { return (process.env.WORLD_SEED || 'rr') + (SEASON_MS ? '-s' + seasonNow().i : ''); }
+const MAP_VER = 'm2';   // terrain version: bumping it gives everybody a fresh map (update 35: hills, mountains, biomes)
+function worldSeed() { return (process.env.WORLD_SEED || 'rr') + (SEASON_MS ? '-s' + seasonNow().i : '') + '-' + MAP_VER; }
 const AUTH_QUIET = 6000;   // the authority's game must send something at least this often (it sends ~20 times a second while playing)
 function electAuthority() {
   let best = 0, live = 0; const now = Date.now();
@@ -98,7 +99,7 @@ function worldChat(c, m) {
 function worldDeath(c, m) {   // the victim reports who or what killed them
   const now = Date.now(); if (now - (c.dt || 0) < 3000) return; c.dt = now;
   const k = world.clients.get(m.a | 0), w = String(m.w || ''), by = String(m.by || '');
-  chatPush({ t: 'RK', v: c.name, a: k && k !== c ? k.name : '', w: /^(g[0-9]|rock|hatchet|pickaxe|hammer|hands)$/.test(w) ? w : '', h: m.h ? 1 : 0, by: /^[a-z]{2,8}$/.test(by) ? by : '' });
+  chatPush({ t: 'RK', v: c.name, a: k && k !== c ? k.name : '', w: /^(g[0-9]{1,2}|rock|hatchet|pickaxe|hammer|hands)$/.test(w) ? w : '', h: m.h ? 1 : 0, by: /^[a-z]{2,8}$/.test(by) ? by : '' });
 }
 function worldGather(c, m) {
   const id = String(m.id || ''), kind = String(m.k || '');
@@ -157,7 +158,7 @@ const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw
 const HP = { dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|g[0-9])$/;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|g[0-9]{1,2})$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
