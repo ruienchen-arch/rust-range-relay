@@ -5540,6 +5540,7 @@ Object.assign(EN, {
     }
   }
   function rwWelcome(m) {
+    RW.tOff = +m.now > 0 ? +m.now - Date.now() : 0;   // the server's clock, for weather everybody shares
     RW.seed = String(m.seed || 'rust'); RW.s = hashStr(RW.seed) | 0; RW.half = (m.size | 0) || 1500;
     CO.id = m.id | 0; CO.myName = String(m.name || '');
     CO.peers = {}; CO.list = [];
@@ -10749,9 +10750,10 @@ Object.assign(EN, {
   var WX_BAG = [0, 0, 1, 1, 1, 2, 2, 3, 4, 4, 5, 0, 1];   // how often each kind comes up
   var WX_SLOT = 420;   // seconds per weather spell; the last 60 s blend into the next
   function wxKindAt(slot) { var h = rwHash(slot, 77, 9001); return WX_TYPES[WX_BAG[Math.floor(h * WX_BAG.length) % WX_BAG.length]]; }
+  function wxTime() { return (Date.now() + (RW.tOff || 0)) / 1000; }   // the server's clock (offset measured when you join), so every player sees the same weather
   function wxNow() {   // the blended weather right now
     if (window.RR_WX) { var fz = WX_TYPES.filter(function (q) { return q.id === window.RR_WX; })[0]; if (fz) return { a: fz, b: fz, k: 0, cover: fz.cover, dark: fz.dark, fog: fz.fog, rain: fz.rain, light: fz.light, storm: fz.id === 'storm' ? 1 : 0, name: fz.n }; }   // tests
-    var t = Date.now() / 1000, s = Math.floor(t / WX_SLOT), f = (t - s * WX_SLOT) / WX_SLOT, a = wxKindAt(s), b = wxKindAt(s + 1);
+    var t = wxTime(), s = Math.floor(t / WX_SLOT), f = (t - s * WX_SLOT) / WX_SLOT, a = wxKindAt(s), b = wxKindAt(s + 1);
     var k = rwSm(Math.min(1, Math.max(0, (f - (1 - 60 / WX_SLOT)) / (60 / WX_SLOT))));
     var o = { a: a, b: b, k: k };
     ['cover', 'dark', 'fog', 'rain', 'light'].forEach(function (p) { o[p] = a[p] + (b[p] - a[p]) * k; });
@@ -10816,7 +10818,7 @@ Object.assign(EN, {
     var wind = 6, cc = new THREE.Color().setRGB(1 - w.dark * 0.62, 1 - w.dark * 0.6, 1 - w.dark * 0.55);
     for (var i = 0; i < WX.puffs.length; i++) {
       var g = WX.puffs[i], u = g.userData;
-      u.x += wind * dt; var rx = ((u.x - P.x) % 1600 + 2400) % 1600 - 800, rz = ((u.z - P.z) % 1600 + 2400) % 1600 - 800;
+      var cxw = u.x + wind * (wxTime() % 100000), rx = ((cxw - P.x) % 1600 + 2400) % 1600 - 800, rz = ((u.z - P.z) % 1600 + 2400) % 1600 - 800;
       g.position.set(P.x + rx, u.y, P.z + rz);
       var on = u.rank < w.cover, op = on ? Math.min(1, (w.cover - u.rank) * 6) : 0;
       g.visible = op > 0.01;
@@ -10834,17 +10836,21 @@ Object.assign(EN, {
     }
     // lightning
     WX.flash = Math.max(0, WX.flash - dt * 4);
-    if (w.storm > 0.3) {
-      if (WX.t > WX.nextBolt) {
-        WX.nextBolt = WX.t + 8 + Math.random() * 18; WX.flash = 1;
-        var ba = Math.random() * 6.28, bd = 200 + Math.random() * 300;
-        setTimeout(function () { sfx('explode', { x: P.x + Math.cos(ba) * Math.min(bd, 160), z: P.z + Math.sin(ba) * Math.min(bd, 160), r: 0.45 }); }, bd / 340 * 1000);
+    var sec = Math.floor(wxTime());   // lightning strikes on the same seconds for everybody
+    if (WX.lastSec === undefined || sec - WX.lastSec > 5) WX.lastSec = sec;
+    while (WX.lastSec < sec) {
+      WX.lastSec++;
+      if (w.storm > 0.3 && rwHash(WX.lastSec, 31, 777) < 1 / 14) {
+        WX.flash = 1; WX.bolts = (WX.bolts || 0) + 1;
+        var ba = rwHash(WX.lastSec, 32, 778) * 6.28, bd = 200 + rwHash(WX.lastSec, 33, 779) * 300;
+        (function (ba, bd) { setTimeout(function () { sfx('explode', { x: P.x + Math.cos(ba) * Math.min(bd, 160), z: P.z + Math.sin(ba) * Math.min(bd, 160) }); }, bd / 340 * 1000); })(ba, bd);
       }
     }
     hemi.intensity = B.hemi * (0.3 + 0.7 * w.light) + WX.flash * 1.6;
     sun.intensity = B.sun * w.light;
     // rain
-    var rv = w.rain, under = ceilAt(P.x, P.z, P.y + 0.5) < P.y + 6;
+    var rv = w.rain; if (rv > 0.02) wxCoverUpdate();
+    var under = rv > 0.02 && wxCovered(camera.position.x, camera.position.y + 0.3, camera.position.z);
     WX.rain.visible = rv > 0.02 && !underwaterNow();
     if (WX.rain.visible) {
       var a = WX.rainGeo.attributes.position.array, n = Math.floor(WX.rainN * rv), cxp = camera.position.x, cyp = camera.position.y, czp = camera.position.z, k = 0;
@@ -10853,12 +10859,41 @@ Object.assign(EN, {
         p[1] -= 26 * p[3] * dt; if (p[1] < -8) { p[1] += 30; p[0] = (Math.random() - 0.5) * 60; p[2] = (Math.random() - 0.5) * 60; }
         if (i >= n) { a[k++] = 0; a[k++] = -999; a[k++] = 0; a[k++] = 0; a[k++] = -999; a[k++] = 0; continue; }
         var x = cxp + p[0], y = cyp + p[1] - 6, z = czp + p[2];
+        if (wxCovered(x, y, z)) { a[k++] = 0; a[k++] = -999; a[k++] = 0; a[k++] = 0; a[k++] = -999; a[k++] = 0; continue; }   // under a roof, a floor or inside a building: no rain
         a[k++] = x; a[k++] = y; a[k++] = z; a[k++] = x + 0.12; a[k++] = y - 0.9; a[k++] = z;
       }
       WX.rainGeo.attributes.position.needsUpdate = true;
-      WX.rain.material.opacity = (under ? 0.18 : 0.45) * Math.min(1, rv * 1.5);
+      WX.rain.material.opacity = 0.45 * Math.min(1, rv * 1.5);
     }
-    wxRainSound(rv * (under ? 0.6 : 1) * (state === 'playing' || state === 'bag' ? 1 : 0.4));
+    wxRainSound(rv * (under ? 0.35 : 1) * (state === 'playing' || state === 'bag' ? 1 : 0.4));
+  }
+  /* which ground cells around you are covered, and how high: the top of roofs, floors, monument buildings and props.
+     Rain drops below that height are not drawn, so it never rains inside a house. Rebuilt as you move and twice a second. */
+  var WXC_N = 72;
+  function wxCoverUpdate() {
+    var cx = Math.floor(camera.position.x), cz = Math.floor(camera.position.z), now = performance.now() / 1000, np = (RW.plist || []).length;
+    if (WX.cov && Math.abs(cx - WX.covX - WXC_N / 2) < 6 && Math.abs(cz - WX.covZ - WXC_N / 2) < 6 && now - WX.covT < 0.5 && np === WX.covP) return;
+    WX.covP = np;
+    var N = WXC_N, x0 = cx - N / 2, z0 = cz - N / 2, cov = WX.cov || (WX.cov = new Float32Array(N * N)), i;
+    WX.covX = x0; WX.covZ = z0; WX.covT = now;
+    for (i = 0; i < N * N; i++) cov[i] = -1e9;
+    function fill(minX, maxX, minZ, maxZ, top) {
+      var a0 = Math.max(0, Math.floor(minX - x0)), a1 = Math.min(N - 1, Math.floor(maxX - x0 - 0.001)), b0 = Math.max(0, Math.floor(minZ - z0)), b1 = Math.min(N - 1, Math.floor(maxZ - z0 - 0.001));
+      for (var b = b0; b <= b1; b++) for (var a = a0; a <= a1; a++) { var j = b * N + a; if (top > cov[j]) cov[j] = top; }
+    }
+    var X1 = x0 + N, Z1 = z0 + N;
+    for (i = 0; i < boxes.length; i++) { var o = boxes[i]; if (o.maxX < x0 || o.minX > X1 || o.maxZ < z0 || o.minZ > Z1) continue; fill(o.minX, o.maxX, o.minZ, o.maxZ, o.h); }
+    for (i = 0; i < bldList.length; i++) { var bd = bldList[i]; if (Math.abs(bd.x - cx) > N || Math.abs(bd.z - cz) > N) continue; fill(bd.x - bd.w / 2, bd.x + bd.w / 2, bd.z - bd.d / 2, bd.z + bd.d / 2, (bd.floors || 1) * (bd.fh || 3) + 1.5); }
+    (RW.plist || []).forEach(function (p) {
+      if (Math.abs(p.x - cx) > N || Math.abs(p.z - cz) > N || !p.pk) return;
+      p.pk.forEach(function (b) { if (b.maxX - b.minX > 0.6 && b.maxZ - b.minZ > 0.6) fill(b.minX, b.maxX, b.minZ, b.maxZ, b.maxY); });   // floors, roofs, foundations (not the thin walls)
+    });
+  }
+  function wxCovered(x, y, z) {
+    if (!WX.cov) return false;
+    var a = Math.floor(x - WX.covX), b = Math.floor(z - WX.covZ);
+    if (a < 0 || b < 0 || a >= WXC_N || b >= WXC_N) return false;
+    return y < WX.cov[b * WXC_N + a];
   }
   function wxOff() {   // leaving the island: quiet the rain, hide the island-only overlays
     if (WX.ng) wxRainSound(0);

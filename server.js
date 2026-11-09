@@ -76,7 +76,7 @@ function worldJoin(c, m) {
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).last || 0) > AUTH_QUIET) world.auth = c.id;
-  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub) }));
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub) }));
   setTimeout(() => bkSend(c, true), 3000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
   chatPush({ t: 'RJ', n: c.name, j: 1 });
