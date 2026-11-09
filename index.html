@@ -3732,12 +3732,13 @@ Object.assign(EN, {
     var gh = groundAt(P.x, P.z, oldY + 0.65);
     var sfxLandV; if (P.y <= gh && !wasG) sfxLandV = P.vy;
     if (P.y <= gh) { P.y = gh; P.vy = 0; P.ground = true; } else P.ground = false;
-    if (RW.on && !swimNow && wasG && !P.ground && P.vy <= 0 && P.y - gh < 0.7) { P.y = gh; P.vy = 0; P.ground = true; }   // stick to the slope when running downhill
+    if (RW.on && !swimNow && wasG && !P.ground && P.vy <= 0 && P.y - gh < 0.7) { P.y = gh; P.vy = 0; P.ground = true; }
+    if (RW.on && CAR.mine) rwCarSeat();   // riding in a car: you sit in your seat   // stick to the slope when running downhill
     bob += dt * (ml > 0.1 && P.ground ? sp : 0);
     sprT += ((sprinting && P.ground ? 1 : 0) - sprT) * Math.min(1, dt * (sprinting ? 7 : 14));   // running poses: sprint (gun across the chest) and low ready while moving
     var lowW = ml > 0.1 && !sprinting && fireHold <= 0 && !aiming;
     lowT += ((lowW ? 1 : 0) - lowT) * Math.min(1, dt * (lowW ? 3.5 : 16));
-    if (!FZ) sfxStepTick(dt, ml > 0.1, sprinting, sfxLandV); sfxLandV = undefined;   // footsteps and landing
+    if (!FZ && !CAR.mine) sfxStepTick(dt, ml > 0.1, sprinting, sfxLandV); sfxLandV = undefined;   // footsteps and landing
 
     camera.position.set(P.x, P.y + 1.7 + Math.sin(bob * 1.4) * 0.03 * Math.min(1, ml), P.z);
     camera.rotation.set(P.pitch, P.yaw, 0);
@@ -5510,6 +5511,7 @@ Object.assign(EN, {
       case 'Rl': { var fp = RW.pieces[m.id | 0]; if (fp) { fp.op = m.o | 0; rwFurnaceLit(fp); } break; }
       case 'RA': { var tp = RW.pieces[m.id | 0]; if (tp && Array.isArray(m.a)) { var was = (tp.auth || []).indexOf(RW.me) >= 0; tp.auth = m.a.map(String); var now = tp.auth.indexOf(RW.me) >= 0; if (was !== now && Math.hypot(tp.x - P.x, tp.z - P.z) < 8) banner(now ? zt('已在领地柜上授权：25 米内可以建造、开门', 'Authorised: you can build and open doors within 25 m') : zt('已取消授权', 'Authorisation removed'), 1800); } break; }
       case 'RV': rwContView(m); break;
+      case 'RVs': case 'RVm': case 'RVc': case 'RVf': rwCarMsg(m); break;
       case 'RR': { var lf = rwGive(String(m.it), m.n | 0); if (lf > 0) rwDropAdd([{ id: String(m.it), n: lf }], P.x, P.z, null, 600, P.y); banner(zt('放不下，还给你了', 'No room: returned to you'), 1100); break; }
       case 'RG': { var lg = rwGive(String(m.it), m.n | 0), tk = (m.n | 0) - lg; if (tk > 0) rwNote(String(m.it), tk); if (lg > 0) { rwDropAdd([{ id: String(m.it), n: lg }], P.x, P.z, null, 600, P.y); banner(zt('背包满了，放在脚边', 'Inventory full: dropped at your feet'), 1300); } break; }
       case 'RD': if (m.at && m.it) rwDropAdd(m.it.map(function (q) { return { id: String(q[0]), n: q[1] | 0 }; }), +m.at[0], +m.at[2], null, 600, +m.at[1]); break;
@@ -5550,7 +5552,7 @@ Object.assign(EN, {
     rwSetAuth(m.auth | 0);
     RW.online = (m.peers ? m.peers.length : 0) + 1;
     RW.me = String(m.me || ''); RW.saveIn = m.save || null; RW.restored = 0; RW.season = m.season || null; RW.wiped = false;
-    rwBuildWorld(); rwPiecesLoad(m.builds); rwStart(); rwChatStart(m.chat); rwSeasonNote(); rwDropsLoad(m.drops);
+    rwBuildWorld(); rwPiecesLoad(m.builds); rwStart(); rwChatStart(m.chat); rwSeasonNote(); rwDropsLoad(m.drops); rwCarsLoad(m.cars);
   }
 
   /* ---- building the world and starting to play ---- */
@@ -6494,6 +6496,7 @@ Object.assign(EN, {
     return true;
   }
   function rwUseSlot(i) {
+    if (RW.inv[i] && RW.inv[i].id === 'car') return rwCarDeploy(i);
     var s0 = RW.inv[i]; if (s0 && RW_RES_TOOL[s0.id]) return rwGoBuild(s0.id);
     var s = RW.inv[i]; if (!s || !RWI[s.id] || !RWI[s.id].use) return false;
     var id = s.id;
@@ -6808,10 +6811,15 @@ Object.assign(EN, {
       if (p > 0) { var ext = p < VM.hitAt ? sstep(0.05, VM.hitAt, p) : 1 - sstep(VM.hitAt, 1, p); if (VM.side > 0) pr = ext; else pl = ext; }
       var pump = sr * Math.sin(bob * 0.7), lift = hk !== 'hands' ? 0.03 : 0;
       // a loose guard: fists low, knuckles forward, thumbs turned in, forearms running out to the bottom corners
-      VM.fr.position.set((0.19 - 0.08 * pr) * Math.max(0.55, ax), -0.2 + 0.07 * pr + 0.04 * pump + lift, -0.44 - 0.3 * pr + 0.06 * pump);
-      VM.fr.rotation.set(-0.75 + 0.45 * pr - 0.3 * sr, 0.35 - 0.2 * pr, 0.45 - 0.25 * pr);
-      VM.fl.position.set((-0.19 + 0.08 * pl) * Math.max(0.55, ax), -0.21 + 0.07 * pl - 0.04 * pump, -0.46 - 0.3 * pl - 0.06 * pump);
-      VM.fl.rotation.set(-0.75 + 0.45 * pl - 0.3 * sr, -0.35 + 0.2 * pl, -0.45 + 0.25 * pl);
+      // guard pose (standing / walking), blended into a running pose while sprinting: the arms pump in turn,
+      // each fist swinging forward and up as the opposite foot lands, then back and down, low at the screen edges
+      var axm = Math.max(0.55, ax), g = 1 - sr, ph = Math.sin(bob * 0.7), up = Math.max(0, ph), dn = Math.max(0, -ph), wk = lowT * (1 - sr) * Math.sin(bob * 0.7);
+      var rxR = (0.19 - 0.08 * pr) * axm, ryR = -0.2 + 0.07 * pr + lift + 0.012 * wk, rzR = -0.44 - 0.3 * pr - 0.03 * wk;
+      var rxL = (-0.19 + 0.08 * pl) * axm, ryL = -0.21 + 0.07 * pl - 0.012 * wk, rzL = -0.46 - 0.3 * pl + 0.03 * wk;
+      VM.fr.position.set(rxR * g + sr * (0.2 * axm - 0.025 * ph), ryR * g + sr * (-0.29 + 0.08 * up - 0.05 * dn + lift), rzR * g + sr * (-0.36 - 0.13 * ph));
+      VM.fr.rotation.set((-0.75 + 0.45 * pr) * g + sr * (-1.0 + 0.22 * ph), (0.35 - 0.2 * pr) * g + sr * (0.32 - 0.05 * ph), (0.45 - 0.25 * pr) * g + sr * (0.6 + 0.08 * ph));
+      VM.fl.position.set(rxL * g + sr * (-0.2 * axm - 0.025 * ph), ryL * g + sr * (-0.29 + 0.08 * dn - 0.05 * up), rzL * g + sr * (-0.36 + 0.13 * ph));
+      VM.fl.rotation.set((-0.75 + 0.45 * pl) * g + sr * (-1.0 - 0.22 * ph), (-0.35 + 0.2 * pl) * g + sr * (-0.32 - 0.05 * ph), (-0.45 + 0.25 * pl) * g + sr * (-0.6 + 0.08 * ph));
     } else {
       var plan = hk === 'plan', b0 = plan ? 0.17 : 0.3, b1 = plan ? -0.27 : -0.36, b2 = plan ? -0.42 : -0.56, rest = plan ? 0.05 : -0.22;
       var rx = rest, py = 0, pz = 0, rz = 0;
@@ -6828,7 +6836,7 @@ Object.assign(EN, {
     if (VM.shake > 0) VM.shake = Math.max(0, VM.shake - 0.016);
   }
   function vmUpdate(dt, hk) {
-    var show = hk !== 'gun' && state !== 'over' && !(RW.on && RW.dead);
+    var show = hk !== 'gun' && state !== 'over' && !(RW.on && RW.dead) && !(RW.on && CAR.mine);   // no floating fists while you sit in a car
     VM.g.visible = show;
     if (!show) { VM.sw = 0; return; }
     if (RW.on) { var s = rwHeldSlot(), hid = holster ? '' : s ? s.id : ''; if (hid !== RW.lastHeld) { RW.lastHeld = hid; drawT = 1; VM.sw = 0; } }
@@ -7740,7 +7748,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -9549,6 +9557,7 @@ Object.assign(EN, {
       h += '<h4>' + zt('地形、天气与游泳', 'Terrain, weather & swimming') + '</h4>' + gdCards([
         [zt('地形', 'Terrain'), zt('北边冷（苔原和雪山），中间温带（草地和森林），南边是沙漠（沙丘和仙人掌）。到处都是山丘，山脉里金属矿更多。在山坡上也能放地基，地基会自动加高支脚。', 'The north is cold (tundra and snowy mountains), the middle temperate (grass and forest), the south desert (dunes and cacti). Hills everywhere; mountains have more ore. Foundations work on hillsides, standing on taller footings.')],
         [zt('天气', 'Weather'), zt('晴、多云、阴天、大雾、下雨、雷雨每几分钟变一次，所有人看到的一样。天气只是好看，不影响玩法。小地图下面会写现在的天气和地形。', 'Clear, partly cloudy, overcast, fog, rain and thunderstorms change every few minutes, the same for everyone. Weather only changes how things look. It shows under the minimap with the biome.')],
+        [zt('汽车', 'Cars'), zt('很多建筑群旁边停着车（加油站、小镇、超市、火车站等），走过去按 E 上车，先坐驾驶座，最多 4 人。W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。也可以在工作台做一辆（金属碎片 500、木材 300、布 40），拿在手上左键放下，每人最多 3 辆。车停在哪里服务器都会记住。', 'Cars stand at many monuments (gas station, town, supermarket, train yard…). Walk up and press E: the driver seat first, up to 4 people. W/S drive and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Build one at a workbench (500 fragments, 300 wood, 40 cloth), hold it and left-click to park it; up to 3 per player. The server remembers where every car is parked.')],
         [zt('游泳', 'Swimming'), zt('深水里会浮起来游泳，比在陆地上慢。往下看再按前进就潜下去，按空格往上浮。水下有 30 秒氧气，用完会溺水掉血。', 'In deep water you float and swim, slower than on land. Look down and press forward to dive, Space to come up. You have 30 seconds of breath under water, then you start drowning.')]
       ]);
       h += '<h4>' + zt('前哨站', 'The Outpost') + '</h4><p>' + zt('前哨站是安全区：在里面不会受伤。柜台可以用金币买枪、弹药、护甲和补给，也可以把采集来的木材、石头、金属矿、金属碎片和布卖掉换金币。', 'The Outpost is a safe zone: nobody can hurt you there. Its counter sells guns, ammo, armor and supplies for coins, and buys the wood, stone, ore, fragments and cloth you gather.') + '</p>';
@@ -10219,10 +10228,11 @@ Object.assign(EN, {
     } else if (n.kind === 'barrel') {   // roadside loot barrel: blue or yellow oil drum with ribs
       if (dead) { rwBlobB(B, n.x, n.y, n.z, 0.45, 0.12, 0.45, [0.22, 0.24, 0.26], rg, 0.3); return; }
       var bc = n.v < 0.5 ? [0.16, 0.33, 0.6] : [0.82, 0.62, 0.12];
-      rwFrustumB(B, n.x, n.y, n.z, 0.36, 0.36, 1.05, 12, bc);
+      rwFrustumB(B, n.x, n.y, n.z, 0.36, 0.36, 1.05, 12, bc, [bc[0] * 0.8, bc[1] * 0.8, bc[2] * 0.8]);   // closed top (it used to be open and looked cut in half)
       rwFrustumB(B, n.x, n.y + 0.3, n.z, 0.38, 0.38, 0.06, 12, [bc[0] * 0.7, bc[1] * 0.7, bc[2] * 0.7]);
       rwFrustumB(B, n.x, n.y + 0.72, n.z, 0.38, 0.38, 0.06, 12, [bc[0] * 0.7, bc[1] * 0.7, bc[2] * 0.7]);
-      rwFrustumB(B, n.x, n.y + 1.05, n.z, 0.34, 0.34, 0.03, 12, [0.25, 0.26, 0.27]);
+      rwFrustumB(B, n.x, n.y + 1.05, n.z, 0.34, 0.34, 0.03, 12, [0.25, 0.26, 0.27], [0.3, 0.31, 0.32]);
+      rwBoxB(B, n.x + 0.16, n.y + 1.07, n.z, 0.08, 0.03, 0.08, [0.15, 0.15, 0.15]);   // bung
     }
   }
 
@@ -10279,7 +10289,8 @@ Object.assign(EN, {
     var k = 300;
     RW.mons.forEach(function (m) {
       (RW_MONLOOT[m.k] || []).forEach(function (c) {
-        var px = m.x + c[0], pz = m.z + c[1];
+        var px = m.x + c[0] * (m.fx || 1), pz = m.z + c[1] * (m.fz || 1);
+        for (var t = 0; t < 16 && rwMonBlocked(px, pz); t++) { var ta = t * 2.4, td = 2 + t * 0.8; px = m.x + c[0] * (m.fx || 1) + Math.cos(ta) * td; pz = m.z + c[1] * (m.fz || 1) + Math.sin(ta) * td; }   // never inside a prop
         if (Math.floor(px / S) !== cx || Math.floor(pz / S) !== cz) { k++; return; }
         out.push({ id: cx + '_' + cz + '_' + (k++), kind: 'crate', tier: c[2], x: px, z: pz, y: c[3] || 0, r: 0.8, max: 1, sc: 1, v: 0.5 });
       });
@@ -10333,7 +10344,15 @@ Object.assign(EN, {
     quarry: [[-34, -30, ''], [14, 20, 'mil']],
     village: [[10, 10, ''], [-10, -32, '']]
   };
-  var RW_RADZ = { radtown: [46, 7], military: [30, 3] };   // monument kind: [radius, radiation per second at the centre]
+  var RW_RADZ = { radtown: [46, 7], military: [30, 3], powerplant: [45, 4], trainyard: [30, 3], water: [30, 3], satellite: [22, 3], dome: [18, 4] };
+  // more kinds of monuments (Rust has many): [kind, radius, how many]
+  [['supermarket', 40, 2], ['lighthouse', 32, 1], ['powerplant', 90, 1], ['trainyard', 85, 1], ['satellite', 55, 1], ['junkyard', 60, 1], ['mining', 42, 2], ['water', 80, 1], ['dome', 45, 1], ['bandit', 55, 1]].forEach(function (s) { RW_SPECS.push(s); });
+  Object.assign(RW_NAMES, { supermarket: ['超市', 'Supermarket'], lighthouse: ['灯塔', 'Lighthouse'], powerplant: ['发电厂', 'Power Plant'], trainyard: ['火车站', 'Train Yard'], satellite: ['卫星天线', 'Satellite Dish'],
+    junkyard: ['废车场', 'Junkyard'], mining: ['采矿前哨', 'Mining Outpost'], water: ['水处理厂', 'Water Treatment'], dome: ['穹顶', 'The Dome'], bandit: ['强盗营地', 'Bandit Camp'] });
+  Object.assign(RW_CAMPS, { powerplant: ['gunner', 'gunner', 'rusher', 'rusher', 'tank'], trainyard: ['gunner', 'rusher', 'rusher', 'rusher'], satellite: ['rusher', 'gunner', 'sniper'], junkyard: ['rusher', 'rusher', 'rusher'],
+    mining: ['rusher', 'rusher'], water: ['rusher', 'rusher', 'gunner', 'bomber'], dome: ['sniper', 'gunner'], supermarket: ['rusher', 'rusher'], lighthouse: ['rusher'], bandit: ['gunner', 'gunner', 'rusher'] });
+  Object.assign(RW_MONLOOT, { supermarket: [[0, 4, ''], [-8, 10, '']], lighthouse: [[5, -5, '']], powerplant: [[0, 0, 'elite'], [20, -20, 'mil'], [-25, 15, 'mil']], trainyard: [[0, -16, 'mil'], [30, 14, 'mil'], [-30, -16, '']],
+    satellite: [[0, 8, 'elite'], [15, 15, 'mil']], junkyard: [[0, 10, ''], [10, -20, ''], [-10, 20, 'mil']], mining: [[6, -2, ''], [-4, 6, '']], water: [[0, -6, 'mil'], [40, -30, 'mil']], dome: [[0, 0, 'elite']], bandit: [[2, 4, 'mil'], [8, -2, '']] });   // monument kind: [radius, radiation per second at the centre]
 
   /* ---- model helpers (absolute world coordinates; monuments stand on y = 0) ---- */
   function mxCyl(x, z, r, h, col, y0, solidIt, seg) {
@@ -10443,91 +10462,204 @@ Object.assign(EN, {
 
   function rwBuildMonument(m) {
     var cx = m.x, cz = m.z, k = m.k;
-    function B(kind, dx, dz, w, d, door) { put(kind, cx + dx, cz + dz, w, d, door || faceCenter(dx, dz)); }
-    function C(dx, dz, along, col, stack) { container(cx + dx, cz + dz, along, col, stack); }
-    var ccol = [0x35527a, 0x7a3b2a, 0x4a5a3a, 0x7a6a2a, 0x5a3a5a];
+    var hh = rwHash(Math.round(m.x), Math.round(m.z), RW.s); m.fx = hh < 0.5 ? 1 : -1; m.fz = (hh * 7.31) % 1 < 0.5 ? 1 : -1;   // each copy is mirrored its own way
+    var fx = m.fx, fz = m.fz, sr = fz < 0 ? Math.PI : 0;
+    function X(d) { return cx + fx * d; } function Z(d) { return cz + fz * d; }
+    function B(kind, dx, dz, w, d, door) { put(kind, X(dx), Z(dz), w, d, door || faceCenter(fx * dx, fz * dz)); }
+    function C(dx, dz, along, col, stack) { container(X(dx), Z(dz), along, col, stack); }
+    function dr(dir) { if (!dir) return dir; if (fx < 0) dir = { e: 'w', w: 'e' }[dir] || dir; if (fz < 0) dir = { n: 's', s: 'n' }[dir] || dir; return dir; }
+    function Bd(kind, dx, dz, w, d, dir) { put(kind, X(dx), Z(dz), w, d, dr(dir)); }
+    var ccol = [0x35527a, 0x7a3b2a, 0x4a5a3a, 0x7a6a2a, 0x5a3a5a], a, i;
     if (k === 'outpost') {
-      B('shop', 0, 0, 14, 10, 's');
+      Bd('shop', 0, 0, 14, 10, 's');
       B('bungalow', -38, -30, 12, 9); B('bungalow', 38, -30, 12, 9); B('cottage', -36, 32, 10, 8); B('cottage', 36, 32, 10, 8);
       road(cx, cz, 8, 150); road(cx, cz, 150, 8);
-      C(-12, -48, true, ccol[0]); C(12, -48, true, ccol[1], true); sandbags(cx - 20, cz + 16, true); sandbags(cx + 20, cz + 16, true);
-      mxRecycler(cx - 12, cz + 10, false); mxRecycler(cx + 12, cz + 10, false);
-      mxText(cx, 5.2, cz + 5.1, 6, 1.1, 'OUTPOST', '#1d2a1c', '#8fd14f');
-      mxTower(cx - 56, cz + 56, 6); mxTower(cx + 56, cz - 56, 6);
-      for (var a = 0; a < 8; a++) lamp(cx + Math.cos(a * Math.PI / 4) * 55, cz + Math.sin(a * Math.PI / 4) * 55);
+      C(-12, -48, true, ccol[0]); C(12, -48, true, ccol[1], true); sandbags(X(-20), Z(16), true); sandbags(X(20), Z(16), true);
+      mxRecycler(X(-12), Z(10), false); mxRecycler(X(12), Z(10), false);
+      mxText(cx, 5.2, Z(5.1), 6, 1.1, 'OUTPOST', '#1d2a1c', '#8fd14f', sr);
+      mxTower(X(-56), Z(56), 6); mxTower(X(56), Z(-56), 6);
+      for (a = 0; a < 8; a++) lamp(cx + Math.cos(a * Math.PI / 4) * 55, cz + Math.sin(a * Math.PI / 4) * 55);
     } else if (k === 'military') {
       B('bunker', -46, -42, 9, 7); B('bunker', 46, -42, 9, 7); B('bunker', -46, 42, 9, 7); B('bunker', 46, 42, 9, 7);
       B('warehouse', 0, -56, 20, 12); B('warehouse', 0, 56, 20, 12); B('garage', -58, 0, 10, 8);
       road(cx, cz, 7, 140); road(cx, cz, 140, 7);
       C(-14, -14, true, ccol[2]); C(14, 14, false, ccol[2], true); C(-16, 16, true, ccol[1]); C(18, -18, false, ccol[0]);
-      sandbags(cx - 24, cz - 4, true); sandbags(cx + 24, cz + 4, true); sandbags(cx, cz - 30, false); sandbags(cx, cz + 30, false);
-      for (var q = 0; q < 8; q++) crate(cx - 18 + (q % 4) * 7, cz - 6 + Math.floor(q / 4) * 12, 1.2, 0x4a5a3a);
-      mxRadar(cx + 40, cz); mxTower(cx, cz + 72, 7); mxTower(cx, cz - 72, 7); mxRecycler(cx - 30, cz, true);
-      fenceRun(cx - 70, cz - 66, cx - 20, cz - 66, 0x5b5e60); fenceRun(cx + 20, cz - 66, cx + 70, cz - 66, 0x5b5e60);
-      [[-60, -60], [60, -60], [-60, 60], [60, 60], [0, 0]].forEach(function (p) { lamp(cx + p[0], cz + p[1] + (p[0] === 0 ? 8 : 0)); });
+      sandbags(X(-24), Z(-4), true); sandbags(X(24), Z(4), true); sandbags(cx, Z(-30), false); sandbags(cx, Z(30), false);
+      for (var q = 0; q < 8; q++) crate(X(-18 + (q % 4) * 7), Z(-6 + Math.floor(q / 4) * 12), 1.2, 0x4a5a3a);
+      mxRadar(X(40), cz); mxTower(cx, Z(72), 7); mxTower(cx, Z(-72), 7); mxRecycler(X(-30), cz, true);
+      fenceRun(X(-70), Z(-66), X(-20), Z(-66), 0x5b5e60); fenceRun(X(20), Z(-66), X(70), Z(-66), 0x5b5e60);
+      [[-60, -60], [60, -60], [-60, 60], [60, 60], [0, 8]].forEach(function (p) { lamp(X(p[0]), Z(p[1])); });
     } else if (k === 'town') {
       var kinds = ['villa', 'townhouse', 'cottage', 'bungalow', 'apartment', 'garage', 'villa', 'cottage', 'townhouse', 'bungalow'];
       var slots = [[-30, -26], [30, -28], [-30, 28], [30, 26], [-66, -26], [66, -26], [-66, 26], [66, 28], [0, -68], [0, 68]];
-      var size = { cottage: [10, 8], villa: [13, 11], townhouse: [9, 11], bungalow: [12, 9], garage: [10, 8], apartment: [15, 11] };
-      slots.forEach(function (s, i) { var kd = kinds[(i + (RW.s & 7)) % kinds.length], sz = size[kd]; B(kd, s[0], s[1], sz[0], sz[1]); });
+      var size = { cottage: [10, 8], villa: [13, 11], townhouse: [9, 11], bungalow: [12, 9], garage: [10, 8], apartment: [15, 11] }, off = Math.floor(hh * 97);
+      slots.forEach(function (s, i) { var kd = kinds[(i + off + (RW.s & 7)) % kinds.length], sz = size[kd]; B(kd, s[0], s[1], sz[0], sz[1]); });
       road(cx, cz, 7, 170); road(cx, cz, 170, 7);
-      fenceRun(cx - 38, cz + 38, cx - 22, cz + 38); fenceRun(cx + 22, cz - 40, cx + 38, cz - 40);
-      C(-10, 10, true, ccol[3]); sandbags(cx + 12, cz - 12, true);
-      mxWaterTower(cx - 50, cz - 50); mxRecycler(cx + 6, cz - 20, false);
-      car(cx + 14, cz + 6, true, 0x7a3b2a); car(cx - 6, cz - 50, false, 0x35527a);
-      [[-20, 4], [20, -4], [-50, 4], [50, -4], [4, -40], [-4, 40]].forEach(function (p) { lamp(cx + p[0], cz + p[1]); });
+      fenceRun(X(-38), Z(38), X(-22), Z(38)); fenceRun(X(22), Z(-40), X(38), Z(-40));
+      C(-10, 10, true, ccol[3]); sandbags(X(12), Z(-12), true);
+      mxWaterTower(X(-50), Z(-50)); mxRecycler(X(6), Z(-20), false);
+      [[-20, 4], [20, -4], [-50, 4], [50, -4], [4, -40], [-4, 40]].forEach(function (p) { lamp(X(p[0]), Z(p[1])); });
     } else if (k === 'airfield') {
-      road(cx, cz - 24, 170, 16, 0x2a2a2a); paint(cx, cz - 24, 150, 0.6, 0xe8e2d0);
-      for (var rp = -70; rp <= 70; rp += 20) paint(cx + rp, cz - 30, 8, 0.5, 0xe8e2d0);
-      B('warehouse', -56, 22, 20, 12, 'n'); B('warehouse', -8, 22, 20, 12, 'n'); B('warehouse', 40, 22, 20, 12, 'n');
-      B('garage', -60, 56, 10, 8, 'n'); B('garage', 0, 58, 10, 8, 'n'); B('bunker', 62, 56, 9, 7, 'n');
-      C(-30, 46, true, ccol[0]); C(30, 48, true, ccol[1], true); sandbags(cx + 18, cz - 4, true);
-      mxTower(cx + 70, cz + 4, 9); mxHangar(cx - 22, cz + 76, 22, 16); mxRecycler(cx + 12, cz + 6, false);
-      mxText(cx + 70, 12.2, cz + 0.9, 4, 0.8, 'TOWER', '#2a2d2f', '#e8e2d0');
-      [[-70, -10], [-35, -10], [0, -10], [35, -10], [70, -10]].forEach(function (p) { lamp(cx + p[0], cz + p[1]); });
+      road(cx, Z(-24), 170, 16, 0x2a2a2a); paint(cx, Z(-24), 150, 0.6, 0xe8e2d0);
+      for (var rp = -70; rp <= 70; rp += 20) paint(X(rp), Z(-30), 8, 0.5, 0xe8e2d0);
+      Bd('warehouse', -56, 22, 20, 12, 'n'); Bd('warehouse', -8, 22, 20, 12, 'n'); Bd('warehouse', 40, 22, 20, 12, 'n');
+      Bd('garage', -60, 56, 10, 8, 'n'); Bd('garage', 0, 58, 10, 8, 'n'); Bd('bunker', 62, 56, 9, 7, 'n');
+      C(-30, 46, true, ccol[0]); C(30, 48, true, ccol[1], true); sandbags(X(18), Z(-4), true);
+      mxTower(X(70), Z(4), 9); mxHangar(X(-22), Z(76), 22, 16); mxRecycler(X(12), Z(6), false);
+      mxText(X(70), 12.2, Z(4) - fz * 3.1, 4, 0.8, 'TOWER', '#2a2d2f', '#e8e2d0', sr);
+      [[-70, -10], [-35, -10], [0, -10], [35, -10], [70, -10]].forEach(function (p) { lamp(X(p[0]), Z(p[1])); });
     } else if (k === 'harbor') {
       B('warehouse', -40, -30, 20, 12); B('warehouse', 40, -30, 20, 12);
-      for (var i = 0; i < 12; i++) C(-50 + (i % 6) * 20, 14 + Math.floor(i / 6) * 8, true, ccol[i % ccol.length], i % 3 === 0);
-      for (var b = 0; b < 6; b++) barrel(cx - 30 + b * 2, cz + 44, [0x35527a, 0x7a3b2a, 0x4a5a3a][b % 3]);
-      road(cx, cz, 150, 8); road(cx, cz - 14, 8, 60);
-      mxCrane(cx - 20, cz + 18, 20, 13); mxCrane(cx + 20, cz + 18, 20, 13); mxRecycler(cx + 6, cz - 12, true);
-      mxTank(cx - 56, cz - 54, 4, 6, 0x8a8d90); mxTank(cx + 56, cz - 54, 4, 6, 0x8a8d90);
-      [[-60, 0], [0, 0], [60, 0], [0, -50]].forEach(function (p) { lamp(cx + p[0], cz + p[1]); });
+      for (i = 0; i < 12; i++) C(-50 + (i % 6) * 20, 14 + Math.floor(i / 6) * 8, true, ccol[i % ccol.length], i % 3 === 0);
+      for (var b = 0; b < 6; b++) barrel(X(-30 + b * 2), Z(44), [0x35527a, 0x7a3b2a, 0x4a5a3a][b % 3]);
+      road(cx, cz, 150, 8); road(cx, Z(-14), 8, 60);
+      mxCrane(X(-20), Z(18), 20, 13); mxCrane(X(20), Z(18), 20, 13); mxRecycler(X(6), Z(-12), true);
+      mxTank(X(-56), Z(-54), 4, 6, 0x8a8d90); mxTank(X(56), Z(-54), 4, 6, 0x8a8d90);
+      [[-60, 0], [0, 0], [60, 0], [0, -50]].forEach(function (p) { lamp(X(p[0]), Z(p[1])); });
     } else if (k === 'radtown') {
       B('bunker', -30, -24, 9, 7); B('bunker', 30, -24, 9, 7); B('bunker', 0, 34, 9, 7); B('warehouse', 0, -48, 20, 12);
-      for (var r2 = 0; r2 < 14; r2++) barrel(cx - 24 + (r2 % 7) * 8, cz + (r2 < 7 ? -4 : 6), r2 % 2 ? 0x6a7a2a : 0x7a6a2a);
-      C(-20, 20, true, ccol[2]); C(22, 18, false, ccol[1]); sandbags(cx, cz - 12, true);
-      mxStack(cx - 46, cz + 14, 1.8, 22); mxStack(cx + 46, cz + 14, 1.8, 18); mxTank(cx - 44, cz - 40, 3.2, 5); mxTank(cx + 44, cz - 40, 3.2, 5, 0x6a4a2a);
-      mxText(cx, 3.2, cz - 13.2, 3, 1.2, '☢ RAD', '#d8c23a', '#1a1a1a');
-      road(cx, cz, 120, 6); lamp(cx - 40, cz); lamp(cx + 40, cz);
+      for (var r2 = 0; r2 < 14; r2++) barrel(X(-24 + (r2 % 7) * 8), Z(r2 < 7 ? -4 : 6), r2 % 2 ? 0x6a7a2a : 0x7a6a2a);
+      C(-20, 20, true, ccol[2]); C(22, 18, false, ccol[1]); sandbags(cx, Z(-12), true);
+      mxStack(X(-46), Z(14), 1.8, 22); mxStack(X(46), Z(14), 1.8, 18); mxTank(X(-44), Z(-40), 3.2, 5); mxTank(X(44), Z(-40), 3.2, 5, 0x6a4a2a);
+      mxText(cx, 3.2, Z(-13.2), 3, 1.2, '☢ RAD', '#d8c23a', '#1a1a1a', sr);
+      road(cx, cz, 120, 6); lamp(X(-40), cz); lamp(X(40), cz);
     } else if (k === 'gas') {
-      B('garage', 0, -14, 10, 8, 's'); B('bungalow', 26, -10, 12, 9, 'w');
-      mxCanopy(cx, cz + 6, 16, 10, 5); mxPump(cx - 4, cz + 6); mxPump(cx + 4, cz + 6);
-      mxText(cx, 3.6, cz - 9.9, 5, 1, 'FUEL · SHOP', '#b4322a', '#ffffff');
-      mxCyl(cx - 22, cz + 20, 0.25, 7, 0x8a8d90); mxText(cx - 22, 7.8, cz + 20, 3, 1.6, 'FUEL', '#b4322a', '#ffffff');   // price pole
-      mxRecycler(cx - 12, cz - 14, true);
-      for (var g2 = 0; g2 < 4; g2++) barrel(cx + 10 + g2 * 1.1, cz - 20, [0x7a3b2a, 0x35527a][g2 % 2]);
-      road(cx, cz + 16, 100, 8); road(cx, cz + 4, 22, 16, 0x2b2b2a); lamp(cx - 20, cz + 6); lamp(cx + 20, cz + 6); sandbags(cx - 18, cz - 24, true);
-      car(cx + 13, cz + 2, false, 0x5a6a7a);
+      Bd('garage', 0, -14, 10, 8, 's'); Bd('bungalow', 26, -10, 12, 9, 'w');
+      mxCanopy(cx, Z(6), 16, 10, 5); mxPump(X(-4), Z(6)); mxPump(X(4), Z(6));
+      mxText(cx, 3.6, Z(-9.9), 5, 1, 'FUEL · SHOP', '#b4322a', '#ffffff', sr);
+      mxCyl(X(-22), Z(20), 0.25, 7, 0x8a8d90); mxText(X(-22), 7.8, Z(20), 3, 1.6, 'FUEL', '#b4322a', '#ffffff', sr);
+      mxRecycler(X(-12), Z(-14), true);
+      for (var g2 = 0; g2 < 4; g2++) barrel(X(10 + g2 * 1.1), Z(-20), [0x7a3b2a, 0x35527a][g2 % 2]);
+      road(cx, Z(16), 100, 8); road(cx, Z(4), 22, 16, 0x2b2b2a); lamp(X(-20), Z(6)); lamp(X(20), Z(6)); sandbags(X(-18), Z(-24), true);
     } else if (k === 'farm') {
-      B('barn', -20, 0, 14, 16, 'e'); B('barn', 22, -8, 14, 16, 'w'); B('cottage', 0, 34, 10, 8, 'n');
-      fenceRun(cx - 40, cz - 30, cx + 40, cz - 30); fenceRun(cx - 40, cz + 24, cx - 8, cz + 24); fenceRun(cx + 8, cz + 24, cx + 40, cz + 24);
-      road(cx, cz + 20, 100, 5, 0x4d4030); crate(cx - 4, cz - 4, 1.3); crate(cx + 4, cz + 2, 1.1, 0xb89a4a);
-      mxSilo(cx - 20, cz - 17); mxWindmill(cx + 34, cz + 12);
-      for (var hb = 0; hb < 5; hb++) mxCyl(cx - 6 + hb * 2.2, cz - 22, 0.7, 1.2, 0xc8a85a, 0, true, 12);   // hay bales
+      Bd('barn', -20, 0, 14, 16, 'e'); Bd('barn', 22, -8, 14, 16, 'w'); Bd('cottage', 0, 34, 10, 8, 'n');
+      fenceRun(X(-40), Z(-30), X(40), Z(-30)); fenceRun(X(-40), Z(24), X(-8), Z(24)); fenceRun(X(8), Z(24), X(40), Z(24));
+      road(cx, Z(20), 100, 5, 0x4d4030); crate(X(-4), Z(-4), 1.3); crate(X(4), Z(2), 1.1, 0xb89a4a);
+      mxSilo(X(-20), Z(-17)); mxWindmill(X(34), Z(12));
+      for (var hb = 0; hb < 5; hb++) mxCyl(X(-6 + hb * 2.2), Z(-22), 0.7, 1.2, 0xc8a85a, 0, true, 12);
     } else if (k === 'quarry') {
-      B('barn', -20, -14, 14, 16, 'e'); C(14, -16, true, ccol[3]); C(14, -6, true, ccol[1], true); C(24, 8, false, ccol[2]);
-      road(cx, cz, 110, 7, 0x4d4030); sandbags(cx - 6, cz + 14, true); crate(cx - 34, cz + 20, 1.4); lamp(cx - 30, cz); lamp(cx + 30, cz);
-      mxQuarry(cx - 4, cz + 32);
-      for (var pi = 0; pi < 4; pi++) mxCyl(cx + 30 + pi * 3, cz + 30, 1.4, 1.2 + pi * 0.4, 0x7a776f, 0, true, 8);   // stone piles
+      Bd('barn', -20, -14, 14, 16, 'e'); C(14, -16, true, ccol[3]); C(14, -6, true, ccol[1], true); C(24, 8, false, ccol[2]);
+      road(cx, cz, 110, 7, 0x4d4030); sandbags(X(-6), Z(14), true); crate(X(-34), Z(20), 1.4); lamp(X(-30), cz); lamp(X(30), cz);
+      mxQuarry(X(-4) - (fx < 0 ? 4 : 0), Z(32));
+      for (var pi = 0; pi < 4; pi++) mxCyl(X(30 + pi * 3), Z(30), 1.4, 1.2 + pi * 0.4, 0x7a776f, 0, true, 8);
     } else if (k === 'village') {
       var vk = ['cottage', 'bungalow', 'cottage', 'bungalow', 'cottage', 'bungalow'], vs = [[-26, -20], [26, -22], [-26, 22], [26, 20], [0, -46], [0, 46]];
-      vs.forEach(function (s, i) { B(vk[i], s[0], s[1], vk[i] === 'cottage' ? 10 : 12, vk[i] === 'cottage' ? 8 : 9); });
-      road(cx, cz, 6, 120); road(cx, cz, 110, 6); fenceRun(cx - 36, cz - 32, cx - 18, cz - 32); lamp(cx - 10, cz + 4); lamp(cx + 10, cz - 4);
-      mxWell(cx - 10, cz - 12); mxWaterTower(cx + 40, cz + 40);
+      vs.forEach(function (s, i) { B(vk[(i + Math.floor(hh * 5)) % 6], s[0], s[1], vk[(i + Math.floor(hh * 5)) % 6] === 'cottage' ? 10 : 12, vk[(i + Math.floor(hh * 5)) % 6] === 'cottage' ? 8 : 9); });
+      road(cx, cz, 6, 120); road(cx, cz, 110, 6); fenceRun(X(-36), Z(-32), X(-18), Z(-32)); lamp(X(-10), Z(4)); lamp(X(10), Z(-4));
+      mxWell(X(-10), Z(-12)); mxWaterTower(X(40), Z(40));
+    } else if (k === 'supermarket') {   // big store, parking lot with lines and carts, a sign on a pole
+      Bd('warehouse', 0, -8, 26, 14, 's'); mxText(cx, 5.6, Z(-8) + fz * 7.1, 8, 1.4, 'SUPERMARKET', '#1f5a8a', '#ffffff', sr);
+      road(cx, Z(12), 50, 22, 0x2b2b2a); for (i = -4; i <= 4; i++) paint(X(i * 5), Z(14), 0.25, 6, 0xe8e2d0);
+      road(cx, Z(30), 90, 8);
+      for (i = 0; i < 5; i++) solid(X(-18 + i * 0.7), Z(4), 0.6, 0.9, 0, 1.0, 0x9aa0a6);   // shopping carts
+      mxCyl(X(22), Z(24), 0.3, 8, 0x8a8d90); mxText(X(22), 8.8, Z(24), 4, 1.6, 'MARKET', '#1f5a8a', '#ffffff', sr);
+      for (i = 0; i < 3; i++) barrel(X(14 + i * 1.1), Z(-18), 0x35527a); lamp(X(-22), Z(20)); lamp(X(10), Z(20));
+    } else if (k === 'lighthouse') {
+      mxLighthouse(cx, cz); Bd('cottage', 12, 6, 10, 8, 'w'); fenceRun(X(-14), Z(-14), X(14), Z(-14), 0xd8d4c8); lamp(X(6), Z(-10));
+    } else if (k === 'powerplant') {   // cooling towers, stacks, turbine halls, transformers
+      mxCooling(X(-40), Z(-36), 11, 28); mxCooling(X(-12), Z(-44), 11, 28);
+      mxStack(X(30), Z(-40), 2, 30); mxStack(X(40), Z(-30), 2, 26);
+      Bd('warehouse', 30, 20, 24, 14, 'n'); Bd('warehouse', -30, 26, 20, 12, 'e');
+      for (i = 0; i < 4; i++) { solid(X(-6 + i * 5), Z(8), 3, 2.4, 0, 3, 0x6d7276); for (var f = 0; f < 3; f++) deco(X(-6 + i * 5), 1.6, Z(8) + fz * (-1.25), 2.6, 0.12, 0.2, 0x4d5256); }
+      mxCylH(X(10), 4, Z(-14), 0.9, 40, true, 0x8a8d90); mxCylH(X(-30), 4, Z(0), 0.9, 30, false, 0x8a8d90);
+      road(cx, cz, 170, 8); road(cx, cz, 8, 150); C(50, -6, false, ccol[1]); mxRecycler(X(12), Z(-4), true);
+      fenceRun(X(-80), Z(-70), X(80), Z(-70), 0x5b5e60); [[-50, 10], [50, 0], [0, -60]].forEach(function (p) { lamp(X(p[0]), Z(p[1])); });
+    } else if (k === 'trainyard') {   // three tracks with boxcars and tankers, a shed, a gantry crane
+      for (var t = -1; t <= 1; t++) mxRails(cx, Z(t * 8), 170, true);
+      mxTrainCar(X(-40), Z(-8), true, 0x7a3b2a, 'box'); mxTrainCar(X(-26), Z(-8), true, 0x35527a, 'box'); mxTrainCar(X(20), Z(0), true, 0x2a2b2c, 'tank');
+      mxTrainCar(X(34), Z(0), true, 0x2a2b2c, 'tank'); mxTrainCar(X(-10), Z(8), true, 0x4a5a3a, 'flat'); mxTrainCar(X(48), Z(8), true, 0x7a6a2a, 'box');
+      Bd('warehouse', -20, 34, 24, 12, 's'); Bd('garage', 30, 34, 10, 8, 's'); mxCrane(X(0), Z(0), 22, 12);
+      C(-50, -30, true, ccol[3], ccol[0]); C(40, -30, true, ccol[2]); mxRecycler(X(10), Z(-24), false);
+      road(cx, Z(22), 160, 8); [[-60, 22], [0, 22], [60, 22]].forEach(function (p) { lamp(X(p[0]), Z(p[1])); });
+    } else if (k === 'satellite') {   // the big dish, its control huts, a fence
+      mxBigDish(cx, cz); Bd('bunker', -24, 20, 9, 7, 'e'); Bd('bunker', 24, -20, 9, 7, 'w');
+      fenceRun(X(-40), Z(-40), X(40), Z(-40), 0x5b5e60); fenceRun(X(-40), Z(40), X(40), Z(40), 0x5b5e60);
+      C(30, 26, true, ccol[2]); road(cx, Z(30), 100, 6); lamp(X(-30), Z(-30)); lamp(X(30), Z(30));
+    } else if (k === 'junkyard') {   // walls of wrecks, a crusher, a magnet crane, a recycler
+      fenceRun(X(-50), Z(-50), X(50), Z(-50), 0x6a5e50); fenceRun(X(-50), Z(50), X(50), Z(50), 0x6a5e50); fenceRun(X(-50), Z(-50), X(-50), Z(50), 0x6a5e50); fenceRun(X(50), Z(-50), X(50), Z(-10), 0x6a5e50);
+      var rust = [0x6e4a32, 0x5a4a3c, 0x7a5a3a, 0x4a4f52, 0x6a3a2a];
+      for (i = 0; i < 14; i++) { var wx = -40 + (i % 7) * 12, wz = i < 7 ? -36 : 34, st = 1 + ((i * 7) % 3); for (var lv = 0; lv < st; lv++) { solid(X(wx), Z(wz), 4.4, 2, lv * 1.1, lv * 1.1 + 1.0, rust[(i + lv) % 5]); deco(X(wx), lv * 1.1 + 1.25, Z(wz), 2.2, 0.5, 1.8, rust[(i + lv + 2) % 5]); } }
+      solid(X(-20), Z(0), 6, 4, 0, 3.2, 0x3d4042, 0x1a1a18); deco(X(-20), 3.5, Z(0), 6.2, 0.6, 4.2, 0xc9a227);   // crusher
+      mxTower(X(14), Z(-10), 8); deco(X(14), 5, Z(-10), 0.06, 3, 0.06, 0x222222); mxCyl(X(14), Z(-10), 1.2, 0.4, 0x2a2a28, 3.2, false);   // magnet crane
+      mxRecycler(X(-34), Z(10), true); road(cx, cz, 8, 100, 0x4d4030);
+    } else if (k === 'mining') {   // small mining outpost: office, conveyor, ore piles, recycler
+      Bd('garage', -8, -6, 10, 8, 's'); mxRecycler(X(4), Z(-10), false);
+      deco(X(10), 2.2, Z(6), 10, 0.3, 1.2, 0x3a3a38, null, { z: fx * 0.35 }); solid(X(15.5), Z(6), 2.4, 2.4, 0, 1.6, 0x5a5a56);
+      for (i = 0; i < 4; i++) mxCyl(X(-14 + i * 3.2), Z(14), 1.6, 1.0 + (i % 2) * 0.6, i % 2 ? 0x8a6a4a : 0x7a776f, 0, true, 8);
+      road(cx, Z(-20), 70, 6, 0x4d4030); lamp(X(0), Z(-16)); C(18, -6, false, ccol[3]);
+    } else if (k === 'water') {   // water treatment: settling tanks, pipe runs, pump houses
+      mxClarifier(X(-30), Z(-20), 9); mxClarifier(X(0), Z(-26), 9); mxClarifier(X(30), Z(-20), 9);
+      Bd('warehouse', -24, 30, 22, 12, 's'); Bd('warehouse', 26, 30, 18, 12, 's');
+      mxCylH(cx, 1.2, Z(4), 0.7, 70, true, 0x6d7276); mxCylH(X(-14), 1.2, Z(-8), 0.7, 20, false, 0x6d7276);
+      mxTank(X(50), Z(0), 4, 8, 0x8a8d90); mxRecycler(X(-50), Z(4), true);
+      road(cx, Z(14), 140, 7); [[-40, 14], [0, 14], [40, 14]].forEach(function (p) { lamp(X(p[0]), Z(p[1])); });
+    } else if (k === 'dome') {
+      mxDome(cx, cz, 11, 14); fenceRun(X(-26), Z(-26), X(26), Z(-26), 0x5b5e60); Bd('bunker', 20, 20, 9, 7, 'w'); C(-20, 20, false, ccol[0]);
+    } else if (k === 'bandit') {   // wooden shacks on stilts around a fire, lanterns
+      mxShack(X(-14), Z(-10)); mxShack(X(14), Z(-12)); mxShack(X(0), Z(16)); mxShack(X(-18), Z(14));
+      mxCyl(cx + 4, cz - 2, 1, 0.3, 0x3a2a1a, 0, true, 10); deco(cx + 4, 0.5, cz - 2, 0.5, 0.5, 0.5, 0xff8a2a, { basic: true });
+      fenceRun(X(-30), Z(-30), X(30), Z(-30), 0x5a4a36); fenceRun(X(-30), Z(30), X(30), Z(30), 0x5a4a36);
+      mxRecycler(X(20), Z(10), false); lamp(X(-6), Z(4));
     }
     m.camp = (RW_CAMPS[k] || []).slice();
     m.slots = null;
+  }
+  function mxCylH(x, y, z, r, len, alongX, col) {   // horizontal pipe / tank
+    var g = new THREE.CylinderGeometry(r, r, len, 14); g.rotateZ(Math.PI / 2); if (!alongX) g.rotateY(Math.PI / 2); g.translate(x, y, z);
+    mapGroup.add(new THREE.Mesh(g, matFor(col)));
+    var hx = alongX ? len / 2 : r, hz = alongX ? r : len / 2;
+    boxes.push({ minX: x - hx, maxX: x + hx, minZ: z - hz, maxZ: z + hz, y0: y - r, h: y + r });
+  }
+  function mxRails(x, z, len, alongX) {
+    for (var s = -len / 2; s <= len / 2; s += 1.2) deco(alongX ? x + s : x, 0.06, alongX ? z : z + s, alongX ? 0.3 : 2.4, 0.12, alongX ? 2.4 : 0.3, 0x4a3a2a);
+    [-0.72, 0.72].forEach(function (o) { deco(alongX ? x : x + o, 0.16, alongX ? z + o : z, alongX ? len : 0.1, 0.12, alongX ? 0.1 : len, 0x8a8d90); });
+  }
+  function mxTrainCar(x, z, alongX, col, type) {
+    var L = 12, W = 2.9, ax = alongX ? L : W, az = alongX ? W : L;
+    deco(x, 0.55, z, ax * 0.96, 0.5, az * 0.96, 0x1d1e1f);                                   // chassis
+    [-1, 1].forEach(function (s) { deco(alongX ? x + s * 4 : x, 0.45, alongX ? z : z + s * 4, alongX ? 2 : W, 0.6, alongX ? W : 2, 0x111111); });   // bogies
+    if (type === 'tank') { mxCylH(x, 2.3, z, 1.45, L * 0.9, alongX, col); boxes.push({ minX: x - ax / 2, maxX: x + ax / 2, minZ: z - az / 2, maxZ: z + az / 2, y0: 0, h: 3.8 }); }
+    else if (type === 'flat') { solid(x, z, ax, az, 0.8, 1.1, col); crate(x + (alongX ? 2 : 0), z + (alongX ? 0 : 2), 1.4); }
+    else { solid(x, z, ax, az, 0.8, 4.1, col, 0x1a1a18); deco(x, 2.4, z + (alongX ? W / 2 + 0.02 : 0), alongX ? 2.6 : 0.04, 2.6, alongX ? 0.04 : 2.6, 0x2a2a26); }
+  }
+  function mxCooling(x, z, r, h) {   // hyperbolic cooling tower
+    var pts = []; for (var i = 0; i <= 12; i++) { var t = i / 12, rr = r * (1 - 0.42 * Math.sin(t * Math.PI * 0.9)); pts.push(new THREE.Vector2(rr, t * h)); }
+    var g = typeof THREE.LatheGeometry === 'function' ? new THREE.LatheGeometry(pts, 28) : new THREE.CylinderGeometry(r * 0.7, r, h, 28).translate(0, h / 2, 0); g.translate(x, 0, z);
+    var mm = new THREE.Mesh(g, matFor(0xb8b4aa)); mm.material.side = THREE.DoubleSide; mapGroup.add(mm);
+    boxes.push({ minX: x - r * 0.8, maxX: x + r * 0.8, minZ: z - r * 0.8, maxZ: z + r * 0.8, y0: 0, h: h });
+    mxCyl(x, z, r * 1.02, 0.8, 0x8a3a2a, h * 0.85, false, 28);
+  }
+  function mxLighthouse(x, z) {
+    for (var i = 0; i < 6; i++) mxCyl(x, z, 2.4 - i * 0.18, 3, i % 2 ? 0xb4322a : 0xeeeae0, i * 3, i === 0, 18);
+    boxes.push({ minX: x - 2, maxX: x + 2, minZ: z - 2, maxZ: z + 2, y0: 0, h: 18 });
+    mxCyl(x, z, 2.2, 0.3, 0x2a2b2c, 18, false, 18);
+    var gl = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 1.8, 12), new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.85 })); gl.position.set(x, 19.2, z); mapGroup.add(gl);
+    var rf = new THREE.Mesh(new THREE.ConeGeometry(1.5, 1.4, 12), matFor(0xb4322a)); rf.position.set(x, 20.8, z); mapGroup.add(rf);
+  }
+  function mxBigDish(x, z) {
+    solid(x, z, 8, 8, 0, 3, 0x8a8d90); solid(x, z, 2.4, 2.4, 3, 9, 0x6d7276);
+    var dish = new THREE.Mesh(new THREE.SphereGeometry(10, 24, 10, 0, Math.PI * 2, 0, Math.PI * 0.33), matFor(0xd6d8d4)); dish.material.side = THREE.DoubleSide;
+    dish.rotation.x = -Math.PI * 0.7; dish.position.set(x, 13, z); mapGroup.add(dish);
+    deco(x, 11, z + 3, 0.3, 6, 0.3, 0x4a4f52, null, { x: 0.5 }); deco(x, 15.5, z + 5.6, 0.8, 0.8, 0.8, 0x2a2b2c);
+  }
+  function mxClarifier(x, z, r) {
+    mxCyl(x, z, r, 1.6, 0x9a978e, 0, true, 28);
+    var w = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.92, r * 0.92, 0.1, 28), new THREE.MeshStandardMaterial({ color: 0x3e6a5a, roughness: 0.2 })); w.position.set(x, 1.62, z); mapGroup.add(w);
+    deco(x, 2.0, z, r * 2, 0.3, 0.6, 0x5b5e60); mxCyl(x, z, 0.6, 1, 0x5b5e60, 1.6, false);
+  }
+  function mxDome(x, z, r, h) {
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (q) { solid(x + q[0] * r * 0.6, z + q[1] * r * 0.6, 0.6, 0.6, 0, h, 0x6d7276); });
+    var d = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.6, roughness: 0.4, wireframe: true }));
+    d.position.set(x, h, z); mapGroup.add(d);
+    var d2 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.99, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), new THREE.MeshStandardMaterial({ color: 0x5a6066, transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+    d2.position.set(x, h, z); mapGroup.add(d2);
+    solid(x, z, r * 1.6, r * 1.6, h - 0.3, h, 0x4a4f52);
+  }
+  function mxShack(x, z) {
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (q) { deco(x + q[0] * 2.2, 0.9, z + q[1] * 2, 0.25, 1.8, 0.25, 0x4a3a2a); });
+    solid(x, z, 5, 4.6, 1.6, 1.9, 0x6a5440);
+    solid(x - 2.4, z, 0.2, 4.6, 1.9, 4.2, 0x7a6248); solid(x + 2.4, z, 0.2, 4.6, 1.9, 4.2, 0x7a6248); solid(x, z - 2.2, 5, 0.2, 1.9, 4.2, 0x7a6248);
+    deco(x, 4.4, z, 5.6, 0.25, 5.2, 0x5a4a3a, null, { x: 0.12 });
   }
   // monuments get rebuilt (new island, or back from a small map): start the lists fresh each time
   var rwBuildMonuments0 = null;
@@ -10690,6 +10822,7 @@ Object.assign(EN, {
 
   function rwInteract() {
     if (!RW.on || RW.dead || state !== 'playing') return false;
+    if (CAR.mine) return rwCarUse();   // in a car, E gets you out
     var pc = rwPieceRay(3.2);
     if (pc && rwIsDoor(pc.k)) {
       if (rwCanDoor(pc)) { dSend({ t: 'Ro', id: pc.id }); sfx('latch'); }
@@ -10708,11 +10841,13 @@ Object.assign(EN, {
     var hm = rwFindNode(function (q) { return q.kind === 'hemp'; }); if (hm) { rwPickHemp(hm); return true; }
     var n = rwFindNode(function (q) { return q.kind === 'crate'; });
     if (n && RW.gatherCd <= 0) { rwOpenCrate(n); return true; }
+    if (rwCarNear() && rwCarUse()) return true;
     if (rwNearRecy()) { rwRecyOpen(); return true; }
     var qy = rwNearQuarry(); if (qy) { rwQuarryUse(qy); return true; }
     return false;
   }
   function rwMonPrompt() {   // extra prompt lines for monument machines
+    var cp = rwCarPrompt(); if (cp) return cp;
     if (rwNearRecy()) return KE() + ' ' + zt('使用回收机', 'Use the recycler');
     if (rwNearQuarry()) return rwQuarryTxt();
     return '';
@@ -10939,6 +11074,187 @@ Object.assign(EN, {
     var show = RW.on && RW.air < 29.9 && state === 'playing';
     el.style.display = show ? 'flex' : 'none';
     if (show) { el.firstChild.textContent = RW.air > 0 ? zt('氧气', 'Breath') : zt('溺水！快浮上去', 'Drowning! Get up!'); el.querySelector('b').style.width = (RW.air / 30 * 100) + '%'; el.classList.toggle('low', RW.air < 8); }
+  }
+  /* ================= UPDATE 38: CARS =================
+     Open-top four-seat cars. Some stand at monuments (gas station, town, supermarket, train yard...) for anyone to
+     take; you can also build one at a workbench and park it anywhere. Walk up and press E to get in: the first free
+     seat is taken (the driver's seat first). W/S drive and reverse, A/D steer, Space brakes, Shift for a burst of
+     speed, E to get out. The server keeps track of every car and who sits where, so all players see the same cars,
+     passengers ride along, and cars stay where they were parked. */
+  var CAR = { list: {}, mine: null, seat: -1, sendT: 0, lastSend: 0, cool: 0 };
+  var CAR_SEATS = [[-0.45, 0.62, -0.25], [0.45, 0.62, -0.25], [-0.45, 0.62, 0.85], [0.45, 0.62, 0.85]];   // driver, front passenger, two in the back
+  var RW_MONCARS = { gas: [[13, 2]], town: [[14, 6], [-6, -50]], supermarket: [[-10, 14], [8, 18]], trainyard: [[0, -30]], junkyard: [[24, 22]], harbor: [[-30, -12]],
+    airfield: [[-40, 2]], village: [[12, 2]], farm: [[2, 16]], mining: [[10, -18]], military: [[-40, 10]], outpost: [[24, -8]], water: [[20, 10]], powerplant: [[22, 6]], bandit: [[-24, 0]] };
+  var CAR_COLS = [0x6b2e24, 0x2f4a5e, 0x4a5a3a, 0x7a6a2a, 0x5a5f63, 0x8a4a1a];
+
+  RWI.car = { n: ['汽车', 'Car'], st: 1, use: 1, d: ['四座敞篷车。拿在手上按左键（或在背包里点“使用”）就会放在你面前。每人最多同时拥有 3 辆。', 'An open-top four-seater. Hold it and press left click (or Use in the backpack) to park it in front of you. Up to 3 per player.'] };
+  RW_CRAFT.push(['car', { frags: 500, wood: 300, cloth: 40 }]); RW_BENCH.car = 1;
+  (function () {   // the car's backpack icon
+    var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d');
+    x.shadowColor = 'rgba(0,0,0,.7)'; x.shadowBlur = 3;
+    x.fillStyle = '#8a3a2a'; x.beginPath(); x.moveTo(6, 40); x.lineTo(14, 28); x.lineTo(46, 28); x.lineTo(58, 36); x.lineTo(58, 44); x.lineTo(6, 44); x.closePath(); x.fill();
+    x.fillStyle = '#9fc4dc'; x.fillRect(18, 22, 3, 8); x.strokeStyle = '#2a2b2c'; x.lineWidth = 3; x.beginPath(); x.moveTo(34, 28); x.lineTo(36, 16); x.lineTo(50, 16); x.lineTo(50, 28); x.stroke();
+    x.fillStyle = '#1a1a1a'; [16, 48].forEach(function (wx) { x.beginPath(); x.arc(wx, 45, 7, 0, 6.29); x.fill(); }); x.fillStyle = '#8a8d90'; [16, 48].forEach(function (wx) { x.beginPath(); x.arc(wx, 45, 3, 0, 6.29); x.fill(); });
+    RWICON.car = c;
+  })();
+
+  function carModel(col) {
+    var g = new THREE.Group(), M = function (c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.6, metalness: 0.25 }, o || {})); };
+    var body = M(col), dark = M(0x1d1e1f, { roughness: 0.9, metalness: 0 }), steel = M(0x8a8d90, { metalness: 0.8, roughness: 0.35 }), seat = M(0x2a2420, { roughness: 0.95, metalness: 0 });
+    function box(w, h, d, m, x, y, z, rx) { var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); if (rx) b.rotation.x = rx; g.add(b); return b; }
+    box(1.9, 0.35, 4.1, dark, 0, 0.45, 0);                    // chassis
+    box(1.96, 0.5, 4.2, body, 0, 0.82, 0.05);                 // tub
+    box(1.86, 0.36, 1.25, body, 0, 1.18, -1.45);              // hood
+    box(1.7, 0.08, 0.15, M(0x3a3b3c), 0, 1.0, -2.12);          // grille
+    box(0.06, 0.62, 2.4, body, -0.97, 1.33, 0.4); box(0.06, 0.62, 2.4, body, 0.97, 1.33, 0.4);   // side panels
+    box(1.94, 0.62, 0.06, body, 0, 1.33, 1.6);                // tailgate
+    var ws = box(1.8, 0.62, 0.05, M(0x9fc4dc, { transparent: true, opacity: 0.35, metalness: 0.1, roughness: 0.05 }), 0, 1.68, -0.82, -0.3);   // windshield
+    box(1.86, 0.06, 0.08, steel, 0, 2.0, -0.92); box(0.06, 0.66, 0.08, steel, -0.9, 1.68, -0.82, -0.3); box(0.06, 0.66, 0.08, steel, 0.9, 1.68, -0.82, -0.3);
+    [-0.88, 0.88].forEach(function (sx) { box(0.07, 1.1, 0.07, steel, sx, 1.95, 0.35); });   // roll bar
+    box(1.83, 0.07, 0.07, steel, 0, 2.48, 0.35);
+    CAR_SEATS.forEach(function (s) { box(0.62, 0.14, 0.6, seat, s[0], 0.98, s[2]); box(0.62, 0.62, 0.12, seat, s[0], 1.3, s[2] + 0.32); });
+    var sw = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.03, 8, 18), dark); sw.position.set(-0.45, 1.42, -0.62); sw.rotation.x = -0.9; g.add(sw);
+    box(1.9, 0.12, 0.25, dark, 0, 0.62, -2.15); box(1.9, 0.12, 0.25, dark, 0, 0.62, 2.18);   // bumpers
+    [-0.7, 0.7].forEach(function (sx) { box(0.26, 0.14, 0.04, new THREE.MeshBasicMaterial({ color: 0xfff2c4 }), sx, 1.15, -2.09); box(0.2, 0.1, 0.04, new THREE.MeshBasicMaterial({ color: 0xc8241a }), sx, 1.25, 1.64); });
+    var wheels = [];
+    [[-1.02, -1.35], [1.02, -1.35], [-1.02, 1.35], [1.02, 1.35]].forEach(function (p) {
+      var wg = new THREE.Group(); wg.position.set(p[0], 0.42, p[1]); g.add(wg);
+      var tyre = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 16), dark); tyre.rotation.z = Math.PI / 2; wg.add(tyre);
+      var hub = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.32, 10), steel); hub.rotation.z = Math.PI / 2; wg.add(hub);
+      wheels.push(wg);
+    });
+    g.userData.wheels = wheels;
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = false; });
+    return g;
+  }
+  function carAdd(d) {   // d: { id, x, y, z, yaw, col, seats }
+    var c = CAR.list[d.id];
+    if (!c) {
+      c = CAR.list[d.id] = { id: d.id, x: +d.x, y: +d.y, z: +d.z, yaw: +d.yaw || 0, p: 0, r: 0, sp: 0, vy: 0, col: d.col || CAR_COLS[0], seats: [0, 0, 0, 0], tgt: null };
+      c.g = carModel(c.col); RW.group.add(c.g);
+    }
+    if (d.seats) c.seats = d.seats.slice(0, 4);
+    if (CAR.mine !== c || d.force) { c.x = +d.x; c.y = +d.y; c.z = +d.z; c.yaw = +d.yaw || 0; c.tgt = null; }
+    carPlace(c);
+    return c;
+  }
+  function carPlace(c) { c.g.position.set(c.x, c.y, c.z); c.g.rotation.set(c.p, c.yaw, c.r, 'YXZ'); }
+  function rwCarsLoad(list) {   // on joining: the monument cars, then whatever the server knows (moved, built, occupied)
+    for (var k in CAR.list) { var o = CAR.list[k]; if (o.g && o.g.parent) o.g.parent.remove(o.g); }
+    CAR.list = {}; CAR.mine = null; CAR.seat = -1;
+    var have = {}; (list || []).forEach(function (d) { have[d.id] = 1; });
+    RW.mons.forEach(function (m, mi) {
+      (RW_MONCARS[m.k] || []).forEach(function (q, j) {
+        var id = 'm' + mi + '_' + j; if (have[id]) return;
+        var x = m.x + q[0] * (m.fx || 1), z = m.z + q[1] * (m.fz || 1), h = rwHash(mi, j, RW.s);
+        carAdd({ id: id, x: x, y: groundAt(x, z, 3), z: z, yaw: h * 6.283, col: CAR_COLS[Math.floor(h * 97) % CAR_COLS.length] });
+      });
+    });
+    (list || []).forEach(function (d) { carAdd(d); });
+  }
+  function carMyIndex(c) { return c.seats.indexOf(CO.id); }
+  function rwCarMsg(m) {
+    if (m.t === 'RVs' || m.t === 'RVc') {
+      var c = carAdd(m.car); var si = carMyIndex(c);
+      if (si >= 0 && CAR.mine !== c) { CAR.mine = c; CAR.seat = si; c.sp = 0; holster = true; rwHeldSwitched && rwHeldSwitched(); banner(si === 0 ? zt('你在驾驶座：W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车', 'Driving: W/S go and reverse, A/D steer, Space brakes, Shift boosts, E gets out') : zt('你坐在乘客座（' + (si + 1) + ' 号座），E 下车', 'You are a passenger (seat ' + (si + 1) + '). E gets out'), 2600); sfx('dooropen'); }
+      else if (si >= 0) CAR.seat = si;
+      else if (CAR.mine === c) carLeftSeat(c);
+      if (m.t === 'RVc' && m.car.by === RW.me) banner(zt('车放好了，走过去按 E 上车', 'Car parked: walk up and press E to get in'), 2000);
+    } else if (m.t === 'RVm') {
+      var c2 = CAR.list[m.id]; if (!c2 || CAR.mine === c2 && CAR.seat === 0) return;
+      c2.tgt = { x: +m.x, y: +m.y, z: +m.z, yaw: +m.yaw, p: +m.p || 0, r: +m.r || 0 }; c2.sp = +m.sp || 0;
+    } else if (m.t === 'RVf') {
+      banner(m.why === 'max' ? zt('每人最多 3 辆车', 'You can own up to 3 cars') : zt('车上坐满了（4 人）', 'The car is full (4 seats)'), 1500); sfx('deny');
+    }
+  }
+  function carLeftSeat(c) {   // put me down beside the car
+    CAR.mine = null; CAR.seat = -1;
+    var sx = Math.cos(c.yaw) * -2.3, sz = Math.sin(c.yaw) * 2.3, x = c.x + sx, z = c.z + sz;
+    if (rwH(x, z) < RW_SEA - 1 || insideBox(x, c.y + 0.5, z)) { x = c.x - sx; z = c.z - sz; }
+    P.x = x; P.z = z; P.y = groundAt(x, z, c.y + 1.5); P.vy = 0; RW.px = P.x; RW.pz = P.z;
+    sfx('doorclose');
+  }
+  function rwCarNear() {   // a car within reach that you are not in
+    if (CAR.mine) return null;
+    var best = null, bd = 3.4;
+    for (var k in CAR.list) { var c = CAR.list[k], d = Math.hypot(c.x - P.x, c.z - P.z); if (d < bd && Math.abs(c.y - P.y) < 2.5) { bd = d; best = c; } }
+    return best;
+  }
+  function rwCarUse() {   // E: get in, or get out
+    if (CAR.cool > 0) return false;
+    if (CAR.mine) { dSend({ t: 'Vx' }); CAR.cool = 0.4; carLeftSeat(CAR.mine); return true; }
+    var c = rwCarNear(); if (!c) return false;
+    if (c.seats.indexOf(0) < 0) { banner(zt('车上坐满了（4 人）', 'The car is full (4 seats)'), 1400); sfx('deny'); return true; }
+    dSend({ t: 'Ve', id: c.id, x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, col: c.col });
+    CAR.cool = 0.4;
+    return true;
+  }
+  function rwCarPrompt() {
+    if (CAR.mine) return KE() + ' ' + zt('下车', 'Get out') + (CAR.seat === 0 ? ' · W/S/A/D ' + zt('驾驶 · 空格刹车 · Shift 加速 · ', 'drive · Space brake · Shift boost · ') + Math.round(Math.abs(CAR.mine.sp) * 3.6) + ' km/h' : '');
+    var c = rwCarNear(); if (!c) return '';
+    var free = c.seats.filter(function (s) { return !s; }).length;
+    return free ? KE() + ' ' + zt('上车（' + (c.seats[0] ? '乘客座' : '驾驶座') + '，还有 ' + free + ' 个空座）', 'Get in (' + (c.seats[0] ? 'passenger' : 'driver') + ', ' + free + ' of 4 seats free)') : zt('车上坐满了', 'The car is full');
+  }
+  function rwCarDeploy(i) {   // the crafted car item: park it in front of you
+    var s = RW.inv[i]; if (!s || s.id !== 'car') return false;
+    var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), x = P.x + fx * 4.5, z = P.z + fz * 4.5, h = rwH(x, z);
+    var ok = h > RW_SEA + 0.3 && !insideBox(x, h + 0.6, z) && !insideBox(x + fx * 2, h + 0.6, z + fz * 2) && Math.abs(rwH(x + fx * 2, z + fz * 2) - rwH(x - fx * 2, z - fz * 2)) < 1.6;
+    if (!ok) { banner(zt('这里放不下车：找一块平一点的空地', 'No room for a car here: find open, flatter ground'), 1600); sfx('deny'); return false; }
+    dSend({ t: 'Vc', x: Math.round(x * 100) / 100, y: Math.round(groundAt(x, z, h + 2) * 100) / 100, z: Math.round(z * 100) / 100, yaw: Math.round((P.yaw + Math.PI / 2) * 1000) / 1000, col: CAR_COLS[Math.floor(Math.random() * CAR_COLS.length)] });
+    s.n--; if (s.n <= 0) RW.inv[i] = null; rwInvChanged(); sfx('upgrade');
+    return true;
+  }
+  function carDrive(c, dt) {   // the driver's car: arcade physics on the terrain, collisions, then tell the server
+    var fw = (keys[KB.forward] ? 1 : 0) - (keys[KB.back] ? 1 : 0) - (stick ? stick.y : 0), st = (keys[KB.left] ? 1 : 0) - (keys[KB.right] ? 1 : 0) + (stick ? -stick.x : 0);
+    var brake = keys[KB.jump], boost = keys[KB.sprint] && fw > 0, top = boost ? 24 : 17;
+    if (brake) c.sp -= Math.sign(c.sp) * Math.min(Math.abs(c.sp), 22 * dt);
+    else if (fw > 0.1) c.sp += (c.sp < 0 ? 16 : boost ? 9 : 6.5) * fw * dt;
+    else if (fw < -0.1) c.sp -= (c.sp > 0 ? 16 : 5) * -fw * dt;
+    else c.sp -= Math.sign(c.sp) * Math.min(Math.abs(c.sp), 3 * dt);
+    c.sp = Math.max(-7, Math.min(top, c.sp));
+    var turn = st * 1.5 * dt * Math.max(-1, Math.min(1, c.sp / 5)) * (1 - Math.min(0.45, Math.abs(c.sp) / 50));
+    c.yaw += turn; P.yaw += turn;
+    var nx = c.x - Math.sin(c.yaw) * c.sp * dt, nz = c.z - Math.cos(c.yaw) * c.sp * dt, q = { x: nx, z: nz };
+    resolveCircle(q, 1.45, c.y + 0.6); rwResolve(q, 1.45);
+    var ng = groundAt(q.x, q.z, c.y + 1.0), lim = RW.half * 1.02;
+    var blocked = ng - c.y > 1.0 || rwH(q.x, q.z) < RW_SEA - 0.9 || Math.max(Math.abs(q.x), Math.abs(q.z)) > lim;
+    if (blocked) { if (Math.abs(c.sp) > 6) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.3; } c.sp *= -0.2; }
+    else {
+      var moved = Math.hypot(q.x - c.x, q.z - c.z), want = Math.abs(c.sp * dt);
+      if (want > 0.02 && moved < want * 0.5) { if (Math.abs(c.sp) > 6) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.3; } c.sp *= 0.35; }
+      c.x = q.x; c.z = q.z;
+    }
+    var g = groundAt(c.x, c.z, c.y + 1.0);
+    if (c.y > g + 0.05) { c.vy -= 22 * dt; c.y += c.vy * dt; if (c.y < g) { c.y = g; c.vy = 0; } }
+    else { c.y = g; c.vy = 0; }
+    var sy = Math.sin(c.yaw), cy = Math.cos(c.yaw);   // tilt with the ground under the wheels
+    var hf = groundAt(c.x - sy * 1.4, c.z - cy * 1.4, c.y + 1), hb = groundAt(c.x + sy * 1.4, c.z + cy * 1.4, c.y + 1), hl = groundAt(c.x - cy * 1.0, c.z + sy * 1.0, c.y + 1), hr = groundAt(c.x + cy * 1.0, c.z - sy * 1.0, c.y + 1);
+    c.p += (Math.atan2(hf - hb, 2.8) - c.p) * Math.min(1, dt * 8); c.r += (Math.atan2(hr - hl, 2.0) - c.r) * Math.min(1, dt * 8);
+    carPlace(c);
+    CAR.sendT -= dt;
+    if (CAR.sendT <= 0) { CAR.sendT = Math.abs(c.sp) > 0.2 ? 0.08 : 1; dSend({ t: 'Vm', id: c.id, x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, sp: Math.round(c.sp * 10) / 10, p: Math.round(c.p * 100) / 100, r: Math.round(c.r * 100) / 100 }); }
+  }
+  function rwCarTick(dt) {
+    CAR.cool = Math.max(0, CAR.cool - dt);
+    for (var k in CAR.list) {
+      var c = CAR.list[k];
+      if (CAR.mine === c && CAR.seat === 0 && !RW.dead) carDrive(c, dt);
+      else if (c.tgt) {   // other people's cars glide to where their driver says they are
+        var t = c.tgt, f = Math.min(1, dt * 10), dy = Math.atan2(Math.sin(t.yaw - c.yaw), Math.cos(t.yaw - c.yaw));
+        if (Math.hypot(t.x - c.x, t.z - c.z) > 30) { c.x = t.x; c.z = t.z; c.y = t.y; }
+        c.x += (t.x - c.x) * f; c.y += (t.y - c.y) * f; c.z += (t.z - c.z) * f; c.yaw += dy * f; c.p += (t.p - c.p) * f; c.r += (t.r - c.r) * f;
+        if (CAR.mine === c) P.yaw += dy * f;   // a passenger turns with the car
+        carPlace(c);
+      }
+      var w = c.g.userData.wheels; if (w) for (var i = 0; i < 4; i++) w[i].children[0].rotation.x += c.sp * dt / 0.42;   // wheels roll
+    }
+    if (CAR.mine && RW.dead) { dSend({ t: 'Vx' }); CAR.mine = null; CAR.seat = -1; }
+  }
+  function rwCarSeat() {   // called after the player's own movement: sit in the seat instead
+    var c = CAR.mine; if (!c) return false;
+    var s = CAR_SEATS[CAR.seat] || CAR_SEATS[0], v = new THREE.Vector3(s[0], s[1], s[2]).applyEuler(c.g.rotation);
+    P.x = c.x + v.x; P.z = c.z + v.z; P.y = c.y + v.y - 0.3; P.vy = 0; P.ground = true; RW.px = P.x; RW.pz = P.z;
+    return true;
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable

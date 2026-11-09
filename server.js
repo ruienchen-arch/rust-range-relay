@@ -51,22 +51,22 @@ function seasonNow(now) {
 }
 const MAP_VER = 'm2';   // terrain version: bumping it gives everybody a fresh map (update 35: hills, mountains, biomes)
 function worldSeed() { return (process.env.WORLD_SEED || 'rr') + (SEASON_MS ? '-s' + seasonNow().i : '') + '-' + MAP_VER; }
-const AUTH_QUIET = 6000;   // the authority's game must send something at least this often (it sends ~20 times a second while playing)
+const AUTH_QUIET = 4000;   // the authority's game must send its position at least this often (it sends ~20 times a second while playing; a hidden or frozen tab stops)
 function electAuthority() {
   let best = 0, live = 0; const now = Date.now();
-  for (const [id, o] of world.clients) { if (!best || id < best) best = id; if (now - (o.last || 0) < AUTH_QUIET && (!live || id < live)) live = id; }
+  for (const [id, o] of world.clients) { if (!best || id < best) best = id; if (now - (o.alast || 0) < AUTH_QUIET && (!live || id < live)) live = id; }
   if (live) best = live;
   if (best !== world.auth) { world.auth = best; for (const o of world.clients.values()) o.send(JSON.stringify({ op: 'authority', id: best })); }
 }
 function worldJoin(c, m) {
-  checkBuildSeed(); checkPlayerSeed();
+  checkBuildSeed(); checkPlayerSeed(); checkCarSeed();
   { const u0 = readToken(m.token), g0 = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
     const ow = u0 ? 'u:' + u0 : g0 ? 'k:' + crypto.createHash('sha256').update(g0).digest('hex').slice(0, 16) : '';
     if (ow) for (const o of [...world.clients.values()]) if (o.owner === ow) { o.close(); onClose(o); }   // back from the lobby: drop the old (maybe half-dead) connection
   }
   const peers = [...world.clients.keys()], names = {};
   for (const o of world.clients.values()) names[o.id] = o.name || '';
-  c.world = true; c.room = { code: 'WORLD', duel: false, clients: world.clients }; c.id = world.nextId++; c.x = 0; c.z = 0; c.hasPos = false;
+  c.world = true; c.alast = Date.now(); c.room = { code: 'WORLD', duel: false, clients: world.clients }; c.id = world.nextId++; c.x = 0; c.z = 0; c.hasPos = false;
   const user = readToken(m.token), gk = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
   c.owner = user ? 'u:' + user : gk ? 'k:' + crypto.createHash('sha256').update(gk).digest('hex').slice(0, 16) : 'c:' + c.id;   // who owns what this player builds
   if (m.bk) bkRestore(c, m.bk);   // the server lost its disk (restart): the player's own browser brings their base and backpack back
@@ -75,8 +75,8 @@ function worldJoin(c, m) {
   world.clients.set(c.id, c);
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
-  if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).last || 0) > AUTH_QUIET) world.auth = c.id;
-  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub) }));
+  if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub) }));
   setTimeout(() => bkSend(c, true), 3000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
   chatPush({ t: 'RJ', n: c.name, j: 1 });
@@ -158,7 +158,7 @@ const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw
 const HP = { dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|g[0-9]{1,2})$/;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|g[0-9]{1,2})$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
@@ -218,6 +218,49 @@ function worldSave(c, m) {
   players[c.owner] = s; savePlayers();
 }
 function worldAll(s) { for (const o of world.clients.values()) o.send(s); }
+
+// ---- cars (update 38): every car on the island, who sits where, kept in DATA_DIR/cars.json ----
+const CAR_FILE = path.join(DATA_DIR, 'cars.json');
+let cars = new Map(), carSeed = '', carSeq = 1, carT = null;
+try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), seats: [0, 0, 0, 0] }); }); } catch (e) {}
+function saveCars() {
+  if (carT) return;
+  carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by })) })); } catch (e) {} }, 3000);
+}
+function checkCarSeed() { const s = worldSeed(); if (carSeed !== s) { cars.clear(); carSeq = 1; carSeed = s; saveCars(); } }
+const carPub = (q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, seats: q.seats, by: q.by });
+function carSeatOf(cid) { for (const q of cars.values()) { const i = q.seats.indexOf(cid); if (i >= 0) return [q, i]; } return null; }
+function carFree(cid) { const s = carSeatOf(cid); if (!s) return; s[0].seats[s[1]] = 0; if (s[1] === 0) s[0].sp = 0; worldAll(J({ t: 'RVs', car: carPub(s[0]) })); }
+function carXYZ(m) { const x = num(m.x, WORLD_SIZE + 60), y = num(m.y, 500), z = num(m.z, WORLD_SIZE + 60); return x === null || y === null || z === null ? null : [x, y, z]; }
+function worldCarEnter(c, m) {
+  const id = String(m.id || ''); if (!/^(m\d{1,3}_\d|p\d{1,7})$/.test(id)) return;
+  let q = cars.get(id);
+  if (!q) {   // a monument car nobody has touched yet: it starts where every game puts it
+    if (id[0] !== 'm') return; const p = carXYZ(m); if (!p) return;
+    q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: '', seats: [0, 0, 0, 0] }; cars.set(id, q);
+  }
+  if (c.hasPos && Math.hypot(c.x - q.x, c.z - q.z) > 10) return;
+  const had = carSeatOf(c.id); if (had && had[0] === q) return;
+  carFree(c.id);
+  const seat = q.seats.indexOf(0);
+  if (seat < 0) { c.send(J({ t: 'RVf', id })); return; }
+  q.seats[seat] = c.id; saveCars(); worldAll(J({ t: 'RVs', car: carPub(q) }));
+}
+function worldCarMove(c, m) {
+  const q = cars.get(String(m.id || '')); if (!q || q.seats[0] !== c.id) return;
+  const p = carXYZ(m); if (!p) return;
+  q.x = p[0]; q.y = p[1]; q.z = p[2]; q.yaw = +m.yaw || 0; q.sp = +m.sp || 0; saveCars();
+  const out = J({ t: 'RVm', id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, sp: q.sp, p: +m.p || 0, r: +m.r || 0 });
+  for (const o of world.clients.values()) if (o !== c) o.send(out);
+}
+function worldCarMake(c, m) {
+  const p = carXYZ(m); if (!p) return;
+  if (c.hasPos && Math.hypot(c.x - p[0], c.z - p[2]) > 14) return;
+  if ([...cars.values()].filter((q) => q.by && q.by === c.owner).length >= 3) { c.send(J({ t: 'RVf', id: '', why: 'max' })); return; }
+  const id = 'p' + (carSeq++);
+  const q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: c.owner || '', seats: [0, 0, 0, 0] };
+  cars.set(id, q); saveCars(); worldAll(J({ t: 'RVc', car: carPub(q) }));
+}
 
 // ---- backups kept in each player's browser ----
 // Free hosts wipe the server's disk on every restart. So the server keeps handing each player a signed copy of
@@ -313,7 +356,7 @@ setInterval(() => {
   if (s === curSeed) return;
   curSeed = s;
   console.log('season over: new island ' + s);
-  checkBuildSeed(); checkPlayerSeed(); world.nodes.clear(); world.drops.clear(); chatLog.length = 0;
+  checkBuildSeed(); checkPlayerSeed(); checkCarSeed(); world.nodes.clear(); world.drops.clear(); chatLog.length = 0;
   const msg = JSON.stringify({ op: 'world-wipe', season: seasonNow() });
   for (const o of [...world.clients.values()]) { o.wiped = true; o.send(msg); setTimeout(() => { if (!o.closed) { o.close(); onClose(o); } }, 1500); }
 }, 20000).unref();
@@ -686,13 +729,17 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Ry') { worldLockTry(c, m); return; }
   if (c.world && m.t === 'Rt') { worldTrap(c, m); return; }
   if (c.world && m.t === 'Rs') { worldSave(c, m); return; }
+  if (c.world && m.t === 'Ve') { worldCarEnter(c, m); return; }
+  if (c.world && m.t === 'Vx') { carFree(c.id); return; }
+  if (c.world && m.t === 'Vm') { worldCarMove(c, m); return; }
+  if (c.world && m.t === 'Vc') { worldCarMake(c, m); return; }
   if (c.world && (m.t === 'Bq' || m.t === 'Bp' || m.t === 'Bt' || m.t === 'Bl' || m.t === 'Bc')) { worldCont(c, m); return; }
   const to = m.to; delete m.to;
   m.i = c.id;
   const out = J(m);
   const live = m.t === 's' || m.t === 'f' || m.t === 'Ce';
   if (c.world && (m.t === 's' || m.t === 'f') && to === undefined) {   // area of interest
-    if (m.t === 's' && isFinite(m.x) && isFinite(m.z)) { c.x = +m.x; c.z = +m.z; c.hasPos = true; }
+    if (m.t === 's' && isFinite(m.x) && isFinite(m.z)) { c.x = +m.x; c.z = +m.z; c.hasPos = true; c.alast = Date.now(); }   // only the running game sends these (a hidden tab does not), so they show who can run the enemies
     for (const o of world.clients.values()) {
       if (o === c) continue;
       if (o.id !== world.auth && o.hasPos && c.hasPos && Math.hypot(o.x - c.x, o.z - c.z) > INTEREST) continue;
@@ -717,7 +764,7 @@ function onClose(c) {
   const room = c.room; if (!room) return;
   room.clients.delete(c.id);
   for (const o of room.clients.values()) o.send(J({ op: 'peer-left', id: c.id }));
-  if (c.world) { chatPush({ t: 'RJ', n: c.name, j: 0 }); if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
+  if (c.world) { carFree(c.id); chatPush({ t: 'RJ', n: c.name, j: 0 }); if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
   if (c.id === 1) {                    // the host left: the room is over
     for (const o of room.clients.values()) o.close();
     rooms.delete(room.code);
@@ -728,7 +775,7 @@ function onClose(c) {
 const clientsAll = () => { const l = [...world.clients.values()]; for (const r of rooms.values()) for (const c of r.clients.values()) l.push(c); return l; };   // the wild too (it used to be missed)
 setInterval(() => {   // the authority went quiet (closed tab, lost connection, hidden tab): hand spawning to someone who is playing
   const a = world.clients.get(world.auth);
-  if (world.clients.size && (!a || Date.now() - (a.last || 0) > AUTH_QUIET)) electAuthority();
+  if (world.clients.size && (!a || Date.now() - (a.alast || 0) > AUTH_QUIET)) electAuthority();
 }, 2000).unref();
 setInterval(() => {
   for (const c of clientsAll()) {
