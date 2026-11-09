@@ -22,7 +22,7 @@ const MAX_ACCOUNTS = 20000;
 const TOKEN_DAYS = 30;
 const COOP_MAX = +process.env.COOP_MAX || 0;      // 0 = unlimited
 const MAX_MSG = 16 * 1024;                          // the game never sends more than this
-const MAX_FRAME = 256 * 1024;
+const MAX_FRAME = 1024 * 1024;   // a player's base backup can be a few hundred KB
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 const rooms = new Map();
@@ -34,12 +34,22 @@ const rooms = new Map();
 // to the authority, who needs everybody's position to aim its enemies).
 const WORLD_SIZE = +process.env.WORLD_SIZE || 1500;
 const INTEREST = 420;
-const world = { clients: new Map(), nextId: 1, auth: 0, nodes: new Map() };
+const world = { clients: new Map(), nextId: 1, auth: 0, nodes: new Map(), drops: new Map(), dropSeq: 0 };
 const RESPAWN_MS = { tree: 600000, rock: 600000, ore: 900000, crate: 900000, hemp: 300000 };
-function worldSeed() {
-  if (!db.world) { db.world = { seed: buildSeed || playerSeed || ('w' + crypto.randomBytes(4).toString('hex')) }; saveDb(); }   // reuse the island the buildings were made on
-  return process.env.WORLD_SEED || db.world.seed;
+// ---- seasons: the island is wiped and a new one generated every SEASON_DAYS days (default 15) ----
+// The island comes from the season number, not from a file, so it stays the same across server restarts
+// (free hosts restart often and lose their disk) and changes by itself when a season ends.
+// SEASON_DAYS=0 keeps one island for ever. SEASON_START sets when season 1 began. WORLD_SEED changes every island.
+const SEASON_DAYS = process.env.SEASON_DAYS !== undefined && process.env.SEASON_DAYS !== '' ? Math.max(0, +process.env.SEASON_DAYS || 0) : 15;
+const SEASON_MS = SEASON_DAYS * 86400000;
+const SEASON_START = Date.parse(process.env.SEASON_START || '2026-11-09T00:00:00+11:00') || 0;
+function seasonNow(now) {
+  now = now || Date.now();
+  if (!SEASON_MS) return { i: 1, start: SEASON_START, end: 0, days: 0 };
+  const i = Math.max(0, Math.floor((now - SEASON_START) / SEASON_MS));
+  return { i: i + 1, start: SEASON_START + i * SEASON_MS, end: SEASON_START + (i + 1) * SEASON_MS, days: SEASON_DAYS };
 }
+function worldSeed() { return (process.env.WORLD_SEED || 'rr') + (SEASON_MS ? '-s' + seasonNow().i : ''); }
 const AUTH_QUIET = 6000;   // the authority's game must send something at least this often (it sends ~20 times a second while playing)
 function electAuthority() {
   let best = 0, live = 0; const now = Date.now();
@@ -58,13 +68,15 @@ function worldJoin(c, m) {
   c.world = true; c.room = { code: 'WORLD', duel: false, clients: world.clients }; c.id = world.nextId++; c.x = 0; c.z = 0; c.hasPos = false;
   const user = readToken(m.token), gk = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
   c.owner = user ? 'u:' + user : gk ? 'k:' + crypto.createHash('sha256').update(gk).digest('hex').slice(0, 16) : 'c:' + c.id;   // who owns what this player builds
+  if (m.bk) bkRestore(c, m.bk);   // the server lost its disk (restart): the player's own browser brings their base and backpack back
   c.name = user ? db.users[user].name : guestName(gk || ('id' + c.id + Date.now()));   // players who are not logged in get a random name (the same one every time in this browser)
   c.last = Date.now();
   world.clients.set(c.id, c);
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).last || 0) > AUTH_QUIET) world.auth = c.id;
-  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub) }));
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub) }));
+  setTimeout(() => bkSend(c, true), 3000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
   chatPush({ t: 'RJ', n: c.name, j: 1 });
   electAuthority();
@@ -205,6 +217,105 @@ function worldSave(c, m) {
   players[c.owner] = s; savePlayers();
 }
 function worldAll(s) { for (const o of world.clients.values()) o.send(s); }
+
+// ---- backups kept in each player's browser ----
+// Free hosts wipe the server's disk on every restart. So the server keeps handing each player a signed copy of
+// their own parts (with box contents and lock codes) and their backpack. When they come back to a server that has
+// lost them, in the same season, the copy is checked and put back. The signature stops hand-edited copies.
+const BK_KEY = process.env.SAVE_KEY || 'rust-range-backup-key-v1';
+const bkSig = (seed, o, b, s) => crypto.createHmac('sha256', BK_KEY).update(seed + '|' + o + '|' + JSON.stringify(b) + '|' + JSON.stringify(s)).digest('hex').slice(0, 40);
+function bkMake(c) {
+  const b = []; for (const a of builds.values()) if (a[7] === c.owner) b.push(a);
+  const s = players[c.owner] || null, seed = worldSeed();
+  return { v: 1, seed, o: c.owner, b, s, sig: bkSig(seed, c.owner, b, s) };
+}
+function bkSend(c, force) {
+  if (!c.owner || c.owner[0] === 'c' || c.closed) return;
+  const bk = bkMake(c), h = bk.sig;
+  if (!force && h === c.bkH) return;
+  c.bkH = h; c.send(JSON.stringify({ op: 'world-backup', bk }));
+}
+setInterval(() => { for (const o of world.clients.values()) bkSend(o); }, 15000).unref();
+const cleanSlot = (it) => (Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1 ? [it[0], int(it[1], 1, 100000)] : null);
+function bkRestore(c, bk) {
+  try {
+    if (!c.owner || c.owner[0] === 'c' || !bk || typeof bk !== 'object' || bk.v !== 1 || bk.seed !== worldSeed() || typeof bk.o !== 'string' || !Array.isArray(bk.b)) return;
+    if (bkSig(bk.seed, bk.o, bk.b, bk.s === undefined ? null : bk.s) !== bk.sig) { console.log('backup refused: bad signature'); return; }
+    const was = bk.o, me = c.owner, map = (o) => (o === was ? me : o);
+    for (const a of builds.values()) if (a[7] === was || a[7] === me) return;   // the server still has this player's base
+    if (!players[me] && bk.s) { const s = cleanSave(bk.s); if (s) { players[me] = s; savePlayers(); } }
+    let n = 0;
+    for (const r of bk.b.slice(0, MAX_PER_OWNER)) {
+      if (!Array.isArray(r) || r.length < 9 || !BUILD_KINDS.has(r[1]) || builds.size >= MAX_BUILDS) continue;
+      const x = num(r[2], WORLD_SIZE), y = num(r[3], 400), z = num(r[4], WORLD_SIZE); if (x === null || y === null || z === null) continue;
+      let clash = false;
+      for (const a of builds.values()) if (a[1] === r[1] && Math.abs(a[2] - x) < 0.25 && Math.abs(a[4] - z) < 0.25 && Math.abs(a[3] - y) < 0.25) { clash = true; break; }
+      if (clash) continue;
+      const k = r[1], g = NO_UP.has(k) ? 0 : int(r[6], 0, 2), a = [++buildSeq, k, x, y, z, int(r[5], 0, 3), g, me, r[8] ? 1 : 0, int(r[9], 1, maxHp(k, g)), 0];
+      const e = r[10];
+      if (k === 'tc' && e && Array.isArray(e.a)) a[10] = { a: e.a.filter((o) => typeof o === 'string').slice(0, 64).map(map) };
+      else if (DOORS.has(k) && e && /^\d{4}$/.test(String(e.c || ''))) a[10] = { c: String(e.c), a: (Array.isArray(e.a) ? e.a : []).filter((o) => typeof o === 'string').slice(0, 64).map(map) };
+      else if (CONT[k] && e && Array.isArray(e.s)) a[10] = { s: Array.from({ length: CONT[k] }, (_, i) => cleanSlot(e.s[i])), t: 0 };
+      builds.set(a[0], fixRec(a)); n++;
+    }
+    if (n) { saveBuilds(); console.log('restored ' + n + ' parts for ' + me + ' from their backup'); for (const a of builds.values()) if (a[7] === me) worldAll(JSON.stringify({ t: 'Rb', p: pub(a) })); }
+    c.restored = n;
+  } catch (e) { console.error('backup restore failed:', e.message); }
+}
+
+// ---- things on the ground: dropped items and the bags people leave when they die ----
+// Everybody sees them and anybody can pick them up (whole drop at once: the server hands it to whoever asks first).
+const DROP_MAX = 3000, DROP_TTL = 600, BAG_TTL = 1200;
+const dropPub = (d) => [d.id, d.x, d.y, d.z, d.it, d.bag ? 1 : 0, d.bn || '', Math.max(1, Math.round((d.until - Date.now()) / 1000)), d.bo || ''];
+function dropItems(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const q of list.slice(0, 40)) { const it = cleanSlot(q); if (it) out.push(it); }
+  return out.length ? out : null;
+}
+function dropMake(x, y, z, it, o) {
+  if (world.drops.size >= DROP_MAX) { let old = null; for (const d of world.drops.values()) if (!old || d.until < old.until) old = d; if (old) dropGone(old.id); }
+  const ttl = o.bag ? BAG_TTL : Math.max(30, Math.min(DROP_TTL, +o.ttl || DROP_TTL));
+  const d = { id: ++world.dropSeq, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, z: Math.round(z * 100) / 100, it, bag: !!o.bag, bn: o.bn || '', bo: o.bo || '', src: o.src || '', by: o.by || '', until: Date.now() + ttl * 1000 };
+  world.drops.set(d.id, d);
+  worldAll(JSON.stringify({ t: 'RI', d: dropPub(d) }));
+  return d;
+}
+function dropGone(id) { if (world.drops.delete(id)) worldAll(JSON.stringify({ t: 'RX', id })); }
+function worldDrop(c, m) {   // a player drops something (or dies and leaves a bag)
+  const now = Date.now(); c.dh = (c.dh || []).filter((t) => now - t < 10000); if (c.dh.length >= 40) return; c.dh.push(now);
+  const it = dropItems(m.it); if (!it) return;
+  const x = num(m.x, WORLD_SIZE + 50), y = num(m.y, 500), z = num(m.z, WORLD_SIZE + 50); if (x === null || y === null || z === null) return;
+  if (c.hasPos && Math.hypot(c.x - x, c.z - z) > 200) return;   // near yourself (an animal you shot can be a way off)
+  const src = typeof m.src === 'string' || typeof m.src === 'number' ? String(m.src).slice(0, 40) : '';
+  if (src && it.length === 1 && !m.bag) {   // gathering with a full backpack: one growing pile per tree / rock
+    for (const d of world.drops.values()) if (d.src === src && d.by === c.owner && d.it.length === 1 && d.it[0][0] === it[0][0]) {
+      d.it[0][1] = Math.min(100000, d.it[0][1] + it[0][1]); d.until = Math.max(d.until, now + 300000);
+      worldAll(JSON.stringify({ t: 'RU', id: d.id, it: d.it })); return;
+    }
+  }
+  dropMake(x, y, z, it, { bag: !!m.bag, bn: m.bag ? c.name || '' : '', bo: m.bag ? c.owner : '', src, by: c.owner, ttl: m.ttl });
+}
+function worldPick(c, m) {   // first come, first served
+  const d = world.drops.get(m.id | 0); if (!d) { c.send(JSON.stringify({ t: 'RX', id: m.id | 0 })); return; }
+  if (c.hasPos && Math.hypot(c.x - d.x, c.z - d.z) > 8) return;
+  world.drops.delete(d.id);
+  c.send(JSON.stringify({ t: 'RP', id: d.id, it: d.it, at: [d.x, d.y, d.z], bag: d.bag ? 1 : 0, bn: d.bn, bo: d.bo }));
+  worldAll(JSON.stringify({ t: 'RX', id: d.id }));
+}
+setInterval(() => { const now = Date.now(); for (const d of [...world.drops.values()]) if (d.until <= now) dropGone(d.id); }, 5000).unref();
+
+// ---- end of season: wipe and generate the next island, then send everybody to it ----
+let curSeed = null;
+setInterval(() => {
+  const s = worldSeed(); if (curSeed === null) { curSeed = s; return; }
+  if (s === curSeed) return;
+  curSeed = s;
+  console.log('season over: new island ' + s);
+  checkBuildSeed(); checkPlayerSeed(); world.nodes.clear(); world.drops.clear(); chatLog.length = 0;
+  const msg = JSON.stringify({ op: 'world-wipe', season: seasonNow() });
+  for (const o of [...world.clients.values()]) { o.wiped = true; o.send(msg); setTimeout(() => { if (!o.closed) { o.close(); onClose(o); } }, 1500); }
+}, 20000).unref();
 const isWallish = (k) => k === 'wl' || k === 'dw' || k === 'wn' || k === 'hw' || k === 'lw' || k === 'wf' || k === 'dd';
 const isFloorish = (k) => k === 'fl' || k === 'rf';
 const axisOnly = (k) => isWallish(k) || !!HOST[k] || k === 'xw' || k === 'xs' || k === 'xg';   // only two directions
@@ -239,7 +350,7 @@ function worldBuild(c, m) {
 function dropPart(a, by) {   // a part is gone: doors in a doorway go with it, a destroyed container spills for the raider
   const gone = [a[0]]; builds.delete(a[0]);
   if (Object.values(HOST).indexOf(a[1]) >= 0) for (const b of builds.values()) if (HOST[b[1]] === a[1] && Math.abs(b[2] - a[2]) < 0.25 && Math.abs(b[4] - a[4]) < 0.25 && Math.abs(b[3] - a[3]) < 0.25) { builds.delete(b[0]); gone.push(b[0]); }   // doors and bars go with their wall
-  if (by && CONT[a[1]]) { const it = a[10].s.filter(Boolean); if (it.length) by.send(JSON.stringify({ t: 'RD', at: [a[2], a[3], a[4]], it })); }
+  if (by && CONT[a[1]]) { const it = a[10].s.filter(Boolean); if (it.length) dropMake(a[2], a[3], a[4], it.map((q) => [q[0], q[1]]), { ttl: DROP_TTL }); }   // a destroyed box spills on the ground for everybody
   saveBuilds();
   gone.forEach((id) => worldAll(JSON.stringify({ t: 'Rx', id })));
   for (const o of world.clients.values()) if (o.open && gone.indexOf(o.open) >= 0) o.open = 0;
@@ -441,7 +552,7 @@ function api(req, res, url) {
 
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
-  if (url === '/api/world') { res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ players: world.clients.size, size: WORLD_SIZE, builds: builds.size })); return; }
+  if (url === '/api/world') { res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify({ players: world.clients.size, size: WORLD_SIZE, builds: builds.size, season: seasonNow(), now: Date.now() })); return; }
   if (url.indexOf('/api/') === 0) { api(req, res, url); return; }
   if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); return; }
   if (url === '/' || url === '/index.html') {
@@ -557,6 +668,9 @@ function onMessage(c, text) {
   if (text.length > MAX_MSG) return;   // oversize: drop
   let m; try { m = JSON.parse(text); } catch (e) { return; }
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
+  if (c.world && c.wiped) return;   // the season just ended: ignore the old island's last messages
+  if (c.world && m.t === 'Gd') { worldDrop(c, m); return; }
+  if (c.world && m.t === 'Gp') { worldPick(c, m); return; }
   if (c.world && m.t === 'Rg') { worldGather(c, m); return; }
   if (c.world && m.t === 'Rb') { worldBuild(c, m); return; }
   if (c.world && m.t === 'Rx') { worldRemove(c, m); return; }
