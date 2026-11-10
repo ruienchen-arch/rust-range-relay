@@ -771,6 +771,21 @@ function onClose(c) {
   } else if (!room.clients.size) rooms.delete(room.code);
 }
 
+// keep the server awake on free hosts (Render puts a free service to sleep after 15 minutes with no incoming
+// traffic, and a sleeping service loses its save files). Every 10 minutes it visits its own public address, which
+// counts as incoming traffic. Render sets RENDER_EXTERNAL_URL by itself; KEEPALIVE_URL works on other hosts;
+// KEEPALIVE=0 turns this off.
+(function keepAwake() {
+  const url = process.env.KEEPALIVE_URL || process.env.RENDER_EXTERNAL_URL;
+  if (!url || process.env.KEEPALIVE === '0') return;
+  const target = url.replace(/\/+$/, '') + '/api/world';
+  const lib = target.startsWith('https:') ? require('https') : http;
+  const ping = () => { try { const r = lib.get(target, (res) => { res.resume(); }); r.on('error', () => {}); r.setTimeout(20000, () => r.destroy()); } catch (e) {} };
+  setInterval(ping, 10 * 60 * 1000);
+  setTimeout(ping, 60 * 1000);
+  console.log('keep-awake: visiting ' + target + ' every 10 minutes');
+})();
+
 // keep connections alive (free hosts drop idle sockets) and clear dead ones
 const clientsAll = () => { const l = [...world.clients.values()]; for (const r of rooms.values()) for (const c of r.clients.values()) l.push(c); return l; };   // the wild too (it used to be missed)
 setInterval(() => {   // the authority went quiet (closed tab, lost connection, hidden tab): hand spawning to someone who is playing
