@@ -70,6 +70,7 @@ function worldJoin(c, m) {
   const user = readToken(m.token), gk = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
   c.owner = user ? 'u:' + user : gk ? 'k:' + crypto.createHash('sha256').update(gk).digest('hex').slice(0, 16) : 'c:' + c.id;   // who owns what this player builds
   if (m.bk) bkRestore(c, m.bk);   // the server lost its disk (restart): the player's own browser brings their base and backpack back
+  if (typeof m.wbk === 'string') wbRestore(c, m.wbk);   // ... and the copy of the whole island brings everybody else's back
   c.name = user ? db.users[user].name : guestName(gk || ('id' + c.id + Date.now()));   // players who are not logged in get a random name (the same one every time in this browser)
   c.last = Date.now();
   world.clients.set(c.id, c);
@@ -78,6 +79,7 @@ function worldJoin(c, m) {
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub) }));
   setTimeout(() => bkSend(c, true), 3000);
+  setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
   chatPush({ t: 'RJ', n: c.name, j: 1 });
   electAuthority();
@@ -288,8 +290,13 @@ function bkRestore(c, bk) {
     const was = bk.o, me = c.owner, map = (o) => (o === was ? me : o);
     for (const a of builds.values()) if (a[7] === was || a[7] === me) return;   // the server still has this player's base
     if (!players[me] && bk.s) { const s = cleanSave(bk.s); if (s) { players[me] = s; savePlayers(); } }
+    const n = restoreParts(me, bk.b, map);
+    c.restored = n;
+  } catch (e) { console.error('backup restore failed:', e.message); }
+}
+function restoreParts(me, list, map) {   // put a player's backed-up parts back (validated like anything a player builds)
     let n = 0;
-    for (const r of bk.b.slice(0, MAX_PER_OWNER)) {
+    for (const r of list.slice(0, MAX_PER_OWNER)) {
       if (!Array.isArray(r) || r.length < 9 || !BUILD_KINDS.has(r[1]) || builds.size >= MAX_BUILDS) continue;
       const x = num(r[2], WORLD_SIZE), y = num(r[3], 400), z = num(r[4], WORLD_SIZE); if (x === null || y === null || z === null) continue;
       let clash = false;
@@ -302,9 +309,69 @@ function bkRestore(c, bk) {
       else if (CONT[k] && e && Array.isArray(e.s)) a[10] = { s: Array.from({ length: CONT[k] }, (_, i) => cleanSlot(e.s[i])), t: 0 };
       builds.set(a[0], fixRec(a)); n++;
     }
-    if (n) { saveBuilds(); console.log('restored ' + n + ' parts for ' + me + ' from their backup'); for (const a of builds.values()) if (a[7] === me) worldAll(JSON.stringify({ t: 'Rb', p: pub(a) })); }
-    c.restored = n;
-  } catch (e) { console.error('backup restore failed:', e.message); }
+    if (n) { saveBuilds(); console.log('restored ' + n + ' parts for ' + me + ' from a backup'); for (const a of builds.values()) if (a[7] === me) worldAll(JSON.stringify({ t: 'Rb', p: pub(a) })); }
+    return n;
+}
+
+// ---- the whole world in every browser (update 40) ----
+// Besides each player's own copy, every browser also keeps an encrypted copy of the whole island: everybody's parts,
+// cars (backpacks stay in each player's own copy). After a restart wiped the disk, the first person who comes back brings everything back, so
+// nobody has to wait for their friends to log in. Only players and cars this server process has never seen since it
+// started are put back (so a raided base cannot be brought back by someone else's old copy). Encrypted, so nobody can
+// read other people's lock codes or box contents out of their browser.
+const zlib = require('zlib');
+const WB_KEY = crypto.createHash('sha256').update('world-backup|' + BK_KEY).digest();
+const wbKnown = new Set(), wbCarKnown = new Set();
+function wbNote() { for (const a of builds.values()) wbKnown.add(a[7]); for (const id of cars.keys()) wbCarKnown.add(id); }
+function wbMake() {
+  const body = JSON.stringify({ v: 2, seed: worldSeed(), b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by })), cs: carSeq });
+  const h = crypto.createHash('sha1').update(body).digest('hex');
+  if (h === wbMake.h) return null;
+  const zz = zlib.deflateRawSync(body); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
+  const iv = crypto.randomBytes(12), ci = crypto.createCipheriv('aes-256-gcm', WB_KEY, iv), enc = Buffer.concat([ci.update(zz), ci.final()]);
+  wbMake.h = h;
+  return Buffer.concat([iv, ci.getAuthTag(), enc]).toString('base64');
+}
+function wbOpen(str) {
+  const buf = Buffer.from(String(str), 'base64'); if (buf.length < 40 || buf.length > 900000) return null;
+  const d = crypto.createDecipheriv('aes-256-gcm', WB_KEY, buf.subarray(0, 12)); d.setAuthTag(buf.subarray(12, 28));
+  const zz = Buffer.concat([d.update(buf.subarray(28)), d.final()]);
+  return JSON.parse(zlib.inflateRawSync(zz, { maxOutputLength: 30e6 }).toString('utf8'));
+}
+function wbSendAll(force) {
+  wbNote();
+  const d = wbMake(); if (!d && !force) return;
+  const msg = JSON.stringify({ op: 'world-wbackup', t: Date.now(), d: d || wbSendAll.last });
+  if (d) wbSendAll.last = d;
+  if (!wbSendAll.last) return;
+  for (const o of world.clients.values()) o.send(msg);
+}
+wbNote();   // whatever survived on disk is known: never overwritten by old copies
+setInterval(() => wbSendAll(false), 30000).unref();
+function wbRestore(c, str) {
+  try {
+    const w = wbOpen(str); if (!w || w.v !== 2 || w.seed !== worldSeed()) return;
+    const byOwner = new Map();
+    for (const r of Array.isArray(w.b) ? w.b : []) { if (!Array.isArray(r) || typeof r[7] !== 'string' || r[7][0] === 'c') continue; if (!byOwner.has(r[7])) byOwner.set(r[7], []); byOwner.get(r[7]).push(r); }
+    let n = 0, who = 0;
+    for (const [o, list] of byOwner) {
+      if (wbKnown.has(o)) continue;
+      let has = false; for (const a of builds.values()) if (a[7] === o) { has = true; break; }
+      wbKnown.add(o); if (has) continue;
+      const k = restoreParts(o, list, (x) => x); if (k) { n += k; who++; }
+    }
+    const ps = 0;   // backpacks are not in it: each player's own copy brings theirs back
+    let nc = 0;
+    for (const q of Array.isArray(w.cars) ? w.cars.slice(0, 500) : []) {
+      if (!q || typeof q.id !== 'string' || !/^(m\d{1,3}_\d|p\d{1,7})$/.test(q.id) || cars.has(q.id) || wbCarKnown.has(q.id)) continue;
+      const p = carXYZ(q); if (!p) continue;
+      const car = { id: q.id, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', seats: [0, 0, 0, 0] };
+      cars.set(q.id, car); wbCarKnown.add(q.id); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
+    }
+    if ((+w.cs | 0) > carSeq) carSeq = +w.cs | 0;
+    if (nc) saveCars();
+    if (n || nc) console.log('world backup from ' + (c.name || c.owner) + ': ' + n + ' parts for ' + who + ' players, ' + nc + ' cars put back');
+  } catch (e) { console.error('world backup refused:', e.message); }
 }
 
 // ---- things on the ground: dropped items and the bags people leave when they die ----

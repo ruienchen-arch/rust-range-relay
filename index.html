@@ -4534,6 +4534,7 @@ Object.assign(EN, {
       else if (m.op === 'world-welcome') { RW.entering = false; rwWelcome(m); dSend({ t: 'h', c: charId }); }
       else if (m.op === 'authority') { rwSetAuth(m.id | 0); }
       else if (m.op === 'world-backup') { rwBkStore(m.bk); }
+      else if (m.op === 'world-wbackup') { try { if (m.d && +m.t >= (+localStorage.getItem('rr-wild-wbk-t') || 0) - 600000) { localStorage.setItem('rr-wild-wbk', m.d); localStorage.setItem('rr-wild-wbk-t', String(m.t)); } } catch (e) {} }
       else if (m.op === 'world-wipe') { rwWipe(m); }
       else if (m.op === 'roster') { RW.roster = (m.p || []).map(function (r) { return { id: r[0] | 0, x: +r[1] || 0, z: +r[2] || 0 }; }); RW.online = m.n | 0 || RW.roster.length; }
       else if (m.op === 'error') {
@@ -5744,7 +5745,7 @@ Object.assign(EN, {
     RW.entering = true; DU.role = 'guest'; DU.coopWanted = true; coop = false; duel = false;
     rwCard(zt('正在进入荒野世界……', 'Entering the wild…'), zt('免费服务器睡眠后第一次连接要等约 1 分钟，请稍等。', 'A sleeping free server needs about a minute on the first connection.'), '<button class="ghost" id="rwToLobby" type="button">' + zt('取消，进入大厅', 'Cancel, go to the lobby') + '</button>');
     $('rwToLobby').addEventListener('click', function () { RW.noAuto = true; RW.entering = false; duCloseConn(); DU.coopWanted = false; showLobby(); });
-    dConnect(srv, accMsg({ op: 'world', gk: GK, bk: rwBkLoad() }), function (msg) { DU.coopWanted = false; rwFail(msg); });
+    dConnect(srv, accMsg({ op: 'world', gk: GK, bk: rwBkLoad(), wbk: (function () { try { return localStorage.getItem('rr-wild-wbk') || undefined; } catch (e) { return undefined; } })() }), function (msg) { DU.coopWanted = false; rwFail(msg); });
   }
   function rwPauseMenu() {
     releaseInput();
