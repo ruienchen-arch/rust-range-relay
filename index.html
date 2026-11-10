@@ -6501,7 +6501,7 @@ Object.assign(EN, {
     return true;
   }
   function rwUseSlot(i) {
-    if (RW.inv[i] && RW.inv[i].id === 'car') return rwCarDeploy(i);
+    if (RW.inv[i] && (RW.inv[i].id === 'car' || RW.inv[i].id === 'heli')) return rwCarDeploy(i);
     var s0 = RW.inv[i]; if (s0 && RW_RES_TOOL[s0.id]) return rwGoBuild(s0.id);
     var s = RW.inv[i]; if (!s || !RWI[s.id] || !RWI[s.id].use) return false;
     var id = s.id;
@@ -9693,6 +9693,7 @@ Object.assign(EN, {
         [zt('地形', 'Terrain'), zt('北边冷（苔原和雪山），中间温带（草地和森林），南边是沙漠（沙丘和仙人掌）。到处都是山丘，山脉里金属矿更多。在山坡上也能放地基，地基会自动加高支脚。', 'The north is cold (tundra and snowy mountains), the middle temperate (grass and forest), the south desert (dunes and cacti). Hills everywhere; mountains have more ore. Foundations work on hillsides, standing on taller footings.')],
         [zt('天气', 'Weather'), zt('晴、多云、阴天、大雾、下雨、雷雨每几分钟变一次，所有人看到的一样。天气只是好看，不影响玩法。小地图下面会写现在的天气和地形。', 'Clear, partly cloudy, overcast, fog, rain and thunderstorms change every few minutes, the same for everyone. Weather only changes how things look. It shows under the minimap with the biome.')],
         [zt('汽车', 'Cars'), zt('很多建筑群旁边停着车（加油站、小镇、超市、火车站等），走过去按 E 上车，先坐驾驶座，最多 4 人。W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。也可以在工作台做一辆（金属碎片 500、木材 300、布 40），拿在手上左键放下，每人最多 3 辆。车停在哪里服务器都会记住。', 'Cars stand at many monuments (gas station, town, supermarket, train yard…). Walk up and press E: the driver seat first, up to 4 people. W/S drive and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Build one at a workbench (500 fragments, 300 wood, 40 cloth), hold it and left-click to park it; up to 3 per player. The server remembers where every car is parked.')],
+        [zt('直升机', 'Helicopter'), zt('只能在工作台造，很贵：金属碎片 2500、金属 600、布 150、木头 400，外加一张红色门卡。双座：飞行员 + 1 名乘客。上去后等旋翼转起来，空格上升，Shift 下降，W/S 前进后退，A/D 转向，E 下来（在空中下来会掉下去）。飞行员不能拿武器，副驾驶什么都能用。没人开的直升机会落回地面。', 'Workbench only, and expensive: 2500 metal fragments, 600 metal, 150 cloth, 400 wood and a red keycard. Two seats: pilot + 1 passenger. Get in, wait for the rotor to spin up, Space climbs, Shift descends, W/S forward/back, A/D turn, E gets out (in the air you fall). The pilot cannot hold a weapon; the passenger can use anything. A helicopter nobody flies comes back down.')],
         [zt('游泳', 'Swimming'), zt('深水里会浮起来游泳，比在陆地上慢。往下看再按前进就潜下去，按空格往上浮。水下有 30 秒氧气，用完会溺水掉血。', 'In deep water you float and swim, slower than on land. Look down and press forward to dive, Space to come up. You have 30 seconds of breath under water, then you start drowning.')]
       ]);
       h += '<h4>' + zt('前哨站', 'The Outpost') + '</h4><p>' + zt('前哨站是安全区：在里面不会受伤。柜台可以用金币买枪、弹药、护甲和补给，也可以把采集来的木材、石头、金属矿、金属碎片和布卖掉换金币。', 'The Outpost is a safe zone: nobody can hurt you there. Its counter sells guns, ammo, armor and supplies for coins, and buys the wood, stone, ore, fragments and cloth you gather.') + '</p>';
@@ -11364,10 +11365,11 @@ Object.assign(EN, {
   function carAdd(d) {   // d: { id, x, y, z, yaw, col, seats }
     var c = CAR.list[d.id];
     if (!c) {
-      c = CAR.list[d.id] = { id: d.id, x: +d.x, y: +d.y, z: +d.z, yaw: +d.yaw || 0, p: 0, r: 0, sp: 0, vy: 0, st: 0, stT: 0, col: d.col || CAR_COLS[0], seats: [0, 0, 0, 0], tgt: null };
-      c.g = carModel(c.col); RW.group.add(c.g);
+      var hl = d.ty === 'h';
+      c = CAR.list[d.id] = { id: d.id, ty: hl ? 'h' : '', x: +d.x, y: +d.y, z: +d.z, yaw: +d.yaw || 0, p: 0, r: 0, sp: 0, vy: 0, vx: 0, vz: 0, st: 0, stT: 0, col: d.col || CAR_COLS[0], seats: hl ? [0, 0] : [0, 0, 0, 0], tgt: null };
+      c.g = hl ? heliModel(c.col) : carModel(c.col); RW.group.add(c.g);
     }
-    if (d.seats) c.seats = d.seats.slice(0, 4);
+    if (d.seats) c.seats = d.seats.slice(0, c.ty === 'h' ? 2 : 4);
     if (CAR.mine !== c || d.force) { c.x = +d.x; c.y = +d.y; c.z = +d.z; c.yaw = +d.yaw || 0; c.tgt = null; }
     carPlace(c);
     return c;
@@ -11390,47 +11392,51 @@ Object.assign(EN, {
   function rwCarMsg(m) {
     if (m.t === 'RVs' || m.t === 'RVc') {
       var c = carAdd(m.car); var si = carMyIndex(c);
-      if (si >= 0 && CAR.mine !== c) { CAR.mine = c; CAR.seat = si; c.sp = 0; P.yaw = c.yaw; P.pitch = -0.05; banner(si === 0 ? zt('你在驾驶座：W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。开车时只能用手枪', 'Driving: W/S go and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Pistols only while driving') : si === 1 ? zt('你坐在副驾驶：什么武器都能用，E 下车', 'Front passenger: you can use any weapon. E gets out') : zt('你坐在后座（' + (si + 1) + ' 号座）：只能用手枪，E 下车', 'Back seat ' + (si + 1) + ': pistols only. E gets out'), 2600); sfx('dooropen'); }
+      if (si >= 0 && CAR.mine !== c) { CAR.mine = c; CAR.seat = si; c.sp = 0; P.yaw = c.yaw; P.pitch = -0.05; if (c.ty === 'h') { heliEntered(c, si); } else banner(si === 0 ? zt('你在驾驶座：W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。开车时只能用手枪', 'Driving: W/S go and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Pistols only while driving') : si === 1 ? zt('你坐在副驾驶：什么武器都能用，E 下车', 'Front passenger: you can use any weapon. E gets out') : zt('你坐在后座（' + (si + 1) + ' 号座）：只能用手枪，E 下车', 'Back seat ' + (si + 1) + ': pistols only. E gets out'), 2600); sfx('dooropen'); }
       else if (si >= 0) CAR.seat = si;
       else if (CAR.mine === c) carLeftSeat(c);
-      if (m.t === 'RVc' && m.car.by === RW.me) banner(zt('车放好了，走过去按 E 上车', 'Car parked: walk up and press E to get in'), 2000);
+      if (m.t === 'RVc' && m.car.by === RW.me) banner(c.ty === 'h' ? zt('直升机放好了，走过去按 E 上去', 'Helicopter parked: walk up and press E to get in') : zt('车放好了，走过去按 E 上车', 'Car parked: walk up and press E to get in'), 2000);
     } else if (m.t === 'RVm') {
       var c2 = CAR.list[m.id]; if (!c2 || CAR.mine === c2 && CAR.seat === 0) return;
       c2.tgt = { x: +m.x, y: +m.y, z: +m.z, yaw: +m.yaw, p: +m.p || 0, r: +m.r || 0 }; c2.sp = +m.sp || 0; c2.stT = +m.st || 0;
     } else if (m.t === 'RVf') {
-      banner(m.why === 'max' ? zt('每人最多 3 辆车', 'You can own up to 3 cars') : zt('车上坐满了（4 人）', 'The car is full (4 seats)'), 1500); sfx('deny');
+      banner(m.why === 'max' ? zt('每人最多 3 辆车（直升机也算）', 'You can own up to 3 vehicles (helicopters count)') : zt('坐满了', 'It is full'), 1500); sfx('deny');
     }
   }
   function carLeftSeat(c) {   // put me down beside the car
     CAR.mine = null; CAR.seat = -1;
     var sx = Math.cos(c.yaw) * -2.3, sz = Math.sin(c.yaw) * 2.3, x = c.x + sx, z = c.z + sz;
     if (rwH(x, z) < RW_SEA - 1 || insideBox(x, c.y + 0.5, z)) { x = c.x - sx; z = c.z - sz; }
-    P.x = x; P.z = z; P.y = groundAt(x, z, c.y + 1.5); P.vy = 0; RW.px = P.x; RW.pz = P.z;
+    var gy = groundAt(x, z, c.y + 1.5);
+    P.x = x; P.z = z; P.y = c.ty === 'h' && c.y - gy > 2 ? c.y + 0.3 : gy; P.vy = 0; P.ground = P.y <= gy + 0.01; RW.px = P.x; RW.pz = P.z;   // jumping out of a flying helicopter: you fall
     sfx('doorclose');
   }
   function rwCarNear() {   // a car within reach that you are not in
     if (CAR.mine) return null;
-    var best = null, bd = 3.4;
-    for (var k in CAR.list) { var c = CAR.list[k], d = Math.hypot(c.x - P.x, c.z - P.z); if (d < bd && Math.abs(c.y - P.y) < 2.5) { bd = d; best = c; } }
+    var best = null, bd = 4.2;
+    for (var k in CAR.list) { var c = CAR.list[k], d = Math.hypot(c.x - P.x, c.z - P.z); if (d < (c.ty === 'h' ? 4.2 : 3.4) && d < bd && Math.abs(c.y - P.y) < 2.5) { bd = d; best = c; } }
     return best;
   }
   function rwCarUse() {   // E: get in, or get out
     if (CAR.cool > 0) return false;
-    if (CAR.mine) { dSend({ t: 'Vx' }); CAR.cool = 0.4; carLeftSeat(CAR.mine); return true; }
+    if (CAR.mine) { if (CAR.mine.ty === 'h' && CAR.seat === 0) heliPark(CAR.mine); dSend({ t: 'Vx' }); CAR.cool = 0.4; carLeftSeat(CAR.mine); return true; }
     var c = rwCarNear(); if (!c) return false;
-    if (c.seats.indexOf(0) < 0) { banner(zt('车上坐满了（4 人）', 'The car is full (4 seats)'), 1400); sfx('deny'); return true; }
+    if (c.seats.indexOf(0) < 0) { banner(c.ty === 'h' ? zt('直升机坐满了（2 人）', 'The helicopter is full (2 seats)') : zt('车上坐满了（4 人）', 'The car is full (4 seats)'), 1400); sfx('deny'); return true; }
     dSend({ t: 'Ve', id: c.id, x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, col: c.col });
     CAR.cool = 0.4;
     return true;
   }
   function rwCarPrompt() {
+    if (CAR.mine && CAR.mine.ty === 'h') return heliPrompt();
+    var hn = rwCarNear(); if (hn && hn.ty === 'h') return heliNearPrompt(hn);
     if (CAR.mine) return KE() + ' ' + zt('下车', 'Get out') + (CAR.seat === 0 ? ' · W/S/A/D ' + zt('驾驶 · 空格刹车 · Shift 加速 · ', 'drive · Space brake · Shift boost · ') + Math.round(Math.abs(CAR.mine.sp) * 3.6) + ' km/h' : '');
     var c = rwCarNear(); if (!c) return '';
     var free = c.seats.filter(function (s) { return !s; }).length;
     return free ? KE() + ' ' + zt('上车（' + (c.seats[0] ? '乘客座' : '驾驶座') + '，还有 ' + free + ' 个空座）', 'Get in (' + (c.seats[0] ? 'passenger' : 'driver') + ', ' + free + ' of 4 seats free)') : zt('车上坐满了', 'The car is full');
   }
   function rwCarDeploy(i) {   // the crafted car item: park it in front of you
-    var s = RW.inv[i]; if (!s || s.id !== 'car') return false;
+    var s = RW.inv[i]; if (s && s.id === 'heli') return heliDeploy(i);
+    if (!s || s.id !== 'car') return false;
     var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), x = P.x + fx * 4.5, z = P.z + fz * 4.5, h = rwH(x, z);
     var ok = h > RW_SEA + 0.3 && !insideBox(x, h + 0.6, z) && !insideBox(x + fx * 2, h + 0.6, z + fz * 2) && Math.abs(rwH(x + fx * 2, z + fz * 2) - rwH(x - fx * 2, z - fz * 2)) < 1.6;
     if (!ok) { banner(zt('这里放不下车：找一块平一点的空地', 'No room for a car here: find open, flatter ground'), 1600); sfx('deny'); return false; }
@@ -11473,6 +11479,7 @@ Object.assign(EN, {
     CAR.cool = Math.max(0, CAR.cool - dt);
     for (var k in CAR.list) {
       var c = CAR.list[k];
+      if (c.ty === 'h') { heliTick(c, dt); continue; }
       if (CAR.mine === c && CAR.seat === 0 && !RW.dead) carDrive(c, dt);
       else if (c.tgt) {   // other people's cars glide to where their driver says they are
         var t = c.tgt, f = Math.min(1, dt * 10), dy = Math.atan2(Math.sin(t.yaw - c.yaw), Math.cos(t.yaw - c.yaw));
@@ -11491,20 +11498,21 @@ Object.assign(EN, {
       var ox = P.x, oy = P.y, oz = P.z;
       if (rwCarSeat()) { camera.position.x += P.x - ox; camera.position.y += P.y - oy; camera.position.z += P.z - oz; }
     }
-    if (CAR.mine && RW.dead) { dSend({ t: 'Vx' }); CAR.mine = null; CAR.seat = -1; }
+    if (CAR.mine && RW.dead) { if (CAR.mine.ty === 'h' && CAR.seat === 0) heliPark(CAR.mine); dSend({ t: 'Vx' }); CAR.mine = null; CAR.seat = -1; }
     if (CAR.mine && CAR.seat !== 1 && !holster && !carWeaponOk()) {   // only the front passenger may use anything; the driver and the back seats: pistols only
       holster = true; drawT = 1; aiming = false; rwHotRender(true);
-      if (!CAR.warnT || gtime - CAR.warnT > 3) { CAR.warnT = gtime; banner(zt(CAR.seat === 0 ? '开车时只能用手枪（Glock 17、Python .357、沙漠之鹰）' : '后座只能用手枪，副驾驶才能用其他武器', CAR.seat === 0 ? 'While driving you can only use a pistol (Glock 17, Python .357, Desert Eagle)' : 'Back seats: pistols only. The front passenger can use anything'), 1800); sfx('deny'); }
+      if (!CAR.warnT || gtime - CAR.warnT > 3) { CAR.warnT = gtime; if (CAR.mine.ty === 'h') banner(zt('驾驶直升机时两只手都要用，不能拿武器。坐副驾驶的人什么都能用', 'Flying takes both hands: the pilot cannot hold a weapon. The passenger can use anything'), 1800); else banner(zt(CAR.seat === 0 ? '开车时只能用手枪（Glock 17、Python .357、沙漠之鹰）' : '后座只能用手枪，副驾驶才能用其他武器', CAR.seat === 0 ? 'While driving you can only use a pistol (Glock 17, Python .357, Desert Eagle)' : 'Back seats: pistols only. The front passenger can use anything'), 1800); sfx('deny'); }
     }
   }
-  function carWeaponOk() {   // pistols and empty hands
+  function carWeaponOk() {   // pistols and empty hands (a helicopter pilot: empty hands only)
     var s = RW.inv[RW_HOT0 + RW.hot]; if (!s) return true;
+    if (CAR.mine && CAR.mine.ty === 'h') return false;
     var d = RWI[s.id]; if (!d || d.gun === undefined) return false;
     var w = WDEF[d.gun]; return !!w && (w.cls === 'pistol' || w.cls === 'revolver' || w.id === 'pistol' || w.id === 'revolver' || w.id === 'deagle');
   }
   function rwCarSeat() {   // called after the player's own movement: sit in the seat instead
     var c = CAR.mine; if (!c) return false;
-    var s = CAR_SEATS[CAR.seat] || CAR_SEATS[0], v = new THREE.Vector3(s[0], s[1], s[2] + 0.25).applyEuler(c.g.rotation);
+    var SS = c.ty === 'h' ? HELI_SEATS : CAR_SEATS, s = SS[CAR.seat] || SS[0], v = new THREE.Vector3(s[0], s[1], s[2] + 0.25).applyEuler(c.g.rotation);
     P.x = c.x + v.x; P.z = c.z + v.z; P.y = c.y + v.y - 0.35; P.vy = 0; P.ground = true; RW.px = P.x; RW.pz = P.z;
     return true;
   }
@@ -11799,6 +11807,217 @@ Object.assign(EN, {
     if (m.t === 'RVO') EV.vo[m.k] = +m.until;
     else if (m.t === 'RHK') rwHackMsg(m);
     else if (m.t === 'RAD') rwAirMsg(m);
+  }
+  /* ================= UPDATE 49: HELICOPTERS =================
+     A two-seat light helicopter (pilot + passenger). Only built at a workbench and expensive: lots of metal fragments
+     and metal, cloth, and a red keycard. It rides on the car system (same server messages, ty: 'h'), so everybody sees
+     the same helicopters and who sits in them. Pilot: wait for the rotor to spin up, Space climbs, Shift descends,
+     W/S fly forward/back, A/D turn, E gets out (in the air you fall). The pilot needs both hands, so no weapons;
+     the passenger can use anything. A helicopter nobody flies settles to the ground. */
+  var HELI_SEATS = [[-0.36, 0.4, -0.35], [0.36, 0.4, -0.35]];   // pilot on the left, passenger on the right
+  var HELI_COLS = [0x2f4a5e, 0x7a1f1f, 0x3e4a32, 0xc8c6bc, 0x9a7a22, 0x26282a];
+
+  RWI.heli = { n: ['直升机', 'Helicopter'], st: 1, use: 1, d: ['双座轻型直升机（飞行员 + 1 名乘客）。拿在手上按左键（或在背包里点“使用”）放在面前的空地上。每人最多同时拥有 3 辆载具（车和直升机一起算）。', 'A two-seat light helicopter (pilot + 1 passenger). Hold it and press left click (or Use in the backpack) to set it down on open ground in front of you. Up to 3 vehicles per player (cars and helicopters together).'] };
+  RW_CRAFT.push(['heli', { frags: 2500, metal: 600, cloth: 150, wood: 400, kcr: 1 }]); RW_BENCH.heli = 1;
+  (function () {   // backpack icon
+    var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d');
+    x.shadowColor = 'rgba(0,0,0,.7)'; x.shadowBlur = 3;
+    x.fillStyle = '#2f4a5e'; x.beginPath(); x.ellipse(24, 34, 15, 10, 0, 0, 6.29); x.fill();
+    x.fillRect(30, 30, 26, 5); x.fillRect(52, 24, 5, 12);
+    x.fillStyle = '#a9cbe0'; x.beginPath(); x.ellipse(18, 32, 8, 6, 0, 0, 6.29); x.fill();
+    x.strokeStyle = '#2a2b2c'; x.lineWidth = 3; x.beginPath(); x.moveTo(4, 16); x.lineTo(60, 16); x.moveTo(30, 16); x.lineTo(30, 24); x.moveTo(10, 50); x.lineTo(40, 50); x.moveTo(16, 50); x.lineTo(18, 44); x.moveTo(32, 50); x.lineTo(30, 44); x.stroke();
+    RWICON.heli = c;
+  })();
+
+  function heliModel(col) {
+    var g = new THREE.Group(), U = g.userData;
+    function M(c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.5, metalness: 0.2 }, o || {})); }
+    var paint = M(col, { roughness: 0.38, metalness: 0.35 }), dark = M(0x1d1f21, { roughness: 0.7, metalness: 0.1 }), steel = M(0x6a6e72, { metalness: 0.75, roughness: 0.35 }),
+      chrome = M(0xb9bdc0, { metalness: 0.9, roughness: 0.25 }), seatM = M(0x2e2924, { roughness: 0.95, metalness: 0 }), stripe = M(col === 0xc8c6bc ? 0x7a1f1f : 0xd8d4c8, { roughness: 0.5 }),
+      glass = M(0xb8d4e4, { transparent: true, opacity: 0.1, metalness: 0.1, roughness: 0.02, depthWrite: false, side: THREE.DoubleSide }),
+      blade = M(0x2a2c2e, { roughness: 0.6, metalness: 0.3 }), tip = M(0xe0b020, { roughness: 0.5 }),
+      red = new THREE.MeshBasicMaterial({ color: 0xff2a1a }), green = new THREE.MeshBasicMaterial({ color: 0x2aff5a }), white = new THREE.MeshBasicMaterial({ color: 0xfff6e0 });
+    function box(w, h, d, m, x, y, z, rx, par) { var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); if (rx) b.rotation.x = rx; (par || g).add(b); return b; }
+    function cyl(r0, r1, h, m, x, y, z, rx, rz, seg, par) { var o = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, seg || 10), m); o.position.set(x, y, z); if (rx) o.rotation.x = rx; if (rz) o.rotation.z = rz; (par || g).add(o); return o; }
+    function tube(a, b, r, m) {   // a round bar from point a to point b
+      var A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]), d = B.clone().sub(A), L = d.length();
+      var o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 8), m); o.position.copy(A).add(B).multiplyScalar(0.5);
+      o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); g.add(o); return o;
+    }
+    function ext(pts, depth, m, x, bevel) {   // side profile (z, y) pushed across (x), rounded edges
+      var sh = new THREE.Shape(); pts.forEach(function (p, i) { if (i) sh.lineTo(p[0], p[1]); else sh.moveTo(p[0], p[1]); });
+      var bt = bevel === undefined ? 0.06 : bevel;
+      var geo = new THREE.ExtrudeGeometry(sh, { depth: depth - 2 * bt, bevelEnabled: bt > 0, bevelThickness: bt, bevelSize: bt, bevelOffset: -bt, bevelSegments: 3, curveSegments: 10 });
+      geo.rotateY(-Math.PI / 2); geo.translate(x + depth / 2 - bt, 0, 0);
+      var o = new THREE.Mesh(geo, m); g.add(o); return o;
+    }
+    // fuselage: a rounded belly under the bubble, the cabin's back wall and the engine hump that tapers into the tail
+    ext([[-1.45, 0.78], [1.3, 0.78], [1.95, 1.2], [1.95, 1.62], [1.25, 2.08], [0.38, 2.18], [0.38, 1.26], [-1.25, 1.26], [-1.62, 1.12], [-1.66, 0.95]], 1.34, paint, 0);
+    box(0.02, 0.1, 2.6, stripe, -0.675, 1.05, 0.0); box(0.02, 0.1, 2.6, stripe, 0.675, 1.05, 0.0);   // side stripes
+    box(1.2, 0.04, 1.5, dark, 0, 1.0, -0.55);   // cabin floor
+    var nose = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12), paint); nose.scale.set(0.68, 0.3, 0.42); nose.position.set(0, 1.0, -1.32); g.add(nose);   // rounded chin
+    var cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.0, 20, 1, false, -Math.PI / 2, Math.PI), paint); cowl.rotation.x = Math.PI / 2; cowl.scale.set(1.3, 1, 0.55); cowl.position.set(0, 1.9, 0.95); g.add(cowl);   // rounded engine cowling
+    // the bubble canopy: half a sphere, stretched front to back, with a thin frame
+    var cg = new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2), can = new THREE.Mesh(cg, glass);
+    can.scale.set(0.7, 1.0, 1.22); can.position.set(0, 1.24, -0.45); g.add(can);
+    var arc = new THREE.Mesh(new THREE.TorusGeometry(1, 0.022, 6, 32, Math.PI), dark); arc.rotation.y = Math.PI / 2;   // the centre rib, front to back
+    var arcG = new THREE.Group(); arcG.add(arc); arcG.scale.set(0.7, 1.0, 1.22); arcG.position.set(0, 1.24, -0.45); g.add(arcG);
+    var ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.025, 6, 40), dark); ring.rotation.x = Math.PI / 2; var ringG = new THREE.Group(); ringG.add(ring); ringG.scale.set(0.7, 1, 1.22); ringG.position.set(0, 1.25, -0.45); g.add(ringG);
+    var door = new THREE.Mesh(new THREE.TorusGeometry(1, 0.02, 6, 24, Math.PI), dark); var doorG = new THREE.Group(); doorG.add(door); doorG.scale.set(0.71, 1.0, 1); doorG.position.set(0, 1.24, 0.05); g.add(doorG);   // door frames across the bubble
+    // engine hump details: intake grille, exhaust, access panel lines
+    for (var i = 0; i < 5; i++) box(0.9, 0.025, 0.05, dark, 0, 2.2, 0.55 + i * 0.12);
+    cyl(0.09, 0.11, 0.45, steel, 0.42, 1.78, 1.8, Math.PI / 2 + 0.25); cyl(0.07, 0.07, 0.04, dark, 0.42, 1.73, 2.02, Math.PI / 2 + 0.25);
+    box(0.02, 0.6, 0.02, dark, -0.68, 1.6, 0.85); box(0.02, 0.6, 0.02, dark, 0.68, 1.6, 0.85); box(0.02, 0.02, 0.9, dark, 0.68, 1.9, 1.3); box(0.02, 0.02, 0.9, dark, -0.68, 1.9, 1.3);
+    // tail boom, fins, tail rotor
+    cyl(0.09, 0.17, 3.6, paint, 0, 1.72, 3.6, Math.PI / 2, 0, 16);
+    box(0.02, 0.04, 3.2, stripe, -0.13, 1.74, 3.5);
+    ext([[5.0, 1.62], [5.55, 1.62], [5.85, 2.75], [5.55, 2.78]], 0.07, paint, 0, 0.02);
+    ext([[5.05, 1.62], [5.5, 1.62], [5.6, 1.18], [5.35, 1.15]], 0.06, paint, 0, 0.02);   // lower fin
+    box(1.15, 0.05, 0.36, paint, 0, 1.72, 4.9);   // horizontal stabiliser
+    box(0.05, 0.22, 0.34, paint, -0.58, 1.8, 4.9); box(0.05, 0.22, 0.34, paint, 0.58, 1.8, 4.9);
+    var tr = new THREE.Group(); tr.position.set(0.12, 2.05, 5.6); g.add(tr);
+    box(0.03, 1.0, 0.11, blade, 0, 0, 0, 0, tr); box(0.035, 0.12, 0.13, tip, 0, 0.45, 0, 0, tr); box(0.035, 0.12, 0.13, tip, 0, -0.45, 0, 0, tr);
+    cyl(0.05, 0.05, 0.12, steel, 0.06, 2.05, 5.6, 0, Math.PI / 2);
+    U.trotor = tr;
+    // mast, hub and the main rotor
+    cyl(0.07, 0.09, 0.42, steel, 0, 2.38, 0.75); cyl(0.16, 0.16, 0.05, chrome, 0, 2.47, 0.75, 0, 0, 16);
+    var mr = new THREE.Group(); mr.position.set(0, 2.62, 0.75); g.add(mr);
+    cyl(0.1, 0.12, 0.14, steel, 0, 0, 0, 0, 0, 12, mr); box(0.7, 0.06, 0.12, steel, 0, 0, 0, 0, mr);
+    [-1, 1].forEach(function (s) {
+      var b = box(3.55, 0.035, 0.26, blade, s * 2.08, 0.02, 0, 0, mr); b.rotation.z = s * 0.025; b.rotation.x = s * 0.05;   // slight droop and twist
+      var t = box(0.3, 0.04, 0.27, tip, s * 3.7, 0.06, 0, 0, mr); t.rotation.z = s * 0.025;
+    });
+    var blur = new THREE.Mesh(new THREE.CylinderGeometry(3.85, 3.85, 0.01, 48), new THREE.MeshBasicMaterial({ color: 0x303234, transparent: true, opacity: 0, depthWrite: false }));
+    blur.position.set(0, 2.66, 0.75); g.add(blur);
+    U.rotor = mr; U.blur = blur;
+    // skids on struts
+    [-1, 1].forEach(function (s) {
+      cyl(0.045, 0.045, 3.2, steel, s * 0.98, 0.07, 0.05, Math.PI / 2);
+      tube([s * 0.98, 0.07, -1.55], [s * 0.98, 0.32, -1.85], 0.045, steel);   // turned-up toes
+      tube([s * 0.98, 0.07, -0.85], [s * 0.6, 0.82, -0.75], 0.04, steel); tube([s * 0.98, 0.07, 1.0], [s * 0.6, 0.82, 0.9], 0.04, steel);
+      cyl(0.06, 0.06, 0.08, dark, s * 0.98, 0.07, 1.68, Math.PI / 2);
+    });
+    tube([-0.6, 0.82, -0.75], [0.6, 0.82, -0.75], 0.035, steel); tube([-0.6, 0.82, 0.9], [0.6, 0.82, 0.9], 0.035, steel);
+    // lights: red on the left, green on the right, white strobe on the tail, landing light under the nose
+    var nl = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), red); nl.position.set(-0.69, 1.2, -0.9); g.add(nl);
+    var nr = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), green); nr.position.set(0.69, 1.2, -0.9); g.add(nr);
+    var st = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), white); st.position.set(0, 2.82, 5.6); g.add(st); U.strobe = st;
+    cyl(0.07, 0.07, 0.03, white, 0, 0.84, -1.3, 0, 0, 12);
+    // inside: seats, instrument panel with dials, cyclic sticks, collective lever
+    HELI_SEATS.forEach(function (s) {
+      box(0.5, 0.12, 0.48, seatM, s[0], 1.08, s[2] + 0.02);
+      box(0.5, 0.62, 0.1, seatM, s[0], 1.42, s[2] + 0.3, -0.1);
+      box(0.26, 0.15, 0.08, seatM, s[0], 1.8, s[2] + 0.35, -0.1);
+      tube([s[0], 1.02, s[2] - 0.32], [s[0], 1.3, s[2] - 0.4], 0.018, dark);   // cyclic stick
+      var kn = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), dark); kn.position.set(s[0], 1.32, s[2] - 0.41); g.add(kn);
+    });
+    tube([-0.08, 1.05, -0.25], [-0.12, 1.25, 0.1], 0.02, dark);   // collective
+    var dash = box(0.9, 0.18, 0.12, dark, 0, 1.24, -1.25, -0.5);
+    [-0.3, -0.12, 0.12, 0.3].forEach(function (x) { var d = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.012, 14), new THREE.MeshBasicMaterial({ color: 0xd8e4c8 })); d.position.set(x, 1.29, -1.19); d.rotation.x = Math.PI / 2 - 0.5; g.add(d); });
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = false; });
+    return g;
+  }
+
+  function heliGround(x, z, y) {   // what the skids rest on: ground or a roof, or the water surface
+    var gy = groundAt(x, z, y + 0.6);
+    if (rwH(x, z) < RW_SEA) gy = Math.max(gy, RW_SEA - 0.15);
+    return gy;
+  }
+  function heliEntered(c, si) {
+    if (si === 0) banner(zt('你是飞行员：等旋翼转起来，空格上升，Shift 下降，W/S 前进后退，A/D 转向，E 下来。飞行时不能拿武器', 'Pilot: wait for the rotor to spin up. Space climbs, Shift descends, W/S forward/back, A/D turn, E gets out. No weapons while flying'), 3200);
+    else banner(zt('你坐在副驾驶：什么武器都能用。E 下来（在空中下来会掉下去）', 'Passenger: you can use any weapon. E gets out (in the air you fall)'), 2600);
+  }
+  function heliPark(c) {   // the pilot gets out: tell everyone where it will come to rest
+    var gy = heliGround(c.x, c.z, c.y);
+    dSend({ t: 'Vm', id: c.id, x: Math.round(c.x * 100) / 100, y: Math.round(gy * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, sp: 0, p: 0, r: 0, st: 0 });
+    c.vx = c.vz = 0;
+  }
+  function heliPrompt() {
+    var c = CAR.mine, alt = Math.max(0, c.y - heliGround(c.x, c.z, c.y));
+    if (CAR.seat !== 0) return KE() + ' ' + zt('下来', 'Get out') + ' · ' + Math.round(alt) + ' m';
+    var sp = Math.round(Math.hypot(c.vx, c.vz) * 3.6);
+    return KE() + ' ' + zt('下来', 'Get out') + (c.st < 0.98 ? ' · ' + zt('旋翼启动中 ', 'Rotor spinning up ') + Math.round(c.st * 100) + '%' : ' · ' + zt('空格上升 · Shift 下降 · W/S/A/D 飞行 · ', 'Space up · Shift down · W/S/A/D fly · ') + sp + ' km/h · ' + Math.round(alt) + ' m');
+  }
+  function heliNearPrompt(c) {
+    var free = c.seats.filter(function (s) { return !s; }).length;
+    return free ? KE() + ' ' + zt('上直升机（' + (c.seats[0] ? '副驾驶' : '飞行员') + '，还有 ' + free + ' 个空座）', 'Get in the helicopter (' + (c.seats[0] ? 'passenger' : 'pilot') + ', ' + free + ' of 2 seats free)') : zt('直升机坐满了', 'The helicopter is full');
+  }
+  function heliDeploy(i) {   // the crafted item: set it down in front of you on open, fairly flat ground
+    var s = RW.inv[i]; if (!s || s.id !== 'heli') return false;
+    var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), x = P.x + fx * 6.5, z = P.z + fz * 6.5, h = rwH(x, z), ok = h > RW_SEA + 0.3;
+    for (var a = 0; a < 8 && ok; a++) { var ax = x + Math.cos(a * 0.785) * 3.6, az = z + Math.sin(a * 0.785) * 3.6; if (insideBox(ax, h + 1.5, az) || insideBox(ax, h + 2.7, az) || Math.abs(rwH(ax, az) - h) > 1.4) ok = false; }
+    if (ok && insideBox(x, h + 1, z)) ok = false;
+    if (ok) { var n0 = []; for (var k in RW.chunks) RW.chunks[k].nodes.forEach(function (n) { if (rwNodeAlive(n) && n.kind !== 'hemp' && Math.hypot(n.x - x, n.z - z) < 4.2 + n.r) n0.push(n); }); if (n0.length) ok = false; }
+    if (!ok) { banner(zt('这里放不下直升机：要一块平一点、四周 4 米内没有树和建筑的空地', 'No room for a helicopter here: find flat ground with nothing within 4 m'), 1800); sfx('deny'); return false; }
+    dSend({ t: 'Vc', ty: 'h', x: Math.round(x * 100) / 100, y: Math.round(groundAt(x, z, h + 2) * 100) / 100, z: Math.round(z * 100) / 100, yaw: Math.round(P.yaw * 1000) / 1000, col: HELI_COLS[Math.floor(Math.random() * HELI_COLS.length)] });
+    s.n--; if (s.n <= 0) RW.inv[i] = null; rwInvChanged(); sfx('upgrade');
+    return true;
+  }
+  function heliFly(c, dt) {   // the pilot's helicopter: arcade flight, then tell the server
+    var fw = (keys[KB.forward] ? 1 : 0) - (keys[KB.back] ? 1 : 0) - (stick ? stick.y : 0), tr = (keys[KB.left] ? 1 : 0) - (keys[KB.right] ? 1 : 0) + (stick ? -stick.x : 0);
+    fw = Math.max(-1, Math.min(1, fw)); tr = Math.max(-1, Math.min(1, tr));
+    var up = keys[KB.jump] ? 1 : 0, dn = keys[KB.sprint] ? 1 : 0;
+    c.st = Math.min(1, c.st + dt / 2.5);   // the engine spools up
+    var lift = c.st >= 0.98, g = heliGround(c.x, c.z, c.y), air = c.y > g + 0.25;
+    // up and down
+    if (lift) { var tv = up ? 7 : dn ? -5.5 : 0; c.vy += (tv - c.vy) * Math.min(1, dt * 2.4); }
+    else c.vy -= 9.8 * dt;
+    c.y += c.vy * dt;
+    var top = Math.min(480, g + 160);
+    if (c.y > top) { c.y = top; c.vy = Math.min(0, c.vy); }
+    if (c.y < g) {
+      if (c.vy < -8) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.5; banner(zt('降落太猛了！', 'Hard landing!'), 1000); }
+      c.y = g; c.vy = 0;
+    }
+    // forward / back: the nose dips, the helicopter speeds up; turning
+    var fx = -Math.sin(c.yaw), fz = -Math.cos(c.yaw);
+    if (air) { c.vx += fx * fw * 11 * dt; c.vz += fz * fw * 11 * dt; }
+    var k = air ? 0.5 : 5; c.vx -= c.vx * Math.min(1, k * dt); c.vz -= c.vz * Math.min(1, k * dt);
+    var spd = Math.hypot(c.vx, c.vz); if (spd > 34) { c.vx *= 34 / spd; c.vz *= 34 / spd; }
+    var turn = tr * (air ? 1.25 : (lift ? 0.5 : 0)) * dt; c.yaw += turn; P.yaw += turn;
+    // move, bumping into buildings, trees (when low) and hills
+    var q = { x: c.x + c.vx * dt, z: c.z + c.vz * dt };
+    resolveCircle(q, 1.7, c.y + 1.0); resolveCircle(q, 1.7, c.y + 2.2);
+    if (c.y - rwH(q.x, q.z) < 9) rwResolve(q, 1.7);
+    var lim = RW.half * 1.02; q.x = Math.max(-lim, Math.min(lim, q.x)); q.z = Math.max(-lim, Math.min(lim, q.z));
+    var ng = heliGround(q.x, q.z, c.y + 1.2);
+    if (ng > c.y + 0.7) { if (spd > 8) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.35; } c.vx *= -0.3; c.vz *= -0.3; }
+    else {
+      var moved = Math.hypot(q.x - c.x, q.z - c.z), want = spd * dt;
+      if (want > 0.05 && moved < want * 0.5) { if (spd > 8) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.35; } c.vx *= 0.3; c.vz *= 0.3; }
+      c.x = q.x; c.z = q.z; if (ng > c.y) c.y = ng;
+    }
+    // looks: nose down when speeding up, bank into turns
+    var fwdSp = c.vx * fx + c.vz * fz;
+    c.p += ((air ? -fw * 0.2 - fwdSp * 0.004 : 0) - c.p) * Math.min(1, dt * 3);
+    c.r += ((air ? tr * 0.2 : 0) - c.r) * Math.min(1, dt * 3);
+    c.sp = fwdSp;
+    carPlace(c);
+    CAR.sendT -= dt;
+    if (CAR.sendT <= 0) { CAR.sendT = (spd > 0.2 || Math.abs(c.vy) > 0.2 || c.st < 1) ? 0.08 : 1; dSend({ t: 'Vm', id: c.id, x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, sp: Math.round(c.sp * 10) / 10, p: Math.round(c.p * 100) / 100, r: Math.round(c.r * 100) / 100, st: Math.round(c.st * 100) / 100 }); }
+  }
+  function heliTick(c, dt) {
+    var me = CAR.mine === c && CAR.seat === 0 && !RW.dead;
+    if (me) heliFly(c, dt);
+    else if (c.seats[0] && c.tgt) {   // someone else flies it: glide to where they say it is
+      var t = c.tgt, f = Math.min(1, dt * 10), dy = Math.atan2(Math.sin(t.yaw - c.yaw), Math.cos(t.yaw - c.yaw));
+      if (Math.hypot(t.x - c.x, t.z - c.z) > 40) { c.x = t.x; c.z = t.z; c.y = t.y; }
+      c.x += (t.x - c.x) * f; c.y += (t.y - c.y) * f; c.z += (t.z - c.z) * f; c.yaw += dy * f; c.p += (t.p - c.p) * f; c.r += (t.r - c.r) * f;
+      if (CAR.mine === c) P.yaw += dy * f;
+      carPlace(c);
+    } else {   // nobody flies it: it comes down and settles
+      var gy = heliGround(c.x, c.z, c.y);
+      if (c.y > gy + 0.01) { c.vy = (c.vy || 0) - 9.8 * dt; c.y = Math.max(gy, c.y + c.vy * dt); if (c.y <= gy) { c.vy = 0; if (gtime > 3) sfx('thud', { x: c.x, z: c.z }); } }
+      else { c.y = gy; c.vy = 0; }
+      c.p *= 1 - Math.min(1, dt * 3); c.r *= 1 - Math.min(1, dt * 3); c.tgt = null;
+      carPlace(c);
+    }
+    if (!me) c.st += ((c.seats[0] ? c.stT : 0) - c.st) * Math.min(1, dt * (c.seats[0] ? 4 : 0.6));   // the rotor runs down slowly
+    var U = c.g.userData, rs = Math.max(0, c.st);
+    if (U.rotor) U.rotor.rotation.y += rs * rs * 38 * dt;
+    if (U.trotor) U.trotor.rotation.x += rs * rs * 60 * dt;
+    if (U.blur) { U.blur.material.opacity = Math.max(0, rs - 0.55) * 0.55; U.blur.visible = rs > 0.55; }
+    if (U.strobe) U.strobe.visible = c.seats[0] ? (gtime % 1.2) < 0.12 : false;
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
