@@ -11477,6 +11477,10 @@ Object.assign(EN, {
       if (U.steerW) U.steerW.forEach(function (w) { w.rotation.y = c.st * 0.5; });           // front wheels steer
       if (U.sw) U.sw.rotation.y = -c.st * 2.2;                                                 // and so does the steering wheel
     }
+    if (CAR.mine && !RW.dead) {   // the car moved after the camera was placed this frame: put the camera back in your seat
+      var ox = P.x, oy = P.y, oz = P.z;
+      if (rwCarSeat()) { camera.position.x += P.x - ox; camera.position.y += P.y - oy; camera.position.z += P.z - oz; }
+    }
     if (CAR.mine && RW.dead) { dSend({ t: 'Vx' }); CAR.mine = null; CAR.seat = -1; }
     if (CAR.mine && CAR.seat !== 1 && !holster && !carWeaponOk()) {   // only the front passenger may use anything; the driver and the back seats: pistols only
       holster = true; drawT = 1; aiming = false; rwHotRender(true);
