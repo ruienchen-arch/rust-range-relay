@@ -8913,12 +8913,21 @@ Object.assign(EN, {
     var o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     var tw = rayWall(o.x, o.y, o.z, dir.x, dir.y, dir.z, 9);
     var tt = Math.min(tw, 7), ax = o.x + dir.x * tt, az = o.z + dir.z * tt;
-    var r = ((Math.round(P.yaw / (Math.PI / 2)) % 2) + 2) % 2, best = null, bd = 2.4;
+    var r = ((Math.round(P.yaw / (Math.PI / 2)) % 2) + 2) % 2, best = null, cands = [];
     for (var i = 0; i < RW.plist.length; i++) {
       var p = RW.plist[i]; if (!RW_XW[p.k] || Math.abs(p.x - ax) > 6 || Math.abs(p.z - az) > 6) continue;
-      var ux = (p.r & 1) ? 0 : 1, uz = (p.r & 1) ? 1 : 0;
-      [-1, 1].forEach(function (s) { var x = p.x + ux * 3 * s, z = p.z + uz * 3 * s, d = Math.hypot(x - ax, z - az); if (d < bd) { bd = d; best = { x: x, z: z, r: p.r & 1, snap: true }; } });
+      var pr = p.r & 1, ux = pr ? 0 : 1, uz = pr ? 1 : 0, vx = uz, vz = ux;
+      [-1, 1].forEach(function (s) {
+        cands.push({ x: p.x + ux * 3 * s, z: p.z + uz * 3 * s, r: pr, snap: true });   // straight on
+        // round the corner: the next piece turns 90 degrees and covers the corner square, so the run stays sealed
+        var ex = p.x + ux * 1.5 * s, ez = p.z + uz * 1.5 * s;
+        [-1, 1].forEach(function (t) { cands.push({ x: ex + ux * 0.3 * s + vx * 1.2 * t, z: ez + uz * 0.3 * s + vz * 1.2 * t, r: 1 - pr, snap: true }); });
+      });
     }
+    cands.forEach(function (q) { q.d = Math.hypot(q.x - ax, q.z - az); });
+    cands = cands.filter(function (q) { return q.d < 2.4; }).sort(function (a, b) { return a.d - b.d; });
+    for (i = 0; i < cands.length && !best; i++) if (!rwDepWhy({ k: k, x: cands[i].x, y: rwH(cands[i].x, cands[i].z), z: cands[i].z, r: cands[i].r, onWall: false })) best = cands[i];   // the nearest free spot
+    if (!best && cands.length) best = cands[0];
     if (!best) { if (tw >= 9 && dir.y > -0.05) return null; best = { x: ax, z: az, r: r, snap: false }; }
     var ex = (best.r & 1) ? 0 : 1.45, ez = (best.r & 1) ? 1.45 : 0, h0 = rwH(best.x - ex, best.z - ez), h1 = rwH(best.x + ex, best.z + ez);
     var c = { k: k, x: best.x, y: Math.min(h0, h1, rwH(best.x, best.z)), z: best.z, r: best.r, dep: 0, snap: best.snap, slope: Math.abs(h0 - h1), onWall: false };
