@@ -59,7 +59,7 @@ function electAuthority() {
   if (best !== world.auth) { world.auth = best; for (const o of world.clients.values()) o.send(JSON.stringify({ op: 'authority', id: best })); }
 }
 function worldJoin(c, m) {
-  checkBuildSeed(); checkPlayerSeed(); checkCarSeed();
+  checkBuildSeed(); checkPlayerSeed(); checkCarSeed(); checkStatSeed();
   { const u0 = readToken(m.token), g0 = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
     const ow = u0 ? 'u:' + u0 : g0 ? 'k:' + crypto.createHash('sha256').update(g0).digest('hex').slice(0, 16) : '';
     if (ow) for (const o of [...world.clients.values()]) if (o.owner === ow) { o.close(); onClose(o); }   // back from the lobby: drop the old (maybe half-dead) connection
@@ -72,12 +72,13 @@ function worldJoin(c, m) {
   if (m.bk) bkRestore(c, m.bk);   // the server lost its disk (restart): the player's own browser brings their base and backpack back
   if (typeof m.wbk === 'string') wbRestore(c, m.wbk);   // ... and the copy of the whole island brings everybody else's back
   c.name = user ? db.users[user].name : guestName(gk || ('id' + c.id + Date.now()));   // players who are not logged in get a random name (the same one every time in this browser)
+  statOf(c); saveStats();   // on the leaderboard from the first time you come, even with 0 kills
   c.last = Date.now();
   world.clients.set(c.id, c);
   const dmg = [];
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
-  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub) }));
+  c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub), ev: eventsFor() }));
   setTimeout(() => bkSend(c, true), 3000);
   setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
@@ -101,6 +102,7 @@ function worldChat(c, m) {
 function worldDeath(c, m) {   // the victim reports who or what killed them
   const now = Date.now(); if (now - (c.dt || 0) < 3000) return; c.dt = now;
   const k = world.clients.get(m.a | 0), w = String(m.w || ''), by = String(m.by || '');
+  { const sv = statOf(c); if (sv) sv.d++; if (k && k !== c) { const sk = statOf(k); if (sk) sk.pk++; } saveStats(); }   // leaderboard
   chatPush({ t: 'RK', v: c.name, a: k && k !== c ? k.name : '', w: /^(g[0-9]{1,2}|rock|hatchet|pickaxe|hammer|hands)$/.test(w) ? w : '', h: m.h ? 1 : 0, by: /^[a-z]{2,8}$/.test(by) ? by : '' });
 }
 function worldGather(c, m) {
@@ -160,7 +162,7 @@ const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw
 const HP = { dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|carpet|carpet2|g[0-9]{1,2})$/;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
@@ -223,6 +225,83 @@ function worldSave(c, m) {
 }
 function worldAll(s) { for (const o of world.clients.values()) o.send(s); }
 
+// ---- monument events (update 43): keycard vault doors, hackable locked crates, airdrops ----
+world.vaults = new Map();   // vault key -> open until (ms)
+world.hacks = new Map();    // crate node id -> hacked at (ms)
+function worldVaultOpen(c, m) {
+  const k = String(m.k || ''); if (!/^v\d{1,3}$/.test(k)) return;
+  const until = Date.now() + 150000;
+  world.vaults.set(k, until); worldAll(J({ t: 'RVO', k, until }));
+}
+const HACK_MS = 90000;
+function worldHack(c, m) {
+  const id = String(m.id || ''); if (!/^-?\d{1,4}_-?\d{1,4}_\d{1,4}$/.test(id)) return;
+  const now = Date.now(), cur = world.hacks.get(id);
+  if (cur && now < cur + 20 * 60000) return;   // already being cracked (or cracked recently)
+  world.hacks.set(id, now + HACK_MS); worldAll(J({ t: 'RHK', id, end: now + HACK_MS, by: c.name || '' }));
+}
+const AIR_MS = Math.max(60000, (+process.env.AIRDROP_MINUTES || 10) * 60000);
+let airNext = Date.now() + AIR_MS * 0.5, airSeq = 0, airCur = null;
+function airItems() {
+  const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1)), pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const it = [['g' + pick([1, 5, 6, 9, 10, 14, 15]), 1], ['ammo', R(2, 4)], ['frags', R(150, 300)], ['medkit', R(1, 3)]];
+  if (Math.random() < 0.6) it.push(['g' + pick([2, 3, 4, 8, 11, 12, 13]), 1]);
+  if (Math.random() < 0.6) it.push(['armor', R(1, 2)]);
+  if (Math.random() < 0.25) it.push(['c4', 1]);
+  if (Math.random() < 0.3) it.push([pick(['kcb', 'kcr']), 1]);
+  return it;
+}
+setInterval(() => {
+  const now = Date.now();
+  if (airCur && now >= airCur.land) {   // the crate touches the ground: it becomes a drop anybody can grab
+    if (airCur.pos) { const p = airCur.pos; dropMake(p[0], p[1], p[2], airItems(), { ttl: 1800, air: 1 }); }
+    airCur = null;
+  }
+  if (!airCur && world.clients.size && now >= airNext) {
+    airCur = { id: ++airSeq, r: [Math.random(), Math.random(), Math.random()], t0: now, land: now + 45000, pos: null };
+    airNext = now + AIR_MS * (0.8 + Math.random() * 0.4);
+    worldAll(J({ t: 'RAD', id: airCur.id, r: airCur.r, t0: airCur.t0, land: airCur.land }));
+  }
+  for (const [k, v] of world.hacks) if (now > v + 20 * 60000) world.hacks.delete(k);
+  for (const [k, v] of world.vaults) if (now > v) world.vaults.delete(k);
+}, 1000).unref();
+function worldAirPos(c, m) {   // the authority's game works out where the crate lands (the server does not know the terrain)
+  if (!airCur || airCur.pos || (m.id | 0) !== airCur.id || c.id !== world.auth) return;
+  const x = num(m.x, WORLD_SIZE), y = num(m.y, 500), z = num(m.z, WORLD_SIZE); if (x === null || y === null || z === null) return;
+  airCur.pos = [x, y, z];
+}
+function eventsFor() { return { vo: [...world.vaults].map(([k, v]) => [k, v]), hk: [...world.hacks].map(([k, v]) => [k, v]), air: airCur ? { id: airCur.id, r: airCur.r, t0: airCur.t0, land: airCur.land } : null }; }
+
+// ---- leaderboard (update 42): every player who has been on the island this map, kills and deaths ----
+// Kept in DATA_DIR/stats.json and in the whole-island browser backup, so a restart does not wipe it. Resets with a new map.
+const STAT_FILE = path.join(DATA_DIR, 'stats.json');
+let stats = {}, statSeed = '', statT = null;
+try { const w = JSON.parse(fs.readFileSync(STAT_FILE, 'utf8')); statSeed = String(w.seed || ''); stats = w.s && typeof w.s === 'object' ? w.s : {}; } catch (e) {}
+function saveStats() { if (statT) return; statT = setTimeout(() => { statT = null; try { fs.writeFileSync(STAT_FILE, JSON.stringify({ seed: statSeed, s: stats })); } catch (e) {} }, 3000); }
+function checkStatSeed() { const s = worldSeed(); if (statSeed !== s) { stats = {}; statSeed = s; saveStats(); } }
+function statOf(c) {
+  const o = c.owner; if (!o || o[0] === 'c') return null;
+  const s = stats[o] || (stats[o] = { n: '', pk: 0, nk: 0, ak: 0, d: 0, t: 0 });
+  if (c.name) s.n = String(c.name).slice(0, 24); s.t = Date.now();
+  return s;
+}
+function statMerge(o, q) {   // from a backup: keep the larger numbers
+  if (typeof o !== 'string' || !q || typeof q !== 'object') return;
+  const s = stats[o] || (stats[o] = { n: '', pk: 0, nk: 0, ak: 0, d: 0, t: 0 });
+  if (!s.n && typeof q.n === 'string') s.n = q.n.slice(0, 24);
+  ['pk', 'nk', 'ak', 'd', 't'].forEach((k) => { const v = Math.max(0, Math.min(1e13, +q[k] || 0)); if (v > (s[k] || 0)) s[k] = Math.floor(v); });
+}
+function statList(me) {
+  const on = new Set(); for (const o of world.clients.values()) if (o.owner) on.add(o.owner);
+  return Object.keys(stats).map((o) => { const s = stats[o]; return { n: s.n || '?', pk: s.pk | 0, nk: s.nk | 0, ak: s.ak | 0, d: s.d | 0, on: on.has(o) ? 1 : 0, t: s.t || 0, me: o === me ? 1 : 0 }; });
+}
+function worldStatKill(c, m) {   // a player's own game reports an enemy or animal they killed (rate limited)
+  const now = Date.now(); c.sk = (c.sk || []).filter((t) => now - t < 10000); if (c.sk.length >= 25) return; c.sk.push(now);
+  const s = statOf(c); if (!s) return;
+  if (m.a) s.ak++; else s.nk++;
+  saveStats();
+}
+
 // ---- cars (update 38): every car on the island, who sits where, kept in DATA_DIR/cars.json ----
 const CAR_FILE = path.join(DATA_DIR, 'cars.json');
 let cars = new Map(), carSeed = '', carSeq = 1, carT = null;
@@ -254,7 +333,7 @@ function worldCarMove(c, m) {
   const q = cars.get(String(m.id || '')); if (!q || q.seats[0] !== c.id) return;
   const p = carXYZ(m); if (!p) return;
   q.x = p[0]; q.y = p[1]; q.z = p[2]; q.yaw = +m.yaw || 0; q.sp = +m.sp || 0; saveCars();
-  const out = J({ t: 'RVm', id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, sp: q.sp, p: +m.p || 0, r: +m.r || 0 });
+  const out = J({ t: 'RVm', id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, sp: q.sp, p: +m.p || 0, r: +m.r || 0, st: Math.max(-1, Math.min(1, +m.st || 0)) });
   for (const o of world.clients.values()) if (o !== c) o.send(out);
 }
 function worldCarMake(c, m) {
@@ -326,7 +405,7 @@ const WB_KEY = crypto.createHash('sha256').update('world-backup|' + BK_KEY).dige
 const wbKnown = new Set(), wbCarKnown = new Set();
 function wbNote() { for (const a of builds.values()) wbKnown.add(a[7]); for (const id of cars.keys()) wbCarKnown.add(id); }
 function wbMake() {
-  const body = JSON.stringify({ v: 2, seed: worldSeed(), b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by })), cs: carSeq });
+  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by })), cs: carSeq });
   const h = crypto.createHash('sha1').update(body).digest('hex');
   if (h === wbMake.h) return null;
   const zz = zlib.deflateRawSync(body); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
@@ -371,6 +450,7 @@ function wbRestore(c, str) {
       cars.set(q.id, car); wbCarKnown.add(q.id); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
     }
     if ((+w.cs | 0) > carSeq) carSeq = +w.cs | 0;
+    if (w.st && typeof w.st === 'object') { for (const o of Object.keys(w.st).slice(0, 5000)) statMerge(o, w.st[o]); saveStats(); }   // the leaderboard comes back too
     if (nc) saveCars();
     if (n || nc) console.log('world backup from ' + (c.name || c.owner) + ': ' + n + ' parts for ' + who + ' players, ' + nc + ' cars put back');
   } catch (e) { console.error('world backup refused:', e.message); }
@@ -379,7 +459,7 @@ function wbRestore(c, str) {
 // ---- things on the ground: dropped items and the bags people leave when they die ----
 // Everybody sees them and anybody can pick them up (whole drop at once: the server hands it to whoever asks first).
 const DROP_MAX = 3000, DROP_TTL = 600, BAG_TTL = 1200;
-const dropPub = (d) => [d.id, d.x, d.y, d.z, d.it, d.bag ? 1 : 0, d.bn || '', Math.max(1, Math.round((d.until - Date.now()) / 1000)), d.bo || ''];
+const dropPub = (d) => [d.id, d.x, d.y, d.z, d.it, d.bag ? 1 : 0, d.bn || '', Math.max(1, Math.round((d.until - Date.now()) / 1000)), d.bo || '', d.air ? 1 : 0];
 function dropItems(list) {
   if (!Array.isArray(list)) return null;
   const out = [];
@@ -388,8 +468,8 @@ function dropItems(list) {
 }
 function dropMake(x, y, z, it, o) {
   if (world.drops.size >= DROP_MAX) { let old = null; for (const d of world.drops.values()) if (!old || d.until < old.until) old = d; if (old) dropGone(old.id); }
-  const ttl = o.bag ? BAG_TTL : Math.max(30, Math.min(DROP_TTL, +o.ttl || DROP_TTL));
-  const d = { id: ++world.dropSeq, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, z: Math.round(z * 100) / 100, it, bag: !!o.bag, bn: o.bn || '', bo: o.bo || '', src: o.src || '', by: o.by || '', until: Date.now() + ttl * 1000 };
+  const ttl = o.bag ? BAG_TTL : o.air ? 1800 : Math.max(30, Math.min(DROP_TTL, +o.ttl || DROP_TTL));
+  const d = { id: ++world.dropSeq, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, z: Math.round(z * 100) / 100, it, bag: !!o.bag, bn: o.bn || '', bo: o.bo || '', air: !!o.air, src: o.src || '', by: o.by || '', until: Date.now() + ttl * 1000 };
   world.drops.set(d.id, d);
   worldAll(JSON.stringify({ t: 'RI', d: dropPub(d) }));
   return d;
@@ -425,7 +505,7 @@ setInterval(() => {
   if (s === curSeed) return;
   curSeed = s;
   console.log('season over: new island ' + s);
-  checkBuildSeed(); checkPlayerSeed(); checkCarSeed(); world.nodes.clear(); world.drops.clear(); chatLog.length = 0;
+  checkBuildSeed(); checkPlayerSeed(); checkCarSeed(); checkStatSeed(); world.nodes.clear(); world.drops.clear(); chatLog.length = 0;
   const msg = JSON.stringify({ op: 'world-wipe', season: seasonNow() });
   for (const o of [...world.clients.values()]) { o.wiped = true; o.send(msg); setTimeout(() => { if (!o.closed) { o.close(); onClose(o); } }, 1500); }
 }, 20000).unref();
@@ -799,6 +879,11 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Rt') { worldTrap(c, m); return; }
   if (c.world && m.t === 'Rs') { worldSave(c, m); return; }
   if (c.world && m.t === 'Ve') { worldCarEnter(c, m); return; }
+  if (c.world && m.t === 'Rkc') { worldStatKill(c, m); return; }
+  if (c.world && m.t === 'Rvo') { worldVaultOpen(c, m); return; }
+  if (c.world && m.t === 'Rhk') { worldHack(c, m); return; }
+  if (c.world && m.t === 'Rad') { worldAirPos(c, m); return; }
+  if (c.world && m.t === 'Rlb') { c.send(J({ t: 'RLB', l: statList(c.owner) })); return; }
   if (c.world && m.t === 'Vx') { carFree(c.id); return; }
   if (c.world && m.t === 'Vm') { worldCarMove(c, m); return; }
   if (c.world && m.t === 'Vc') { worldCarMake(c, m); return; }
