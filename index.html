@@ -5515,6 +5515,7 @@ Object.assign(EN, {
       case 'RVs': case 'RVm': case 'RVc': case 'RVf': rwCarMsg(m); break;
       case 'RLB': rwLbMsg(m); break;
       case 'RVO': case 'RHK': case 'RAD': rwEvMsg(m); break;
+      case 'ROP': banner(zt('这里的主人都不在线，房子受离线保护，炸不动', 'The owners are offline: this base is protected and takes no damage'), 2200); sfx('deny'); break;
       case 'RR': { var lf = rwGive(String(m.it), m.n | 0); if (lf > 0) rwDropAdd([{ id: String(m.it), n: lf }], P.x, P.z, null, 600, P.y); banner(zt('放不下，还给你了', 'No room: returned to you'), 1100); break; }
       case 'RG': { var lg = rwGive(String(m.it), m.n | 0), tk = (m.n | 0) - lg; if (tk > 0) rwNote(String(m.it), tk); if (lg > 0) { rwDropAdd([{ id: String(m.it), n: lg }], P.x, P.z, null, 600, P.y); banner(zt('背包满了，放在脚边', 'Inventory full: dropped at your feet'), 1300); } break; }
       case 'RD': if (m.at && m.it) rwDropAdd(m.it.map(function (q) { return { id: String(q[0]), n: q[1] | 0 }; }), +m.at[0], +m.at[2], null, 600, +m.at[1]); break;

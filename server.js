@@ -599,19 +599,35 @@ function worldRepair(c, m) {
   a[9] = Math.min(maxHp(a[1], a[6]), a[9] + 60); saveBuilds();
   worldAll(JSON.stringify({ t: 'Rp', id: a[0], hp: a[9] }));
 }
+// ---- offline raid protection: nobody can damage a base while its people are offline ----
+const OFF_GRACE = Math.max(0, (process.env.OFFLINE_GRACE_MIN === undefined ? 5 : +process.env.OFFLINE_GRACE_MIN || 0)) * 60000;   // logging off in the middle of a raid does not save you at once
+const offAt = new Map();   // owner -> when they last left
+function ownerAround(ow) {
+  if (!ow) return false;
+  for (const o of world.clients.values()) if (o.owner === ow) return true;
+  const t = offAt.get(ow); return !!t && Date.now() - t < OFF_GRACE;
+}
+function shielded(a) {   // the builder and everyone on a tool cupboard covering this part are offline
+  if (ownerAround(a[7])) return false;
+  for (const b of builds.values()) if (b[1] === 'tc' && Math.hypot(b[2] - a[2], b[4] - a[4]) < TC_RANGE && b[10].a.some(ownerAround)) return false;
+  return true;
+}
 function worldDamage(c, m) {   // explosions: the thrower reports which parts it hit and how hard
   if (!Array.isArray(m.a) || m.a.length > 60) return;
   const now = Date.now();
   c.dh = (c.dh || []).filter((t) => now - t < 1000);
   if (c.dh.length >= 8) return;
   c.dh.push(now);
+  let safe = 0;
   m.a.forEach((q) => {
     if (!Array.isArray(q)) return;
     const a = builds.get(q[0] | 0), d = Math.min(1200, Math.max(0, +q[1] || 0)); if (!a || !d) return;
+    if (a[7] !== c.owner && shielded(a)) { safe++; return; }
     a[9] -= d;
     if (a[9] <= 0) dropPart(a, c);
     else { saveBuilds(); worldAll(JSON.stringify({ t: 'Rp', id: a[0], hp: Math.round(a[9]) })); }
   });
+  if (safe) c.send(JSON.stringify({ t: 'ROP', n: safe }));
 }
 function worldAuth(c, m) {   // tool cupboard: whoever can reach it can add or remove themselves
   const a = builds.get(m.id | 0); if (!a || a[1] !== 'tc') return;
@@ -918,7 +934,7 @@ function onClose(c) {
   const room = c.room; if (!room) return;
   room.clients.delete(c.id);
   for (const o of room.clients.values()) o.send(J({ op: 'peer-left', id: c.id }));
-  if (c.world) { carFree(c.id); chatPush({ t: 'RJ', n: c.name, j: 0 }); if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
+  if (c.world) { if (c.owner) offAt.set(c.owner, Date.now()); carFree(c.id); chatPush({ t: 'RJ', n: c.name, j: 0 }); if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
   if (c.id === 1) {                    // the host left: the room is over
     for (const o of room.clients.values()) o.close();
     rooms.delete(room.code);
