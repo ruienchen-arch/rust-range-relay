@@ -152,15 +152,15 @@ saveDb();   // writes the secret on first start
 // Same disk caveat as accounts.json.
 const BUILD_FILE = path.join(DATA_DIR, 'world.json');
 const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr', 'bx', 'fu', 'tc', 'sb',
-  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg']);
+  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu']);
 const DOORS = new Set(['dr', 'sd', 'd2', 'gd', 'xg']);                       // open and close, take a code lock
 const HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // inserts and the wall they sit in
 const CONT = { bx: 18, lb: 30, fu: 4, cf: 4 };                               // containers and their slots
-const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg']);
+const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu']);
 const HP = { dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|g[0-9]{1,2})$/;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|carpet|carpet2|g[0-9]{1,2})$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
@@ -206,6 +206,8 @@ function cleanSave(s) {
   const o = { v: 1, t: int(s.t, 0, 9e15), hot: int(s.hot, 0, 5), coins: int(s.coins, 0, 1e9), gr: int(s.gr, 0, 9), inv: [] };
   if (Array.isArray(s.mk)) o.mk = s.mk.filter((m) => Array.isArray(m) && num(m[0], WORLD_SIZE * 2) !== null && num(m[1], WORLD_SIZE * 2) !== null).slice(0, 6).map((m) => [Math.round(+m[0]), Math.round(+m[1])]);   // map markers
   for (const it of s.inv) o.inv.push(Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1 ? [it[0], int(it[1], 1, 100000)] : 0);
+  if (Array.isArray(s.wl) && s.wl.length <= 24) o.wl = s.wl.map((v) => int(v, 1, 20));   // weapon upgrade levels
+  if (Array.isArray(s.wp) && s.wp.length <= 24) o.wp = s.wp.map((a) => (Array.isArray(a) ? a.filter((id) => typeof id === 'string' && /^[a-z0-9_]{1,20}$/i.test(id)).slice(0, 3) : []));
   if (s.dead) { o.dead = 1; return o; }
   o.hp = int(s.hp, 1, 1000); o.ar = int(s.ar, 0, 100);
   if (Array.isArray(s.ws) && s.ws.length <= 24) o.ws = s.ws.map((w) => (Array.isArray(w) ? [int(w[0], 0, 1000), int(w[1], 0, 10000)] : [0, 0]));

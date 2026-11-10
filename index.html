@@ -2605,7 +2605,7 @@ Object.assign(EN, {
     enemies.push(e);
   }
   function killEnemy(e, headshot) {
-    if (e.slot) { e.slot.e = null; e.slot.t = gtime + 90; }
+    if (e.slot) { e.slot.e = null; e.slot.t = gtime + (e.T && e.T.animal ? 50 : 45); }
     if (e.dead) return;
     if (e.ghost) { e.dead = true; CO.dead[e.gid] = gtime; coopDropGhost(e, true); sfx('edie'); if (e.T && e.T.animal) rwAnimalLoot(e); rwMKill(e, headshot); return; }
     e.dead = true;
@@ -4250,7 +4250,7 @@ Object.assign(EN, {
       sfx('upgrade');
       banner(tf('{0} 升到 {1} 级', t(WDEF[gi].name), wlv[gi]), 1500);
       if (wlv[gi] % 3 === 0) perkOffer(gi);
-      refreshGunLook(gi); updateSlots(); renderShop();
+      refreshGunLook(gi); updateSlots(); renderShop(); if (RW.on) rwSaveSoon();
       return;
     }
     if (kind === 'perk') {
@@ -4259,7 +4259,7 @@ Object.assign(EN, {
       wperk[pw].push(PERKS[pi].id); wofr[pw] = null;
       sfx('upgrade');
       banner(PERKS[pi].ic + ' ' + t(PERKS[pi].name), 1500);
-      refreshGunLook(pw); updateSlots(); renderShop();
+      refreshGunLook(pw); updateSlots(); renderShop(); if (RW.on) rwSaveSoon();
       return;
     }
     if (kind === 'aup') {
@@ -5477,7 +5477,7 @@ Object.assign(EN, {
       e.g.rotation.y = Math.atan2(dx, dz);
       if (ty === 'rusher' || ty === 'tank' || ty === 'bomber') {
         mv = dd > 1.3 ? 1 : 0; e.melee = (e.melee || 0) - dt;
-        if (ty === 'bomber') { if (dd < 2.3) { e.dead = true; scene.remove(e.g); var ix = enemies.indexOf(e); if (ix >= 0) enemies.splice(ix, 1); if (e.slot) { e.slot.e = null; e.slot.t = gtime + 90; } rwNpcHurtMe(TP, 'bomber'); explode(pos.x, pos.y + 1, pos.z, 4, 34, false); return true; } }
+        if (ty === 'bomber') { if (dd < 2.3) { e.dead = true; scene.remove(e.g); var ix = enemies.indexOf(e); if (ix >= 0) enemies.splice(ix, 1); if (e.slot) { e.slot.e = null; e.slot.t = gtime + (e.T && e.T.animal ? 50 : 45); } rwNpcHurtMe(TP, 'bomber'); explode(pos.x, pos.y + 1, pos.z, 4, 34, false); return true; } }
         else if (dd < (ty === 'tank' ? 2.3 : 1.7) && e.melee <= 0 && Math.abs(TP.y - pos.y) < 2) { e.melee = ty === 'tank' ? 1.2 : 0.8; rwNpcHurtMe(TP, ty); dmgTP(TP, ty === 'tank' ? 22 : 12); }
       } else {
         var near = ty === 'sniper' ? 24 : 7, far = ty === 'sniper' ? 42 : 15;
@@ -7153,35 +7153,87 @@ Object.assign(EN, {
   };
   function rwIsWall(k) { return !!RW_WALLS[k]; }
   function rwIsFullWall(k) { return k === 'wl' || k === 'dw' || k === 'wn' || k === 'wf' || k === 'dd'; }   // walls you can stack on or put a floor on
-  function rwBuildTex(kind) {
-    var c = document.createElement('canvas'); c.width = c.height = 128;
-    var x = c.getContext('2d'), i, j;
-    if (kind === 0) {   // wooden planks
-      for (i = 0; i < 4; i++) { x.fillStyle = ['#8f673d', '#7f5830', '#94693f', '#86603a'][i]; x.fillRect(i * 32, 0, 32, 128); }
-      for (i = 0; i < 110; i++) { x.strokeStyle = 'rgba(55,34,16,' + (0.08 + Math.random() * 0.2) + ')'; x.lineWidth = 1; var gx = Math.random() * 128; x.beginPath(); x.moveTo(gx, 0); x.bezierCurveTo(gx + 3, 40, gx - 3, 90, gx + 1, 128); x.stroke(); }
-      x.fillStyle = 'rgba(30,18,8,.65)'; for (i = 0; i <= 4; i++) x.fillRect(i * 32 - 1, 0, 2, 128);
-      x.fillStyle = 'rgba(30,18,8,.5)'; x.fillRect(0, 60, 128, 3);
-      x.fillStyle = '#3a3a3a'; for (i = 0; i < 4; i++) { x.fillRect(i * 32 + 6, 54, 3, 3); x.fillRect(i * 32 + 23, 66, 3, 3); }
-    } else if (kind === 1) {   // stone blocks
-      x.fillStyle = '#5c5850'; x.fillRect(0, 0, 128, 128);
-      for (j = 0; j < 4; j++) for (i = -1; i < 3; i++) { var g = 128 + Math.random() * 30 | 0; x.fillStyle = 'rgb(' + g + ',' + (g - 4) + ',' + (g - 12) + ')'; x.fillRect(i * 64 + (j % 2) * 32 + 2, j * 32 + 2, 60, 28); }
-      for (i = 0; i < 700; i++) { x.fillStyle = 'rgba(' + (Math.random() < 0.5 ? '0,0,0' : '255,255,255') + ',' + Math.random() * 0.12 + ')'; x.fillRect(Math.random() * 128, Math.random() * 128, 2, 2); }
-    } else {   // metal sheets
-      x.fillStyle = '#6c7177'; x.fillRect(0, 0, 128, 128);
-      for (i = 0; i < 2; i++) { var gr = x.createLinearGradient(i * 64, 0, i * 64 + 64, 0); gr.addColorStop(0, 'rgba(255,255,255,.08)'); gr.addColorStop(1, 'rgba(0,0,0,.12)'); x.fillStyle = gr; x.fillRect(i * 64, 0, 64, 128); }
-      x.fillStyle = 'rgba(20,22,24,.7)'; x.fillRect(63, 0, 2, 128); x.fillRect(0, 63, 128, 2);
-      x.fillStyle = '#9aa0a6'; for (i = 0; i < 8; i++) { x.fillRect(4 + (i % 2) * 54, 6 + Math.floor(i / 2) * 32, 3, 3); x.fillRect(68 + (i % 2) * 54, 6 + Math.floor(i / 2) * 32, 3, 3); }
-      for (i = 0; i < 6; i++) { var rx = Math.random() * 120; var rg = x.createLinearGradient(0, 0, 0, 128); rg.addColorStop(0, 'rgba(140,70,30,.35)'); rg.addColorStop(1, 'rgba(140,70,30,0)'); x.fillStyle = rg; x.fillRect(rx, Math.random() * 40, 3 + Math.random() * 5, 80); }
+  /* update 41: building materials that look built, not stamped. Each tier has four hand-made-looking variants
+     (512 px for a 3 m panel, with a matching bump map) and two tints, and every part picks its own variant and
+     texture offset, so no two walls or floors look the same.
+     Wood: planks of different widths, grain, knots, butt joints, nail rows, weathering. Stone: irregular blocks
+     and mortar. Metal: corrugated sheets with seams, rivets and rust streaks. */
+  function rwBuildTex(kind, variant) {
+    var N = 512, c = document.createElement('canvas'), b = document.createElement('canvas'); c.width = c.height = b.width = b.height = N;
+    var x = c.getContext('2d'), y = b.getContext('2d'), rg = seeded(9137 + kind * 101 + (variant | 0) * 17), i, j;
+    function R(a, z) { return a + rg() * (z - a); }
+    function rgb(r, g, bb, a) { return 'rgba(' + (r | 0) + ',' + (g | 0) + ',' + (bb | 0) + ',' + (a === undefined ? 1 : a) + ')'; }
+    function gray(v, a) { return rgb(v, v, v, a); }
+    if (kind === 0) {   // ---- wooden planks ----
+      var pal = [[126, 88, 52], [112, 76, 44], [138, 98, 60], [104, 72, 42], [120, 86, 54]], px0 = 0;
+      y.fillStyle = gray(150); y.fillRect(0, 0, N, N);
+      while (px0 < N) {
+        var w = Math.round(R(30, 46)), col = pal[Math.floor(rg() * pal.length)], k = R(0.82, 1.12), cr = col[0] * k, cg = col[1] * k, cb = col[2] * k;
+        var g0 = x.createLinearGradient(px0, 0, px0 + w, 0); g0.addColorStop(0, rgb(cr * 0.9, cg * 0.9, cb * 0.9)); g0.addColorStop(0.5, rgb(cr, cg, cb)); g0.addColorStop(1, rgb(cr * 0.86, cg * 0.86, cb * 0.86));
+        x.fillStyle = g0; x.fillRect(px0, 0, w, N);
+        for (i = 0; i < 26; i++) {   // grain: long wavy lines along the plank
+          var gx = px0 + R(2, w - 2), amp = R(1, 4), ph = R(0, 6.28), fr = R(0.008, 0.02);
+          x.strokeStyle = rgb(cr * 0.55, cg * 0.5, cb * 0.45, R(0.12, 0.35)); x.lineWidth = R(0.6, 1.6); x.beginPath();
+          for (j = 0; j <= N; j += 16) { var xx = gx + Math.sin(j * fr + ph) * amp; if (j) x.lineTo(xx, j); else x.moveTo(xx, j); } x.stroke();
+          y.strokeStyle = gray(120, 0.25); y.lineWidth = 1; y.beginPath(); for (j = 0; j <= N; j += 16) { var yy = gx + Math.sin(j * fr + ph) * amp; if (j) y.lineTo(yy, j); else y.moveTo(yy, j); } y.stroke();
+        }
+        if (rg() < 0.55) { var kx = px0 + R(8, w - 8), ky = R(20, N - 20), kr = R(3, 7);   // a knot
+          for (i = 5; i >= 0; i--) { x.strokeStyle = rgb(cr * 0.4, cg * 0.35, cb * 0.3, 0.25 + i * 0.05); x.lineWidth = 1.2; x.beginPath(); x.ellipse(kx, ky, kr + i * 2.2, (kr + i * 2.2) * 2.4, 0, 0, 6.29); x.stroke(); }
+          x.fillStyle = rgb(cr * 0.35, cg * 0.3, cb * 0.25, 0.9); x.beginPath(); x.ellipse(kx, ky, kr, kr * 1.6, 0, 0, 6.29); x.fill();
+          y.fillStyle = gray(110); y.beginPath(); y.ellipse(kx, ky, kr, kr * 1.6, 0, 0, 6.29); y.fill(); }
+        if (rg() < 0.45) { var jy = R(60, N - 60); x.fillStyle = 'rgba(25,15,6,.8)'; x.fillRect(px0, jy, w, 2); y.fillStyle = gray(40); y.fillRect(px0, jy, w, 2); }   // butt joint
+        x.fillStyle = 'rgba(18,10,4,.9)'; x.fillRect(px0 + w - 2, 0, 2, N); y.fillStyle = gray(20); y.fillRect(px0 + w - 2, 0, 2, N);   // gap
+        [0.08, 0.5, 0.92].forEach(function (f) { for (var q = 0; q < 2; q++) { var nx = px0 + w * (q ? 0.72 : 0.28), ny = N * f + R(-4, 4);   // nail heads
+          x.fillStyle = '#2b2a28'; x.beginPath(); x.arc(nx, ny, 2.4, 0, 6.29); x.fill(); x.fillStyle = 'rgba(120,60,30,.35)'; x.fillRect(nx - 1, ny + 2, 2, R(4, 14));
+          y.fillStyle = gray(230); y.beginPath(); y.arc(nx, ny, 2.4, 0, 6.29); y.fill(); } });
+        px0 += w;
+      }
+      var dg = x.createLinearGradient(0, N * 0.7, 0, N); dg.addColorStop(0, 'rgba(40,30,20,0)'); dg.addColorStop(1, 'rgba(40,30,20,.35)'); x.fillStyle = dg; x.fillRect(0, 0, N, N);   // dirt low down
+      for (i = 0; i < 14; i++) { x.fillStyle = 'rgba(' + (rg() < 0.5 ? '30,22,14' : '200,180,150') + ',' + R(0.03, 0.08) + ')'; x.beginPath(); x.ellipse(R(0, N), R(0, N), R(20, 80), R(30, 120), R(0, 3), 0, 6.29); x.fill(); }   // weathering
+    } else if (kind === 1) {   // ---- stone blocks ----
+      x.fillStyle = '#6b665c'; x.fillRect(0, 0, N, N); y.fillStyle = gray(60); y.fillRect(0, 0, N, N);
+      var yy0 = 0;
+      while (yy0 < N) {
+        var rh = Math.min(N - yy0, Math.round(R(40, 62))), xx0 = -Math.round(R(0, 60));
+        while (xx0 < N) {
+          var bw = Math.round(R(56, 120)), gv = R(118, 162), t = R(-8, 8), m = 3;
+          x.fillStyle = rgb(gv + t, gv - 2 + t * 0.5, gv - 10); x.beginPath();
+          if (x.roundRect) x.roundRect(xx0 + m, yy0 + m, bw - 2 * m, rh - 2 * m, R(3, 8)); else x.rect(xx0 + m, yy0 + m, bw - 2 * m, rh - 2 * m); x.fill();
+          var sh = x.createLinearGradient(0, yy0, 0, yy0 + rh); sh.addColorStop(0, 'rgba(255,255,255,.08)'); sh.addColorStop(1, 'rgba(0,0,0,.14)'); x.fillStyle = sh; x.fillRect(xx0 + m, yy0 + m, bw - 2 * m, rh - 2 * m);
+          y.fillStyle = gray(R(170, 210)); y.beginPath(); if (y.roundRect) y.roundRect(xx0 + m, yy0 + m, bw - 2 * m, rh - 2 * m, 6); else y.rect(xx0 + m, yy0 + m, bw - 2 * m, rh - 2 * m); y.fill();
+          for (i = 0; i < 60; i++) { var sx = xx0 + R(m, bw - m), sy = yy0 + R(m, rh - m); x.fillStyle = 'rgba(' + (rg() < 0.5 ? '0,0,0' : '255,255,255') + ',' + R(0.04, 0.14) + ')'; x.fillRect(sx, sy, R(1, 3), R(1, 3)); y.fillStyle = gray(R(150, 230), 0.4); y.fillRect(sx, sy, 2, 2); }
+          if (rg() < 0.25) { x.strokeStyle = 'rgba(30,28,24,.5)'; x.lineWidth = 1; x.beginPath(); x.moveTo(xx0 + R(10, bw - 10), yy0 + m); x.lineTo(xx0 + R(10, bw - 10), yy0 + rh - m); x.stroke(); }   // crack
+          xx0 += bw;
+        }
+        yy0 += rh;
+      }
+      for (i = 0; i < 10; i++) { x.fillStyle = 'rgba(60,70,40,' + R(0.03, 0.08) + ')'; x.beginPath(); x.ellipse(R(0, N), R(N * 0.6, N), R(30, 90), R(20, 50), 0, 0, 6.29); x.fill(); }   // moss stains low down
+    } else {   // ---- metal sheets ----
+      var base = variant % 2 ? [128, 134, 140] : [142, 144, 138];
+      x.fillStyle = rgb(base[0], base[1], base[2]); x.fillRect(0, 0, N, N); y.fillStyle = gray(128); y.fillRect(0, 0, N, N);
+      for (i = 0; i < N; i += 2) { var s = Math.sin(i / 512 * Math.PI * 2 * 22); x.fillStyle = s > 0 ? 'rgba(255,255,255,' + (s * 0.07) + ')' : 'rgba(0,0,0,' + (-s * 0.1) + ')'; x.fillRect(i, 0, 2, N); y.fillStyle = gray(128 + s * 60); y.fillRect(i, 0, 2, N); }   // corrugation
+      var seams = [0, Math.round(R(240, 272))];
+      seams.forEach(function (sx) { x.fillStyle = 'rgba(20,22,24,.75)'; x.fillRect(sx, 0, 3, N); y.fillStyle = gray(30); y.fillRect(sx, 0, 3, N);
+        for (var ry = 12; ry < N; ry += 42) { [sx + 8, sx + N / 2 - 8].forEach(function (rx) { rx = rx % N;
+          x.fillStyle = '#b4b8bc'; x.beginPath(); x.arc(rx, ry, 3, 0, 6.29); x.fill(); x.fillStyle = 'rgba(0,0,0,.4)'; x.beginPath(); x.arc(rx + 1, ry + 1, 3, 0, 6.29); x.fill(); x.fillStyle = '#9ea2a6'; x.beginPath(); x.arc(rx, ry, 2.4, 0, 6.29); x.fill();
+          y.fillStyle = gray(240); y.beginPath(); y.arc(rx, ry, 3, 0, 6.29); y.fill();
+          if (rg() < 0.35) { var st = x.createLinearGradient(0, ry, 0, ry + R(30, 120)); st.addColorStop(0, 'rgba(150,72,28,.55)'); st.addColorStop(1, 'rgba(150,72,28,0)'); x.fillStyle = st; x.fillRect(rx - 2, ry, R(3, 7), 120); } }); } });
+      x.fillRect(0, 0, 0, 0);
+      for (i = 0; i < 4; i++) { var py = R(0, N); x.fillStyle = 'rgba(20,22,24,.55)'; x.fillRect(0, py, N, 2); y.fillStyle = gray(40); y.fillRect(0, py, N, 2); i = 4; }   // one horizontal overlap
+      for (i = 0; i < 40; i++) { x.strokeStyle = 'rgba(220,225,230,' + R(0.05, 0.15) + ')'; x.lineWidth = 0.8; var sx2 = R(0, N), sy2 = R(0, N); x.beginPath(); x.moveTo(sx2, sy2); x.lineTo(sx2 + R(-30, 30), sy2 + R(-10, 10)); x.stroke(); }   // scratches
+      for (i = 0; i < 9; i++) { var rx2 = R(0, N), ry2 = R(0, N), rr = R(10, 50), rgd = x.createRadialGradient(rx2, ry2, 0, rx2, ry2, rr); rgd.addColorStop(0, 'rgba(140,66,24,' + R(0.25, 0.5) + ')'); rgd.addColorStop(1, 'rgba(140,66,24,0)'); x.fillStyle = rgd; x.fillRect(rx2 - rr, ry2 - rr, rr * 2, rr * 2); }   // rust patches
+      var dg2 = x.createLinearGradient(0, N * 0.75, 0, N); dg2.addColorStop(0, 'rgba(90,50,24,0)'); dg2.addColorStop(1, 'rgba(90,50,24,.4)'); x.fillStyle = dg2; x.fillRect(0, 0, N, N);
     }
-    var tx = new THREE.CanvasTexture(c); tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.anisotropy = 4;
-    return tx;
+    function tex(cv) { var t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
+    return { map: tex(c), bump: tex(b) };
   }
-  function rwTexBox(w, h, d) {   // a box whose texture keeps a 1.5 m tile size on every face
-    var g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv, nr = g.attributes.normal;
+  var RW_TILE = 3.0;   // metres covered by one texture
+  function rwTexBox(w, h, d, ou, ov) {   // a box whose texture keeps the same scale on every face, shifted by (ou, ov)
+    var g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv, nr = g.attributes.normal; ou = ou || 0; ov = ov || 0;
     for (var i = 0; i < uv.count; i++) {
       var ax = Math.abs(nr.getX(i)), ay = Math.abs(nr.getY(i)), su, sv;
       if (ax > 0.5) { su = d; sv = h; } else if (ay > 0.5) { su = w; sv = d; } else { su = w; sv = h; }
-      uv.setXY(i, uv.getX(i) * su / 1.5, uv.getY(i) * sv / 1.5);
+      uv.setXY(i, uv.getX(i) * su / RW_TILE + ou, uv.getY(i) * sv / RW_TILE + ov);
     }
     return g;
   }
@@ -7199,12 +7251,12 @@ Object.assign(EN, {
     else if (k === 'dr') { if (r === 0) L.push([0, 1.09, 0, 1.16, 2.18, 0.08, 1]); else L.push([0, 1.09, 0, 0.08, 2.18, 1.16, 1]); }
     return L;
   }
-  function rwPieceGeo(k, r, dep) {
-    if (k === 'rf') return rwRoofGeo();
-    var pos = [], nor = [], uvs = [];
+  function rwPieceGeo(k, r, dep, seed) {
+    if (k === 'rf') return rwRoofGeo(seed);
+    var pos = [], nor = [], uvs = [], ou = seed ? rwHash(seed, 3, 11) : 0, ov = seed ? rwHash(seed, 5, 13) : 0;   // each part shows a different patch of the texture
     rwPieceParts(k, r, dep).forEach(function (q) {
       if (q[7]) return;   // collision-only part
-      var g = rwTexBox(q[3], q[4], q[5]); g.translate(q[0], q[1], q[2]);
+      var g = rwTexBox(q[3], q[4], q[5], ou, ov); g.translate(q[0], q[1], q[2]);
       var ng = g.toNonIndexed(), pa = ng.attributes.position.array, na = ng.attributes.normal.array, ua = ng.attributes.uv.array, i;
       for (i = 0; i < pa.length; i++) { pos.push(pa[i]); nor.push(na[i]); }
       for (i = 0; i < ua.length; i++) uvs.push(ua[i]);
@@ -7217,6 +7269,7 @@ Object.assign(EN, {
     G.computeBoundingSphere();
     return G;
   }
+  function rwPieceMat(p) { var L = RW.bmatV[p.g]; return L[Math.floor(rwHash(p.id, 7, 29) * L.length) % L.length]; }
   function rwFdDepth(x, z, top) {
     var mn = 1e9;
     for (var a = -1; a <= 1; a += 2) for (var b = -1; b <= 1; b += 2) mn = Math.min(mn, rwH(x + a * 1.45, z + b * 1.45));
@@ -7225,8 +7278,18 @@ Object.assign(EN, {
   }
   function rwBuildMats() {
     if (RW.bmat) return;
-    RW.bmat = [0, 1, 2].map(function (k) { return new THREE.MeshStandardMaterial({ map: rwBuildTex(k), roughness: k === 2 ? 0.55 : 0.9, metalness: k === 2 ? 0.35 : 0 }); });
-    RW.dmat = new THREE.MeshStandardMaterial({ map: rwBuildTex(0), color: 0xb08a68, roughness: 0.85 });
+    RW.bmatV = [0, 1, 2].map(function (k) {   // 4 texture variants x 2 tints per tier
+      var out = [];
+      for (var v = 0; v < 4; v++) {
+        var tx = rwBuildTex(k, v);
+        [0xffffff, k === 0 ? 0xe6d8c6 : k === 1 ? 0xe8e4dc : 0xdfe4e8].forEach(function (tint) {
+          out.push(new THREE.MeshStandardMaterial({ map: tx.map, bumpMap: tx.bump, bumpScale: k === 2 ? 0.012 : 0.02, color: tint, roughness: k === 2 ? 0.55 : k === 1 ? 0.92 : 0.85, metalness: k === 2 ? 0.15 : 0 }));
+        });
+      }
+      return out;
+    });
+    RW.bmat = RW.bmatV.map(function (L) { return L[0]; });
+    RW.dmat = new THREE.MeshStandardMaterial({ map: RW.bmatV[0][2].map, bumpMap: RW.bmatV[0][2].bumpMap, bumpScale: 0.02, color: 0xb08a68, roughness: 0.85 });
     RW.hmat = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.4, metalness: 0.7 });
     RW.gOk = new THREE.MeshBasicMaterial({ color: 0x4fd06a, transparent: true, opacity: 0.38, depthWrite: false });
     RW.gNo = new THREE.MeshBasicMaterial({ color: 0xe04a3a, transparent: true, opacity: 0.38, depthWrite: false });
@@ -7259,7 +7322,7 @@ Object.assign(EN, {
     p.parts = rwPieceParts(k, p.r, p.dep);
     if (rwIsDoor(k)) p.m = rwDoorMesh(p);
     else if (RWD[k]) p.m = rwDepMesh(p);
-    else p.m = new THREE.Mesh(rwPieceGeo(k, p.r, p.dep), RW.bmat[p.g]);
+    else p.m = new THREE.Mesh(rwPieceGeo(k, p.r, p.dep, id), rwPieceMat(p));
     p.m.position.set(p.x, p.y, p.z);
     RW.bgroup.add(p.m);
     p.pk = p.parts.map(function (q) { return { minX: p.x + q[0] - q[3] / 2, maxX: p.x + q[0] + q[3] / 2, minY: p.y + q[1] - q[4] / 2, maxY: p.y + q[1] + q[4] / 2, minZ: p.z + q[2] - q[5] / 2, maxZ: p.z + q[2] + q[5] / 2 }; });
@@ -7291,7 +7354,7 @@ Object.assign(EN, {
   }
   function rwPieceGrade(id, g) {
     var p = RW.pieces[id]; if (!p || rwNoUp(p.k)) return;
-    p.g = Math.max(0, Math.min(2, g | 0)); p.m.material = RW.bmat[p.g]; p.hmax = rwMaxHp(p.k, p.g); p.hp = p.hmax;
+    p.g = Math.max(0, Math.min(2, g | 0)); if (!rwIsDoor(p.k) && !RWD[p.k]) p.m.material = rwPieceMat(p); p.hmax = rwMaxHp(p.k, p.g); p.hp = p.hmax;
     if (Math.hypot(p.x - P.x, p.z - P.z) < 40) burst(new THREE.Vector3(p.x, p.y + 1.5, p.z), 8, partMatG, 3);
   }
   function rwPiecesLoad(list) {
@@ -7938,12 +8001,20 @@ Object.assign(EN, {
     if (tw >= 5 || dir.y > -0.05) return null;
     var ax = o.x + dir.x * tw, ay = o.y + dir.y * tw, az = o.z + dir.z * tw, gy = groundAt(ax, az, ay + 0.4);
     var r = ((Math.round(P.yaw / (Math.PI / 2)) % 4) + 4) % 4;
+    if (k === 'ct' || k === 'cu') {   // carpet tiles snap to the 1 m cells of the floor under them (or to the world's 1 m grid)
+      r = 0; var fl = null;
+      RW.plist.forEach(function (q) { if ((q.k === 'fd' || q.k === 'fl' || q.k === 'ft') && Math.abs(ax - q.x) < 1.5 && Math.abs(az - q.z) < 1.5 && Math.abs(q.y - gy) < 0.3) fl = q; });
+      if (fl) { ax = fl.x + Math.max(-1, Math.min(1, Math.round(ax - fl.x))); az = fl.z + Math.max(-1, Math.min(1, Math.round(az - fl.z))); }
+      else { ax = Math.floor(ax) + 0.5; az = Math.floor(az) + 0.5; }
+      gy = groundAt(ax, az, ay + 0.4);
+    }
     var c = { k: k, x: ax, y: gy, z: az, r: r, dep: 0, onWall: Math.abs(gy - ay) > 0.35 };
     c.why = rwDepWhy(c);
     return c;
   }
   function rwDepWhy(c) {
     if (c.onWall) return zt('要放在地面、地基或楼板上', 'Put it on the ground, a foundation or a floor');
+    if ((c.k === 'ct' || c.k === 'cu') && RW.plist.some(function (q) { return (q.k === 'ct' || q.k === 'cu') && Math.abs(q.x - c.x) < 0.3 && Math.abs(q.z - c.z) < 0.3 && Math.abs(q.y - c.y) < 0.3; })) return zt('这里已经铺了地毯', 'There is already carpet here');
     if (rwSafe(c.x, c.z)) return zt('前哨站安全区里不能放', 'Not in the Outpost safe zone');
     if (rwNearMon(c.x, c.z, 8)) return zt('离据点太近了', 'Too close to a monument');
     if (c.k !== 'tc' && rwTcBlocked(c.x, c.z)) return zt('这里在别人的领地柜范围内', "Inside someone else's tool cupboard range");
@@ -8120,15 +8191,25 @@ Object.assign(EN, {
     var p = e.g.position, ty = e.type, loot = ty === 'deer' ? [['meat', 6], ['cloth', 8]] : ty === 'boar' ? [['meat', 9], ['cloth', 5]] : [['meat', 4], ['cloth', 10]];
     rwDropAdd(loot.map(function (q) { return { id: q[0], n: q[1] }; }), p.x, p.z, null, 420);
   }
-  function rwPlanHerds() {   // fixed hunting grounds across the island, the same for everybody
+  function rwPlanHerds() {   // fixed hunting grounds and roaming infected camps across the island, the same for everybody
     RW.herds = [];
-    var rg = seeded(hashStr('rwherd' + RW.seed)), H = RW.half, tries = 0;
-    while (RW.herds.length < 42 && tries++ < 3000) {
-      var x = (rg() * 2 - 1) * H * 0.8, z = (rg() * 2 - 1) * H * 0.8, h = rwBase(x, z);
-      if (h < 2 || h > 32 || rwNearMon(x, z, 80) || (RW.safe && Math.hypot(x - RW.safe.x, z - RW.safe.z) < RW.safe.r + 60)) continue;
-      if (RW.herds.some(function (o) { return Math.hypot(o.x - x, o.z - z) < 160; })) continue;
-      var r = rg(), camp = r < 0.45 ? ['deer', 'deer', 'deer'] : r < 0.75 ? ['boar', 'boar'] : ['wolf', 'wolf', 'wolf'];
+    var rg = seeded(hashStr('rwherd' + RW.seed)), H = RW.half, tries = 0, bio = [0, 0];
+    while (RW.herds.length < 95 && tries++ < 6000) {   // animals: about twice as many grounds as before, bigger groups
+      var x = (rg() * 2 - 1) * H * 0.82, z = (rg() * 2 - 1) * H * 0.82, h = rwBase(x, z);
+      if (h < 1.5 || h > 55 || rwNearMon(x, z, 60) || (RW.safe && Math.hypot(x - RW.safe.x, z - RW.safe.z) < RW.safe.r + 60)) continue;
+      if (RW.herds.some(function (o) { return Math.hypot(o.x - x, o.z - z) < 110; })) continue;
+      rwBio(x, z, bio);
+      var r = rg(), camp = bio[1] > 0.5 ? (r < 0.6 ? ['boar', 'boar', 'boar'] : ['wolf', 'wolf']) : bio[0] > 0.5 ? (r < 0.55 ? ['wolf', 'wolf', 'wolf', 'wolf'] : ['deer', 'deer', 'deer']) :
+        r < 0.45 ? ['deer', 'deer', 'deer', 'deer'] : r < 0.75 ? ['boar', 'boar', 'boar'] : ['wolf', 'wolf', 'wolf'];
       RW.herds.push({ k: 'herd', x: x, z: z, r: 55, R: 0, R2: 0, camp: camp, slots: null, meshes: [] });
+    }
+    var n0 = RW.herds.length, wild = 0; tries = 0;
+    while (wild < 45 && tries++ < 6000) {   // roaming infected out in the wild, away from the monuments
+      var wx = (rg() * 2 - 1) * H * 0.82, wz = (rg() * 2 - 1) * H * 0.82, wh = rwBase(wx, wz);
+      if (wh < 1.5 || wh > 60 || rwNearMon(wx, wz, 90) || (RW.safe && Math.hypot(wx - RW.safe.x, wz - RW.safe.z) < RW.safe.r + 120)) continue;
+      if (RW.herds.some(function (o) { return Math.hypot(o.x - wx, o.z - wz) < (o.k === 'wild' ? 170 : 60); })) continue;
+      var q = rg(), wc = q < 0.4 ? ['rusher', 'rusher', 'rusher'] : q < 0.7 ? ['rusher', 'rusher', 'gunner'] : q < 0.88 ? ['bomber', 'rusher', 'rusher'] : ['gunner', 'gunner', 'sniper'];
+      RW.herds.push({ k: 'wild', x: wx, z: wz, r: 45, R: 0, R2: 0, camp: wc, slots: null, meshes: [] }); wild++;
     }
   }
 
@@ -8386,6 +8467,7 @@ Object.assign(EN, {
   function rwSaveState() {
     var s = { v: 1, t: Date.now(), hot: RW.hot | 0, coins: Math.max(0, coins | 0), gr: Math.max(0, grenades | 0) };
     s.mk = RW.marks.map(function (m) { return [Math.round(m[0]), Math.round(m[1])]; });   // your map markers
+    s.wl = wlv.map(function (v) { return v | 0; }); s.wp = wperk.map(function (a) { return a.slice(0, 3); });   // weapon upgrade levels and traits (kept even when you die: you paid coins for them)
     if (RW.dead) {   // what you get back after dying: the coast, a rock and half your coins
       s.inv = []; for (var i = 0; i < RW_SLOTS; i++) s.inv.push(0);
       s.inv[RW_HOT0] = ['rock', 1]; s.hot = 0; s.coins = RW.joinDead ? Math.max(0, coins | 0) : Math.floor(coins * 0.5); s.dead = 1;   // already halved when you came back dead
@@ -8431,6 +8513,11 @@ Object.assign(EN, {
     RW.hot = Math.max(0, Math.min(5, s.hot | 0));
     if (isFinite(s.coins)) coins = Math.max(0, s.coins | 0);
     if (isFinite(s.gr)) grenades = Math.max(0, Math.min(9, s.gr | 0));
+    if (Array.isArray(s.wl)) for (var q = 0; q < wlv.length && q < s.wl.length; q++) {   // weapon upgrades come back too
+      var lv = Math.max(1, Math.min(GMAX, s.wl[q] | 0)), pk = Array.isArray(s.wp) && Array.isArray(s.wp[q]) ? s.wp[q] : [];
+      wlv[q] = lv; wperk[q] = pk.filter(function (id) { return typeof id === 'string' && PERKS.some(function (p) { return p.id === id; }); }).slice(0, Math.floor(lv / 3));
+      try { refreshGunLook(q); } catch (e) {}
+    }
     if (Array.isArray(s.ws)) for (var k = 0; k < ws.length && k < s.ws.length; k++) {
       var w = s.ws[k]; if (!Array.isArray(w)) continue;
       ws[k].ammo = Math.max(0, Math.min(WDEF[k].mag, w[0] | 0)); ws[k].res = Math.max(0, Math.min(WDEF[k].maxRes || 9999, w[1] | 0));
@@ -8553,6 +8640,8 @@ Object.assign(EN, {
     chair: { n: ['椅子', 'Chair'], st: 5, dep: 'ch', d: ['家具。', 'Furniture.'] },
     table: { n: ['桌子', 'Table'], st: 5, dep: 'tb', d: ['家具。', 'Furniture.'] },
     rug: { n: ['地毯', 'Rug'], st: 5, dep: 'rg', d: ['铺在地上的装饰。', 'A rug for your floor.'] },
+    carpet: { n: ['地毯块（红）', 'Carpet Tile (red)'], st: 50, dep: 'ct', d: ['1 米见方的地毯块，一块一块铺。放在地基或楼板上会自动对齐到 1 米格子，挨着铺就连成一整片地毯。', 'A 1 m carpet tile. On a foundation or floor it snaps to a 1 m grid, so tiles laid side by side join into one carpet.'] },
+    carpet2: { n: ['地毯块（蓝）', 'Carpet Tile (blue)'], st: 50, dep: 'cu', d: ['1 米见方的蓝色地毯块，一块一块铺，挨着铺会连成一整片。', 'A blue 1 m carpet tile. Laid side by side they join into one carpet.'] },
     hwall: { n: ['高木墙', 'High External Wooden Wall'], st: 10, dep: 'xw', d: ['直接放在地面上的 5.5 米高墙，一段接一段自动对齐，用来围住整个基地。', 'A 5.5 m wall placed straight on the ground. Pieces snap end to end so you can ring your whole base.'] },
     hswall: { n: ['高石墙', 'High External Stone Wall'], st: 10, dep: 'xs', d: ['和高木墙一样，但是更结实（1500 生命）。', 'Like the wooden one but much tougher (1500 HP).'] },
     hgate: { n: ['高墙大门', 'High External Gate'], st: 5, dep: 'xg', d: ['接在高墙中间的大门，可以开关，也能装密码锁。', 'A gate that fits into a run of high walls. Opens and closes and takes a code lock.'] }
@@ -8560,12 +8649,12 @@ Object.assign(EN, {
   (function () {   // building things go right after the tool cupboard in the crafting list
     var add = [['bench', { wood: 300, stone: 100 }], ['lbox', { wood: 250, frags: 50 }], ['campfire', { wood: 100 }], ['lock', { frags: 100 }],
       ['hwall', { wood: 300 }], ['hswall', { stone: 300 }], ['hgate', { wood: 450 }], ['barri', { wood: 150 }], ['spikes', { wood: 300 }],
-      ['trap', { frags: 80 }], ['mine', { frags: 50, cloth: 5 }], ['lantern', { frags: 20, cloth: 5 }], ['chair', { wood: 60 }], ['table', { wood: 100 }], ['rug', { cloth: 20 }]];
+      ['trap', { frags: 80 }], ['mine', { frags: 50, cloth: 5 }], ['lantern', { frags: 20, cloth: 5 }], ['chair', { wood: 60 }], ['table', { wood: 100 }], ['rug', { cloth: 20 }], ['carpet', { cloth: 3 }], ['carpet2', { cloth: 3 }]];
     var at = RW_CRAFT.length; RW_CRAFT.forEach(function (r, j) { if (r[0] === 'tc') at = j + 1; });
     Array.prototype.splice.apply(RW_CRAFT, [at, 0].concat(add));
   })();
   RW_SELL.push(['lantern', 15]);
-  Object.assign(RWD, { wk: 'bench', cf: 'campfire', lb: 'lbox', bc: 'barri', sk: 'spikes', lm: 'mine', bt: 'trap', ln: 'lantern', ch: 'chair', tb: 'table', rg: 'rug', xw: 'hwall', xs: 'hswall', xg: 'hgate' });
+  Object.assign(RWD, { wk: 'bench', cf: 'campfire', lb: 'lbox', bc: 'barri', sk: 'spikes', lm: 'mine', bt: 'trap', ln: 'lantern', ch: 'chair', tb: 'table', rg: 'rug', ct: 'carpet', cu: 'carpet2', xw: 'hwall', xs: 'hswall', xg: 'hgate' });
   Object.keys(RWD).forEach(function (k) { if (!RWB[k]) RWB[k] = { c: {}, n: RWI[RWD[k]].n }; });
   // new parts on the building plan
   Object.assign(RWB, {
@@ -8609,6 +8698,8 @@ Object.assign(EN, {
       x.fillStyle = '#c8cdd2'; for (var i = 0; i < 6; i++) { x.beginPath(); x.moveTo(16 + i * 6, 40); x.lineTo(19 + i * 6, 33); x.lineTo(22 + i * 6, 40); x.fill(); } x.fillStyle = '#5a5e64'; x.fillRect(26, 34, 12, 6); },
     lantern: function (x) { x.fillStyle = '#3a3e42'; x.fillRect(20, 50, 24, 6); x.fillRect(22, 14, 20, 6); x.fillStyle = '#ffd884'; x.fillRect(23, 20, 18, 30); x.fillStyle = '#ffb43a'; x.fillRect(28, 28, 8, 14);
       x.strokeStyle = '#3a3e42'; x.lineWidth = 2.5; x.beginPath(); x.moveTo(23, 20); x.lineTo(23, 50); x.moveTo(41, 20); x.lineTo(41, 50); x.moveTo(26, 14); x.quadraticCurveTo(32, 2, 38, 14); x.stroke(); },
+    carpet: function (x) { rwCarpetIcon(x, '#a2382c', '#d8b56a', '#2c3a5a'); },
+    carpet2: function (x) { rwCarpetIcon(x, '#35507a', '#c9b27a', '#7a2a24'); },
     chair: function (x) { x.fillStyle = '#8a6239'; x.fillRect(18, 32, 28, 6); x.fillRect(18, 8, 6, 30); x.fillStyle = '#5a3c22'; x.fillRect(18, 38, 5, 18); x.fillRect(41, 38, 5, 18); },
     table: function (x) { x.fillStyle = '#8a6239'; x.fillRect(6, 24, 52, 7); x.fillStyle = '#5a3c22'; x.fillRect(10, 31, 5, 24); x.fillRect(49, 31, 5, 24); },
     rug: function (x) { x.fillStyle = '#8a3a2a'; x.fillRect(8, 16, 48, 34); x.strokeStyle = '#e8c88a'; x.lineWidth = 3; x.strokeRect(13, 21, 38, 24); x.fillStyle = '#2a4a6a'; x.beginPath(); x.moveTo(32, 25); x.lineTo(42, 33); x.lineTo(32, 41); x.lineTo(22, 33); x.fill(); },
@@ -8644,11 +8735,11 @@ Object.assign(EN, {
     }
     return null;
   }
-  function rwRoofGeo() {   // a hipped roof over one 3 x 3 floor slot, with eaves and a ceiling underneath
-    var pos = [], nor = [], uv = [], B = 1.65, H = 1.5, y0 = 0.02;
+  function rwRoofGeo(seed) {   // a hipped roof over one 3 x 3 floor slot, with eaves and a ceiling underneath
+    var pos = [], nor = [], uv = [], B = 1.65, H = 1.5, y0 = 0.02, ou = seed ? rwHash(seed, 3, 11) : 0, ov = seed ? rwHash(seed, 5, 13) : 0;
     function tri(a, b, c, ua, ub, uc) {
       var e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]], n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]], l = Math.hypot(n[0], n[1], n[2]) || 1;
-      [a, b, c].forEach(function (v, i) { pos.push(v[0], v[1], v[2]); nor.push(n[0] / l, n[1] / l, n[2] / l); var u = [ua, ub, uc][i]; uv.push(u[0], u[1]); });
+      [a, b, c].forEach(function (v, i) { pos.push(v[0], v[1], v[2]); nor.push(n[0] / l, n[1] / l, n[2] / l); var u = [ua, ub, uc][i]; uv.push(u[0] / 2 + ou, u[1] / 2 + ov); });   // uvs were in 1.5 m tiles; the textures now cover 3 m
     }
     var C = [[-B, y0, -B], [B, y0, -B], [B, y0, B], [-B, y0, B]], T = [0, H, 0], sl = Math.hypot(B, H) / 1.5;
     for (var i = 0; i < 4; i++) { var a = C[i], b = C[(i + 1) % 4]; tri(b, a, T, [0, 0], [2 * B / 1.5, 0], [B / 1.5, sl]); }
@@ -8694,7 +8785,7 @@ Object.assign(EN, {
   }
 
   /* ---- placeables: sizes and models ---- */
-  var RW_DEPSZ = { wk: [2.0, 0.95, 0.9, 1], cf: [1.1, 0.45, 1.1, 1], lb: [1.6, 0.9, 0.85, 1], bc: [2.4, 1.3, 0.5, 1], sk: [2.4, 1.0, 0.9, 1], lm: [0.5, 0.12, 0.5, 0],
+  var RW_DEPSZ = { ct: [1.0, 0.02, 1.0, 0], cu: [1.0, 0.02, 1.0, 0], wk: [2.0, 0.95, 0.9, 1], cf: [1.1, 0.45, 1.1, 1], lb: [1.6, 0.9, 0.85, 1], bc: [2.4, 1.3, 0.5, 1], sk: [2.4, 1.0, 0.9, 1], lm: [0.5, 0.12, 0.5, 0],
     bt: [0.9, 0.16, 0.6, 0], ln: [0.3, 0.55, 0.3, 0], ch: [0.6, 1.0, 0.6, 1], tb: [1.6, 0.8, 0.9, 1], rg: [2.0, 0.03, 1.4, 0] };
   function rwDepParts2(k, r) {
     if (k === 'xw' || k === 'xs') return rwPartsAlong([[0, 2.25, 0, 3, 6.5, 0.6]], r, 1);
@@ -8710,6 +8801,27 @@ Object.assign(EN, {
     var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
     g.addColorStop(0, 'rgba(255,214,140,1)'); g.addColorStop(0.35, 'rgba(255,170,70,.45)'); g.addColorStop(1, 'rgba(255,140,40,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64);
     return (RWGLOW = new THREE.CanvasTexture(c));
+  }
+  function rwCarpetIcon(x, a, b, c) {   // a stack of square carpet tiles
+    [[14, 30], [22, 22], [30, 14]].forEach(function (o, i) { x.fillStyle = 'rgba(0,0,0,.35)'; x.fillRect(o[0] + 2, o[1] + 2, 24, 24); x.fillStyle = a; x.fillRect(o[0], o[1], 24, 24);
+      x.fillStyle = b; x.beginPath(); x.moveTo(o[0] + 12, o[1] + 3); x.lineTo(o[0] + 21, o[1] + 12); x.lineTo(o[0] + 12, o[1] + 21); x.lineTo(o[0] + 3, o[1] + 12); x.fill(); x.fillStyle = c; x.fillRect(o[0] + 10, o[1] + 10, 4, 4); });
+  }
+  function rwCarpetMat(k) {   // a seamless 1 m carpet pattern: field, lattice of diamonds, rosettes, wool pile
+    var C = rwCarpetMat.c || (rwCarpetMat.c = {}); if (C[k]) return C[k];
+    var N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N; var x = cv.getContext('2d'), rg = seeded(k === 'ct' ? 51 : 77), i;
+    var pal = k === 'ct' ? ['#7a2620', '#a2382c', '#d8b56a', '#2c3a5a', '#e8dcc0'] : ['#26364e', '#35507a', '#c9b27a', '#7a2a24', '#e0d8c4'];
+    x.fillStyle = pal[0]; x.fillRect(0, 0, N, N);
+    function diamond(cx, cy, r, col) { x.fillStyle = col; x.beginPath(); x.moveTo(cx, cy - r); x.lineTo(cx + r, cy); x.lineTo(cx, cy + r); x.lineTo(cx - r, cy); x.closePath(); x.fill(); }
+    [[0, 0], [N, 0], [0, N], [N, N], [N / 2, N / 2]].forEach(function (q) { diamond(q[0], q[1], 70, pal[1]); diamond(q[0], q[1], 52, pal[0]); diamond(q[0], q[1], 34, pal[2]); diamond(q[0], q[1], 20, pal[3]); diamond(q[0], q[1], 7, pal[4]); });
+    [[N / 2, 0], [0, N / 2], [N, N / 2], [N / 2, N]].forEach(function (q) { x.fillStyle = pal[2]; x.beginPath(); x.arc(q[0], q[1], 14, 0, 6.29); x.fill(); x.fillStyle = pal[3]; x.beginPath(); x.arc(q[0], q[1], 8, 0, 6.29); x.fill();
+      for (var a = 0; a < 8; a++) { x.fillStyle = pal[4]; x.beginPath(); x.arc(q[0] + Math.cos(a * 0.785) * 22, q[1] + Math.sin(a * 0.785) * 22, 3, 0, 6.29); x.fill(); } });
+    x.strokeStyle = pal[2]; x.lineWidth = 2; x.globalAlpha = 0.5;
+    for (i = -N; i < N * 2; i += 32) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i + N, N); x.stroke(); x.beginPath(); x.moveTo(i, N); x.lineTo(i + N, 0); x.stroke(); }
+    x.globalAlpha = 1;
+    for (i = 0; i < 9000; i++) { x.fillStyle = 'rgba(' + (rg() < 0.5 ? '0,0,0' : '255,240,220') + ',' + (0.03 + rg() * 0.06) + ')'; x.fillRect(rg() * N, rg() * N, 1, 1 + rg() * 2); }   // wool pile
+    var t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+    C[k] = new THREE.MeshStandardMaterial({ map: t, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    return C[k];
   }
   function rwDepMesh2(p, B, M, inner) {   // models for the new placeables; false = not one of them
     var k = p.k, i;
@@ -8763,6 +8875,11 @@ Object.assign(EN, {
       B(0.55, 0.5, 0.05, M.wood, 0, 0.75, -0.25);
     } else if (k === 'tb') {
       B(1.6, 0.07, 0.9, M.wood, 0, 0.765, 0); [-0.72, 0.72].forEach(function (x) { [-0.36, 0.36].forEach(function (z) { B(0.07, 0.73, 0.07, M.trim, x, 0.365, z); }); });
+    } else if (k === 'ct' || k === 'cu') {   // carpet tile: its pattern follows the world grid, so neighbours join seamlessly
+      var cg = new THREE.PlaneGeometry(1.0, 1.0); cg.rotateX(-Math.PI / 2);
+      var cuv = cg.attributes.uv, cpos = cg.attributes.position;
+      for (i = 0; i < cuv.count; i++) cuv.setXY(i, p.x + cpos.getX(i), -(p.z + cpos.getZ(i)));
+      var cm = new THREE.Mesh(cg, rwCarpetMat(k)); cm.position.y = 0.014; cm.rotation.y = -inner.rotation.y; inner.add(cm);
     } else if (k === 'rg') {
       B(2.0, 0.02, 1.4, M.rug, 0, 0.012, 0); B(1.7, 0.022, 0.06, M.rug2, 0, 0.014, 0.52); B(1.7, 0.022, 0.06, M.rug2, 0, 0.014, -0.52); B(0.06, 0.022, 1.1, M.rug2, 0.82, 0.014, 0); B(0.06, 0.022, 1.1, M.rug2, -0.82, 0.014, 0);
     } else if (k === 'xw') {
@@ -10350,6 +10467,7 @@ Object.assign(EN, {
   [['supermarket', 40, 2], ['lighthouse', 32, 1], ['powerplant', 90, 1], ['trainyard', 85, 1], ['satellite', 55, 1], ['junkyard', 60, 1], ['mining', 42, 2], ['water', 80, 1], ['dome', 45, 1], ['bandit', 55, 1]].forEach(function (s) { RW_SPECS.push(s); });
   Object.assign(RW_NAMES, { supermarket: ['超市', 'Supermarket'], lighthouse: ['灯塔', 'Lighthouse'], powerplant: ['发电厂', 'Power Plant'], trainyard: ['火车站', 'Train Yard'], satellite: ['卫星天线', 'Satellite Dish'],
     junkyard: ['废车场', 'Junkyard'], mining: ['采矿前哨', 'Mining Outpost'], water: ['水处理厂', 'Water Treatment'], dome: ['穹顶', 'The Dome'], bandit: ['强盗营地', 'Bandit Camp'] });
+  Object.assign(RW_CAMPS, { gas: ['rusher', 'rusher', 'gunner'], farm: ['rusher', 'rusher', 'rusher', 'gunner'], village: ['rusher', 'rusher', 'rusher'], quarry: ['tank', 'rusher', 'rusher', 'gunner'], harbor: ['rusher', 'rusher', 'rusher', 'gunner', 'gunner'] });
   Object.assign(RW_CAMPS, { powerplant: ['gunner', 'gunner', 'rusher', 'rusher', 'tank'], trainyard: ['gunner', 'rusher', 'rusher', 'rusher'], satellite: ['rusher', 'gunner', 'sniper'], junkyard: ['rusher', 'rusher', 'rusher'],
     mining: ['rusher', 'rusher'], water: ['rusher', 'rusher', 'gunner', 'bomber'], dome: ['sniper', 'gunner'], supermarket: ['rusher', 'rusher'], lighthouse: ['rusher'], bandit: ['gunner', 'gunner', 'rusher'] });
   Object.assign(RW_MONLOOT, { supermarket: [[0, 4, ''], [-8, 10, '']], lighthouse: [[5, -5, '']], powerplant: [[0, 0, 'elite'], [20, -20, 'mil'], [-25, 15, 'mil']], trainyard: [[0, -16, 'mil'], [30, 14, 'mil'], [-30, -16, '']],
