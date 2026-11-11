@@ -3742,6 +3742,7 @@ Object.assign(EN, {
 
     camera.position.set(P.x, P.y + 1.7 + Math.sin(bob * 1.4) * 0.03 * Math.min(1, ml), P.z);
     camera.rotation.set(P.pitch, P.yaw, 0);
+    if (RW.on) rwCarView();
     var fovT = aiming ? baseFov * WDEF[cur].zoom / scopeOf(cur).mult : baseFov;
     if (Math.abs(camera.fov - fovT) > 0.05) {
       camera.fov += (fovT - camera.fov) * Math.min(1, dt * 14);
@@ -11494,14 +11495,37 @@ Object.assign(EN, {
       if (U.steerW) U.steerW.forEach(function (w) { w.rotation.y = c.st * 0.5; });           // front wheels steer
       if (U.sw) U.sw.rotation.y = -c.st * 2.2;                                                 // and so does the steering wheel
     }
-    if (CAR.mine && !RW.dead) {   // the car moved after the camera was placed this frame: put the camera back in your seat
-      var ox = P.x, oy = P.y, oz = P.z;
-      if (rwCarSeat()) { camera.position.x += P.x - ox; camera.position.y += P.y - oy; camera.position.z += P.z - oz; }
-    }
+    if (CAR.mine && !RW.dead) rwCarSeat();
     if (CAR.mine && RW.dead) { if (CAR.mine.ty === 'h' && CAR.seat === 0) heliPark(CAR.mine); dSend({ t: 'Vx' }); CAR.mine = null; CAR.seat = -1; }
     if (CAR.mine && CAR.seat !== 1 && !holster && !carWeaponOk()) {   // only the front passenger may use anything; the driver and the back seats: pistols only
       holster = true; drawT = 1; aiming = false; rwHotRender(true);
       if (!CAR.warnT || gtime - CAR.warnT > 3) { CAR.warnT = gtime; if (CAR.mine.ty === 'h') banner(zt('驾驶直升机时两只手都要用，不能拿武器。坐副驾驶的人什么都能用', 'Flying takes both hands: the pilot cannot hold a weapon. The passenger can use anything'), 1800); else banner(zt(CAR.seat === 0 ? '开车时只能用手枪（Glock 17、Python .357、沙漠之鹰）' : '后座只能用手枪，副驾驶才能用其他武器', CAR.seat === 0 ? 'While driving you can only use a pistol (Glock 17, Python .357, Desert Eagle)' : 'Back seats: pistols only. The front passenger can use anything'), 1800); sfx('deny'); }
+    }
+  }
+  function rwCarView() {   // after the camera is placed each frame: sit it exactly in your seat, tilted with the vehicle; draw the others in their seats
+    if (CAR.mine && !RW.dead) {
+      var cm = CAR.mine; rwCarSeat();
+      var SS = cm.ty === 'h' ? HELI_SEATS : CAR_SEATS, s = SS[CAR.seat] || SS[0];
+      CAR.ev2 = CAR.ev2 || new THREE.Vector3(); var e = CAR.ev2.set(s[0], s[1] + 1.35, s[2] + 0.25).applyEuler(cm.g.rotation);
+      camera.position.set(cm.x + e.x, cm.y + e.y, cm.z + e.z);   // the eye sits in the tilted seat, no walking bob
+      CAR.qv = CAR.qv || new THREE.Quaternion(); CAR.ql = CAR.ql || new THREE.Quaternion(); CAR.ev = CAR.ev || new THREE.Euler(0, 0, 0, 'YXZ');
+      CAR.ev.set(cm.p || 0, cm.yaw, cm.r || 0, 'YXZ'); CAR.qv.setFromEuler(CAR.ev);
+      CAR.ev.set(P.pitch, P.yaw - cm.yaw, 0, 'YXZ'); CAR.ql.setFromEuler(CAR.ev);
+      camera.quaternion.copy(CAR.qv).multiply(CAR.ql);
+    }
+    rwCarRiders();
+  }
+  function rwCarRiders() {   // other players sitting in a vehicle are drawn in their seats, moving with it
+    CAR.rv = CAR.rv || new THREE.Vector3();
+    for (var k in CAR.list) {
+      var c = CAR.list[k], SS = c.ty === 'h' ? HELI_SEATS : CAR_SEATS;
+      for (var si = 0; si < c.seats.length; si++) {
+        var id = c.seats[si]; if (!id || id === CO.id) continue;
+        var p = CO.peers[id]; if (!p || !p.rem) continue;
+        var s = SS[si] || SS[0], v = CAR.rv.set(s[0], s[1] - 0.45, s[2] + 0.1).applyEuler(c.g.rotation), R = p.rem;
+        R.position.set(c.x + v.x, c.y + v.y, c.z + v.z); R.rotation.set(0, c.yaw + Math.PI, 0); R.visible = p.hp > 0;
+        p.rt.x = R.position.x; p.rt.y = R.position.y; p.rt.z = R.position.z; p.snap = false;
+      }
     }
   }
   function carWeaponOk() {   // pistols and empty hands (a helicopter pilot: empty hands only)
@@ -11834,7 +11858,7 @@ Object.assign(EN, {
     function M(c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.5, metalness: 0.2 }, o || {})); }
     var paint = M(col, { roughness: 0.38, metalness: 0.35 }), dark = M(0x1d1f21, { roughness: 0.7, metalness: 0.1 }), steel = M(0x6a6e72, { metalness: 0.75, roughness: 0.35 }),
       chrome = M(0xb9bdc0, { metalness: 0.9, roughness: 0.25 }), seatM = M(0x2e2924, { roughness: 0.95, metalness: 0 }), stripe = M(col === 0xc8c6bc ? 0x7a1f1f : 0xd8d4c8, { roughness: 0.5 }),
-      glass = M(0xb8d4e4, { transparent: true, opacity: 0.1, metalness: 0.1, roughness: 0.02, depthWrite: false, side: THREE.DoubleSide }),
+      glass = M(0xb8d4e4, { transparent: true, opacity: 0.12, metalness: 0.1, roughness: 0.02, depthWrite: false, side: THREE.FrontSide }),
       blade = M(0x2a2c2e, { roughness: 0.6, metalness: 0.3 }), tip = M(0xe0b020, { roughness: 0.5 }),
       red = new THREE.MeshBasicMaterial({ color: 0xff2a1a }), green = new THREE.MeshBasicMaterial({ color: 0x2aff5a }), white = new THREE.MeshBasicMaterial({ color: 0xfff6e0 });
     function box(w, h, d, m, x, y, z, rx, par) { var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); if (rx) b.rotation.x = rx; (par || g).add(b); return b; }
@@ -11860,8 +11884,6 @@ Object.assign(EN, {
     // the bubble canopy: half a sphere, stretched front to back, with a thin frame
     var cg = new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2), can = new THREE.Mesh(cg, glass);
     can.scale.set(0.7, 1.0, 1.22); can.position.set(0, 1.24, -0.45); g.add(can);
-    var arc = new THREE.Mesh(new THREE.TorusGeometry(1, 0.022, 6, 32, Math.PI), dark); arc.rotation.y = Math.PI / 2;   // the centre rib, front to back
-    var arcG = new THREE.Group(); arcG.add(arc); arcG.scale.set(0.7, 1.0, 1.22); arcG.position.set(0, 1.24, -0.45); g.add(arcG);
     var ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.025, 6, 40), dark); ring.rotation.x = Math.PI / 2; var ringG = new THREE.Group(); ringG.add(ring); ringG.scale.set(0.7, 1, 1.22); ringG.position.set(0, 1.25, -0.45); g.add(ringG);
     var door = new THREE.Mesh(new THREE.TorusGeometry(1, 0.02, 6, 24, Math.PI), dark); var doorG = new THREE.Group(); doorG.add(door); doorG.scale.set(0.71, 1.0, 1); doorG.position.set(0, 1.24, 0.05); g.add(doorG);   // door frames across the bubble
     // engine hump details: intake grille, exhaust, access panel lines
@@ -11960,7 +11982,7 @@ Object.assign(EN, {
     c.st = Math.min(1, c.st + dt / 2.5);   // the engine spools up
     var lift = c.st >= 0.98, g = heliGround(c.x, c.z, c.y), air = c.y > g + 0.25;
     // up and down
-    if (lift) { var tv = up ? 7 : dn ? -5.5 : 0; c.vy += (tv - c.vy) * Math.min(1, dt * 2.4); }
+    if (lift) { var tv = up ? 10 : dn ? -8 : 0; c.vy += (tv - c.vy) * Math.min(1, dt * 2.4); }
     else c.vy -= 9.8 * dt;
     c.y += c.vy * dt;
     var top = Math.min(480, g + 160);
@@ -11971,26 +11993,26 @@ Object.assign(EN, {
     }
     // forward / back: the nose dips, the helicopter speeds up; turning
     var fx = -Math.sin(c.yaw), fz = -Math.cos(c.yaw);
-    if (air) { c.vx += fx * fw * 11 * dt; c.vz += fz * fw * 11 * dt; }
-    var k = air ? 0.5 : 5; c.vx -= c.vx * Math.min(1, k * dt); c.vz -= c.vz * Math.min(1, k * dt);
-    var spd = Math.hypot(c.vx, c.vz); if (spd > 34) { c.vx *= 34 / spd; c.vz *= 34 / spd; }
-    var turn = tr * (air ? 1.25 : (lift ? 0.5 : 0)) * dt; c.yaw += turn; P.yaw += turn;
+    if (air) { c.vx += fx * fw * 20 * dt; c.vz += fz * fw * 20 * dt; }
+    var k = air ? 0.38 : 5; c.vx -= c.vx * Math.min(1, k * dt); c.vz -= c.vz * Math.min(1, k * dt);
+    var spd = Math.hypot(c.vx, c.vz); if (spd > 50) { c.vx *= 50 / spd; c.vz *= 50 / spd; }
+    var turn = tr * (air ? 1.6 : (lift ? 0.6 : 0)) * dt; c.yaw += turn; P.yaw += turn;
     // move, bumping into buildings, trees (when low) and hills
     var q = { x: c.x + c.vx * dt, z: c.z + c.vz * dt };
-    resolveCircle(q, 1.7, c.y + 1.0); resolveCircle(q, 1.7, c.y + 2.2);
-    if (c.y - rwH(q.x, q.z) < 9) rwResolve(q, 1.7);
+    resolveCircle(q, 1.2, c.y + 0.9); resolveCircle(q, 1.2, c.y + 1.9);   // only walls the body really reaches
+    if (c.y - rwH(q.x, q.z) < 3.5) rwResolve(q, 1.2);   // trees and rocks only when skimming over them
     var lim = RW.half * 1.02; q.x = Math.max(-lim, Math.min(lim, q.x)); q.z = Math.max(-lim, Math.min(lim, q.z));
     var ng = heliGround(q.x, q.z, c.y + 1.2);
-    if (ng > c.y + 0.7) { if (spd > 8) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.35; } c.vx *= -0.3; c.vz *= -0.3; }
+    if (ng > c.y + 3) { if (spd > 8) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.35; } c.vx *= -0.3; c.vz *= -0.3; }   // a cliff or a tall wall
     else {
       var moved = Math.hypot(q.x - c.x, q.z - c.z), want = spd * dt;
-      if (want > 0.05 && moved < want * 0.5) { if (spd > 8) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.35; } c.vx *= 0.3; c.vz *= 0.3; }
-      c.x = q.x; c.z = q.z; if (ng > c.y) c.y = ng;
+      if (want > 0.05 && moved < want * 0.3) { if (spd > 10) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.35; } c.vx *= 0.4; c.vz *= 0.4; }
+      c.x = q.x; c.z = q.z; if (ng > c.y) { c.y = ng; c.vy = Math.max(c.vy, 0); }   // rising ground or a low roof lifts you over it
     }
     // looks: nose down when speeding up, bank into turns
     var fwdSp = c.vx * fx + c.vz * fz;
-    c.p += ((air ? -fw * 0.2 - fwdSp * 0.004 : 0) - c.p) * Math.min(1, dt * 3);
-    c.r += ((air ? tr * 0.2 : 0) - c.r) * Math.min(1, dt * 3);
+    c.p += ((air ? -fw * 0.12 - fwdSp * 0.0025 : 0) - c.p) * Math.min(1, dt * 3);
+    c.r += ((air ? tr * 0.16 : 0) - c.r) * Math.min(1, dt * 3);
     c.sp = fwdSp;
     carPlace(c);
     CAR.sendT -= dt;
@@ -12016,7 +12038,7 @@ Object.assign(EN, {
     var U = c.g.userData, rs = Math.max(0, c.st);
     if (U.rotor) U.rotor.rotation.y += rs * rs * 38 * dt;
     if (U.trotor) U.trotor.rotation.x += rs * rs * 60 * dt;
-    if (U.blur) { U.blur.material.opacity = Math.max(0, rs - 0.55) * 0.55; U.blur.visible = rs > 0.55; }
+    if (U.blur) { U.blur.material.opacity = Math.max(0, rs - 0.55) * 0.55; U.blur.visible = rs > 0.55 && CAR.mine !== c; }   // no grey ceiling for the people inside
     if (U.strobe) U.strobe.visible = c.seats[0] ? (gtime % 1.2) < 0.12 : false;
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
