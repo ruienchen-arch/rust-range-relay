@@ -71,7 +71,7 @@ function worldJoin(c, m) {
   c.owner = user ? 'u:' + user : gk ? 'k:' + crypto.createHash('sha256').update(gk).digest('hex').slice(0, 16) : 'c:' + c.id;   // who owns what this player builds
   if (m.bk) bkRestore(c, m.bk);   // the server lost its disk (restart): the player's own browser brings their base and backpack back
   if (typeof m.wbk === 'string') wbRestore(c, m.wbk);   // ... and the copy of the whole island brings everybody else's back
-  c.name = user ? db.users[user].name : guestName(gk || ('id' + c.id + Date.now()));   // players who are not logged in get a random name (the same one every time in this browser)
+  c.name = user ? db.users[user].name : (gnames[c.owner] || guestName(gk || ('id' + c.id + Date.now())));   // players who are not logged in get a random name (the same one every time in this browser), or the one they picked
   statOf(c); saveStats();   // on the leaderboard from the first time you come, even with 0 kills
   c.last = Date.now();
   world.clients.set(c.id, c);
@@ -79,6 +79,7 @@ function worldJoin(c, m) {
   for (const [id, n] of world.nodes) dmg.push([id, n.hp]);
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub), ev: eventsFor() }));
+  setTimeout(() => { if (!c.closed) raidsOnJoin(c); }, 3000);   // after the island has loaded on their side
   setTimeout(() => bkSend(c, true), 3000);
   setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
@@ -279,6 +280,52 @@ let stats = {}, statSeed = '', statT = null;
 try { const w = JSON.parse(fs.readFileSync(STAT_FILE, 'utf8')); statSeed = String(w.seed || ''); stats = w.s && typeof w.s === 'object' ? w.s : {}; } catch (e) {}
 function saveStats() { if (statT) return; statT = setTimeout(() => { statT = null; try { fs.writeFileSync(STAT_FILE, JSON.stringify({ seed: statSeed, s: stats })); } catch (e) {} }, 3000); }
 function checkStatSeed() { const s = worldSeed(); if (statSeed !== s) { stats = {}; statSeed = s; saveStats(); } }
+// ---- names you choose without an account, and raid alerts ----
+const NAME_FILE = path.join(DATA_DIR, 'names.json'), RAID_FILE = path.join(DATA_DIR, 'raids.json');
+let gnames = {}, raids = {}, nameT = null, raidT = null;
+try { gnames = JSON.parse(fs.readFileSync(NAME_FILE, 'utf8')).n || {}; } catch (e) {}
+try { raids = JSON.parse(fs.readFileSync(RAID_FILE, 'utf8')).r || {}; } catch (e) {}
+function saveNames() { if (nameT) return; nameT = setTimeout(() => { nameT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(NAME_FILE, JSON.stringify({ n: gnames })); } catch (e) {} }, 1500); }
+function saveRaids() { if (raidT) return; raidT = setTimeout(() => { raidT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(RAID_FILE, JSON.stringify({ r: raids })); } catch (e) {} }, 2000); }
+function worldRename(c, m) {
+  const no = (why) => c.send(JSON.stringify({ t: 'RNM', ok: 0, why }));
+  if (!c.owner || c.owner[0] !== 'k') return no(c.owner && c.owner[0] === 'u' ? 'acct' : 'nokey');
+  const now = Date.now(); if (now - (c.nmT || 0) < 8000) return no('slow');
+  const n = cleanName(m.n); if (Array.from(n).length < 2) return no('short');
+  const low = n.toLowerCase();
+  for (const u of Object.values(db.users || {})) if (u && String(u.name || '').toLowerCase() === low) return no('taken');   // nobody can pose as a registered player
+  for (const o of world.clients.values()) if (o !== c && String(o.name || '').toLowerCase() === low) return no('taken');
+  for (const k in gnames) if (k !== c.owner && String(gnames[k]).toLowerCase() === low) return no('taken');
+  c.nmT = now; c.name = n; gnames[c.owner] = n; saveNames(); statOf(c); saveStats();
+  worldAll(JSON.stringify({ t: 'RNM', ok: 1, id: c.id, name: n }));
+}
+const RAID_LIVE_MS = 15000;
+function raidNote(c, a, gone) {   // somebody else's explosive hit a part: tell its people now, or when they next come
+  if (!c.owner || a[7] === c.owner) return;
+  const who = new Set([a[7]]);
+  for (const b of builds.values()) if (b[1] === 'tc' && Math.hypot(b[2] - a[2], b[4] - a[4]) < TC_RANGE) b[10].a.forEach((o) => who.add(o));
+  if (who.has(c.owner)) return;   // a teammate on the same cupboard is not a raid
+  const now = Date.now();
+  for (const o of who) {
+    if (!o || o[0] === 'c') continue;
+    const L = raids[o] || (raids[o] = []);
+    let e = L.find((q) => q.bo === c.owner && now - q.t < 10 * 60000 && Math.hypot(q.x - a[2], q.z - a[4]) < 60);
+    if (!e) { e = { by: c.name || '?', bo: c.owner, x: Math.round(a[2]), z: Math.round(a[4]), h: 0, d: 0, t0: now, t: now, seen: 0 }; L.push(e); if (L.length > 20) L.splice(0, L.length - 20); }
+    e.by = c.name || e.by; e.t = now; e.h++; if (gone) e.d++;
+    let on = false;
+    for (const p of world.clients.values()) if (p.owner === o) { on = true; if (now - (p.rdT || 0) > RAID_LIVE_MS || gone && now - (p.rdT || 0) > 4000) { p.rdT = now; p.send(JSON.stringify({ t: 'RRA', by: e.by, x: e.x, z: e.z, d: e.d, h: e.h })); } }
+    e.seen = on ? 1 : 0;   // anything that happens while they are away is shown when they come back
+  }
+  saveRaids();
+}
+function raidsOnJoin(c) {   // what happened to your base while you were away
+  const L = raids[c.owner]; if (!L || !L.length) return;
+  const un = L.filter((q) => !q.seen);
+  if (un.length) c.send(JSON.stringify({ t: 'RRL', a: un.map((q) => ({ by: q.by, x: q.x, z: q.z, h: q.h, d: q.d, t0: q.t0, t: q.t })), now: Date.now() }));
+  un.forEach((q) => { q.seen = 1; });
+  if (L.length > 20) L.splice(0, L.length - 20);
+  saveRaids();
+}
 function statOf(c) {
   const o = c.owner; if (!o || o[0] === 'c') return null;
   const s = stats[o] || (stats[o] = { n: '', pk: 0, nk: 0, ak: 0, d: 0, t: 0 });
@@ -625,6 +672,7 @@ function worldDamage(c, m) {   // explosions: the thrower reports which parts it
     const a = builds.get(q[0] | 0), d = Math.min(1200, Math.max(0, +q[1] || 0)); if (!a || !d) return;
     if (a[7] !== c.owner && shielded(a)) { safe++; return; }
     a[9] -= d;
+    raidNote(c, a, a[9] <= 0);
     if (a[9] <= 0) dropPart(a, c);
     else { saveBuilds(); worldAll(JSON.stringify({ t: 'Rp', id: a[0], hp: Math.round(a[9]) })); }
   });
@@ -887,6 +935,7 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Ro') { worldDoor(c, m); return; }
   if (c.world && m.t === 'Ru') { worldUpgrade(c, m); return; }
   if (c.world && m.t === 'Rq') { worldRepair(c, m); return; }
+  if (c.world && m.t === 'Rm' && /^\/(name|改名)\s+/i.test(String(m.m || ''))) { worldRename(c, { n: String(m.m).replace(/^\/(name|改名)\s+/i, '') }); return; }   // /name NewName in the chat
   if (c.world && m.t === 'Rm') { worldChat(c, m); return; }
   if (c.world && m.t === 'Re') { worldDeath(c, m); return; }
   if (c.world && m.t === 'Rh') { worldDamage(c, m); return; }
@@ -897,6 +946,7 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Rs') { worldSave(c, m); return; }
   if (c.world && m.t === 'Ve') { worldCarEnter(c, m); return; }
   if (c.world && m.t === 'Rkc') { worldStatKill(c, m); return; }
+  if (c.world && m.t === 'Rnm') { worldRename(c, m); return; }
   if (c.world && m.t === 'Rvo') { worldVaultOpen(c, m); return; }
   if (c.world && m.t === 'Rhk') { worldHack(c, m); return; }
   if (c.world && m.t === 'Rad') { worldAirPos(c, m); return; }
