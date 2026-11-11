@@ -155,15 +155,15 @@ saveDb();   // writes the secret on first start
 // Same disk caveat as accounts.json.
 const BUILD_FILE = path.join(DATA_DIR, 'world.json');
 const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr', 'bx', 'fu', 'tc', 'sb',
-  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu']);
+  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg']);
 const DOORS = new Set(['dr', 'sd', 'd2', 'gd', 'xg']);                       // open and close, take a code lock
 const HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // inserts and the wall they sit in
 const CONT = { bx: 18, lb: 30, fu: 4, cf: 4 };                               // containers and their slots
-const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu']);
+const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg']);
 const HP = { dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
@@ -174,7 +174,7 @@ function fixRec(a) {   // fill in fields that older saves do not have
   if (CONT[a[1]] && !(a[10] && Array.isArray(a[10].s))) a[10] = { s: new Array(CONT[a[1]]).fill(null), t: 0 };
   return a;
 }
-const pub = (a) => [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[1] === 'tc' ? a[10] : DOORS.has(a[1]) && a[10] && a[10].c ? { l: 1, a: a[10].a } : 0];   // container contents and lock codes stay on the server
+const pub = (a) => [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[1] === 'tc' || a[1] === 'sg' ? a[10] : DOORS.has(a[1]) && a[10] && a[10].c ? { l: 1, a: a[10].a } : 0];   // container contents and lock codes stay on the server
 try {
   const w = JSON.parse(fs.readFileSync(BUILD_FILE, 'utf8'));
   buildSeed = String(w.seed || ''); buildSeq = +w.seq || 0;
@@ -436,6 +436,7 @@ function restoreParts(me, list, map) {   // put a player's backed-up parts back 
       if (k === 'tc' && e && Array.isArray(e.a)) a[10] = { a: e.a.filter((o) => typeof o === 'string').slice(0, 64).map(map) };
       else if (DOORS.has(k) && e && /^\d{4}$/.test(String(e.c || ''))) a[10] = { c: String(e.c), a: (Array.isArray(e.a) ? e.a : []).filter((o) => typeof o === 'string').slice(0, 64).map(map) };
       else if (CONT[k] && e && Array.isArray(e.s)) a[10] = { s: Array.from({ length: CONT[k] }, (_, i) => cleanSlot(e.s[i])), t: 0 };
+      else if (k === 'sg' && e && typeof e === 'object') a[10] = signClean(e);
       builds.set(a[0], fixRec(a)); n++;
     }
     if (n) { saveBuilds(); console.log('restored ' + n + ' parts for ' + me + ' from a backup'); for (const a of builds.values()) if (a[7] === me) worldAll(JSON.stringify({ t: 'Rb', p: pub(a) })); }
@@ -677,6 +678,22 @@ function worldDamage(c, m) {   // explosions: the thrower reports which parts it
     else { saveBuilds(); worldAll(JSON.stringify({ t: 'Rp', id: a[0], hp: Math.round(a[9]) })); }
   });
   if (safe) c.send(JSON.stringify({ t: 'ROP', n: safe }));
+}
+// ---- signs: text and a photo that everybody sees ----
+const SIGN_TXT = 300, SIGN_IMG = 90000;
+function signClean(e) {
+  const t = Array.from(String(e.t == null ? '' : e.t).replace(/\r/g, '').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '')).slice(0, SIGN_TXT).join('');
+  let i = typeof e.i === 'string' ? e.i : '';
+  if (i && (i.length > SIGN_IMG || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(i))) i = '';
+  return { t, i, v: (e.v | 0) + 1 };
+}
+function worldSign(c, m) {
+  const a = builds.get(m.id | 0); if (!a || a[1] !== 'sg') return;
+  if (a[7] !== c.owner && !coveredBy(c.owner, a[2], a[4])) { c.send(JSON.stringify({ t: 'RSG', id: a[0], no: 1 })); return; }   // only the builder and people on its tool cupboard
+  const now = Date.now(); if (now - (c.sgT || 0) < 1500) { c.send(JSON.stringify({ t: 'RSG', id: a[0], slow: 1 })); return; } c.sgT = now;
+  a[10] = signClean({ t: m.t2, i: m.i, v: a[10] && a[10].v });
+  saveBuilds();
+  worldAll(JSON.stringify({ t: 'RSG', id: a[0], s: a[10] }));
 }
 function worldAuth(c, m) {   // tool cupboard: whoever can reach it can add or remove themselves
   const a = builds.get(m.id | 0); if (!a || a[1] !== 'tc') return;
@@ -923,6 +940,7 @@ function onMessage(c, text) {
     }
     return;
   }
+  if (c.world && text.length <= SIGN_IMG + 2000 && text.startsWith('{"t":"Rsg"')) { let q; try { q = JSON.parse(text); } catch (e) { return; } if (q && !c.wiped) worldSign(c, q); return; }   // a sign can carry a photo: bigger than other messages
   if (text.length > MAX_MSG) return;   // oversize: drop
   let m; try { m = JSON.parse(text); } catch (e) { return; }
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
