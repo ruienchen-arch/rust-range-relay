@@ -715,14 +715,15 @@ function worldRemove(c, m) {
   dropPart(a, null);
 }
 function doorOk(c, a) {   // a code lock decides who opens a locked door; otherwise the builder or the tool cupboard
+  if (sameTeam(a[7], c.owner)) return true;   // the builder and their team always
   if (a[10] && a[10].c) return a[10].a.indexOf(c.owner) >= 0;
-  return a[7] === c.owner || coveredBy(c.owner, a[2], a[4]);
+  return coveredBy(c.owner, a[2], a[4]);
 }
 function worldDoor(c, m) {   // doors open and close, lanterns switch, sprung bear traps get re-armed
   const a = builds.get(m.id | 0); if (!a) return;
   if (DOORS.has(a[1])) { if (!doorOk(c, a)) return; }
-  else if (a[1] === 'ln') { if (a[7] !== c.owner && !coveredBy(c.owner, a[2], a[4])) return; }
-  else if (a[1] === 'bt') { if (!a[8] || (a[7] !== c.owner && !coveredBy(c.owner, a[2], a[4]))) return; }
+  else if (a[1] === 'ln') { if (!sameTeam(a[7], c.owner) && !coveredBy(c.owner, a[2], a[4])) return; }
+  else if (a[1] === 'bt') { if (!a[8] || (!sameTeam(a[7], c.owner) && !coveredBy(c.owner, a[2], a[4]))) return; }
   else return;
   a[8] = a[8] ? 0 : 1; saveBuilds();
   worldAll(JSON.stringify({ t: 'Ro', id: a[0], o: a[8] }));
@@ -756,7 +757,7 @@ function worldUpgrade(c, m) {
   worldAll(JSON.stringify({ t: 'Ru', id: a[0], g }));
 }
 function worldRepair(c, m) {
-  const a = builds.get(m.id | 0); if (!a || (a[7] !== c.owner && !coveredBy(c.owner, a[2], a[4]))) return;
+  const a = builds.get(m.id | 0); if (!a || (!sameTeam(a[7], c.owner) && !coveredBy(c.owner, a[2], a[4]))) return;
   a[9] = Math.min(maxHp(a[1], a[6]), a[9] + 60); saveBuilds();
   worldAll(JSON.stringify({ t: 'Rp', id: a[0], hp: a[9] }));
 }
@@ -801,7 +802,7 @@ function signClean(e) {
 }
 function worldSign(c, m) {
   const a = builds.get(m.id | 0); if (!a || a[1] !== 'sg') return;
-  if (a[7] !== c.owner && !coveredBy(c.owner, a[2], a[4])) { c.send(JSON.stringify({ t: 'RSG', id: a[0], no: 1 })); return; }   // only the builder and people on its tool cupboard
+  if (!sameTeam(a[7], c.owner) && !coveredBy(c.owner, a[2], a[4])) { c.send(JSON.stringify({ t: 'RSG', id: a[0], no: 1 })); return; }   // only the builder and people on its tool cupboard
   const now = Date.now(); if (now - (c.sgT || 0) < 1500) { c.send(JSON.stringify({ t: 'RSG', id: a[0], slow: 1 })); return; } c.sgT = now;
   a[10] = signClean({ t: m.t2, i: m.i, v: a[10] && a[10].v });
   saveBuilds();
