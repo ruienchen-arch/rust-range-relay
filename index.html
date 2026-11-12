@@ -5498,7 +5498,7 @@ Object.assign(EN, {
     var nx = pos.x + ux * sp * mv * dt, nz = pos.z + uz * sp * mv * dt;
     if (!rwDeep(nx, nz)) { pos.x = nx; pos.z = nz; }
     for (var j = 0; j < 2; j++) { rwResolve(pos, e.r); resolveCircle(pos, e.r, pos.y + 0.65); }
-    pos.y = rwH(pos.x, pos.z);
+    pos.y = rwNpcFloor(e, pos);
     return false;
   }
 
@@ -6509,7 +6509,7 @@ Object.assign(EN, {
     return true;
   }
   function rwUseSlot(i) {
-    if (RW.inv[i] && (RW.inv[i].id === 'car' || RW.inv[i].id === 'heli')) return rwCarDeploy(i);
+    if (RW.inv[i] && (RW.inv[i].id === 'car' || RW.inv[i].id === 'heli' || RW.inv[i].id === 'rowboat' || RW.inv[i].id === 'rhib')) return rwCarDeploy(i);
     var s0 = RW.inv[i]; if (s0 && RW_RES_TOOL[s0.id]) return rwGoBuild(s0.id);
     var s = RW.inv[i]; if (!s || !RWI[s.id] || !RWI[s.id].use) return false;
     var id = s.id;
@@ -6888,8 +6888,9 @@ Object.assign(EN, {
     if (RW.on) rwTargets(targets);
     if (!targets.length) return false;
     var dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-    ray.set(camera.position.clone(), dir); ray.far = 2.6;
-    var hits = ray.intersectObjects(targets, false), wt = rayWall(camera.position.x, camera.position.y, camera.position.z, dir.x, dir.y, dir.z, 2.6);
+    var reach = (VT[hk] && VT[hk].reach) || 2.6;   // a spear reaches further
+    ray.set(camera.position.clone(), dir); ray.far = reach;
+    var hits = ray.intersectObjects(targets, false), wt = rayWall(camera.position.x, camera.position.y, camera.position.z, dir.x, dir.y, dir.z, reach);
     for (var h = 0; h < hits.length; h++) {
       var hit = hits[h], ud = hit.object.userData;
       if (hit.distance > wt) break;
@@ -7828,7 +7829,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint();
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -8201,7 +8202,7 @@ Object.assign(EN, {
     var nx = pos.x + ux * sp * mv * dt, nz = pos.z + uz * sp * mv * dt;
     if (!rwDeep(nx, nz)) { pos.x = nx; pos.z = nz; } else e.wt = 0;
     for (var j = 0; j < 2; j++) { rwResolve(pos, e.r); resolveCircle(pos, e.r, pos.y + 0.65); }
-    pos.y = rwH(pos.x, pos.z);
+    pos.y = rwNpcFloor(e, pos);
     return false;
   }
   function rwAnimalLoot(e) {
@@ -9713,7 +9714,9 @@ Object.assign(EN, {
         [zt('地形', 'Terrain'), zt('北边冷（苔原和雪山），中间温带（草地和森林），南边是沙漠（沙丘和仙人掌）。到处都是山丘，山脉里金属矿更多。在山坡上也能放地基，地基会自动加高支脚。', 'The north is cold (tundra and snowy mountains), the middle temperate (grass and forest), the south desert (dunes and cacti). Hills everywhere; mountains have more ore. Foundations work on hillsides, standing on taller footings.')],
         [zt('天气', 'Weather'), zt('晴、多云、阴天、大雾、下雨、雷雨每几分钟变一次，所有人看到的一样。天气只是好看，不影响玩法。小地图下面会写现在的天气和地形。', 'Clear, partly cloudy, overcast, fog, rain and thunderstorms change every few minutes, the same for everyone. Weather only changes how things look. It shows under the minimap with the biome.')],
         [zt('汽车', 'Cars'), zt('很多建筑群旁边停着车（加油站、小镇、超市、火车站等），走过去按 E 上车，先坐驾驶座，最多 4 人。W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。也可以在工作台做一辆（金属碎片 500、木材 300、布 40），拿在手上左键放下，每人最多 3 辆。车停在哪里服务器都会记住。', 'Cars stand at many monuments (gas station, town, supermarket, train yard…). Walk up and press E: the driver seat first, up to 4 people. W/S drive and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Build one at a workbench (500 fragments, 300 wood, 40 cloth), hold it and left-click to park it; up to 3 per player. The server remembers where every car is parked.')],
-        [zt('子弹和枪', 'Ammo and guns'), zt('开局没有枪。子弹要在工作台自己做：手枪子弹一次 8 发、步枪子弹一次 8 发、霰弹一次 4 发，背包里有多少备弹就是多少，换弹会扣掉。做枪和炸药要用枪械零件，零件从军用箱、精英箱、上锁箱子、空投里拿，或者把枪放进回收机拆。', 'Nobody starts with a gun. Bullets are crafted at a workbench (8 pistol, 8 rifle or 4 shells a time); your spare ammo is what you carry and reloading uses it. Guns and explosives need gun parts from military, elite and locked crates, airdrops, or recycled guns.')],
+        [zt('弓、弩和近战', 'Bows and melee'), zt('猎弓（木头 200、布 50）和箭（木头 25、石头 10，一次 4 支）不用工作台就能做；十字弩上弦慢但伤害高，要工作台。石矛够得远（3.6 米），砍刀挥得快。', 'The bow (200 wood, 50 cloth) and arrows (25 wood + 10 stone for 4) need no workbench; the crossbow is slow to span but hits hard (workbench). The stone spear reaches 3.6 m, the machete swings fast.')],
+        [zt('船和钻井平台', 'Boats and the oil rig'), zt('港口、渔村、灯塔外面的水上停着划艇和快艇，也可以在工作台造。游过去按 E 上船，W/S 油门，A/D 转向，水太浅会搁浅。海上有一座钻井平台：从水面的小平台爬楼梯上去，下层有军用箱，上层有精英箱和要破解的上锁箱子，有武装守卫。', 'Rowboats and RHIBs are moored off harbors, fishing villages and lighthouses, or build one at a workbench. Swim up and press E; W/S throttle, A/D steer; shallow water grounds you. Out at sea stands an oil rig: climb the stairs from the landing at the water; military crates below, elite crates and a locked crate above, and armed guards.')],
+        [zt('子弹和枪', 'Ammo and guns'), zt('开局没有枪。子弹要在工作台自己做：手枪子弹一次 8 发、步枪子弹一次 8 发、霰弹一次 4 发，背包里有多少备弹就是多少，换弹会扣掉。枪和炸药都很贵，要大量金属碎片；箱子里也很少出枪。', 'Nobody starts with a gun. Bullets are crafted at a workbench (8 pistol, 8 rifle or 4 shells a time); your spare ammo is what you carry and reloading uses it. Guns and explosives cost a lot of metal fragments, and crates rarely hold guns.')],
         [zt('自动炮塔和陷阱', 'Turrets and traps'), zt('自动炮塔：30 米内看得见的陌生人都会被它打，你下线了也照样开火；领地柜上授权的人不会被打。霰弹陷阱：朝着放置时你站的方向，6 米内有陌生人就轰一枪。定向地雷：陌生人走到它前面 4 米内就爆炸，一次性。', 'Auto turret: fires at any stranger it can see within 30 m, even while you are offline; people on the tool cupboard are safe. Shotgun trap: blasts strangers within 6 m in front (it faces where you stood). Claymore: explodes when a stranger walks within 4 m in front; single use.')],
         [zt('直升机', 'Helicopter'), zt('只能在工作台造，很贵：金属碎片 2500、金属 600、布 150、木头 400，外加一张红色门卡。双座：飞行员 + 1 名乘客。上去后等旋翼转起来，空格上升，Shift 下降，W/S 前进后退，A/D 转向，E 下来（在空中下来会掉下去）。飞行员不能拿武器，副驾驶什么都能用。没人开的直升机会落回地面。', 'Workbench only, and expensive: 2500 metal fragments, 600 metal, 150 cloth, 400 wood and a red keycard. Two seats: pilot + 1 passenger. Get in, wait for the rotor to spin up, Space climbs, Shift descends, W/S forward/back, A/D turn, E gets out (in the air you fall). The pilot cannot hold a weapon; the passenger can use anything. A helicopter nobody flies comes back down.')],
         [zt('游泳', 'Swimming'), zt('深水里会浮起来游泳，比在陆地上慢。往下看再按前进就潜下去，按空格往上浮。水下有 30 秒氧气，用完会溺水掉血。', 'In deep water you float and swim, slower than on land. Look down and press forward to dive, Space to come up. You have 30 seconds of breath under water, then you start drowning.')]
@@ -10449,7 +10452,7 @@ Object.assign(EN, {
     RW.mons.forEach(function (m) {
       (RW_MONLOOT[m.k] || []).forEach(function (c) {
         var px = m.x + c[0] * (m.fx || 1), pz = m.z + c[1] * (m.fz || 1);
-        for (var t = 0; t < 16 && rwMonBlocked(px, pz); t++) { var ta = t * 2.4, td = 2 + t * 0.8; px = m.x + c[0] * (m.fx || 1) + Math.cos(ta) * td; pz = m.z + c[1] * (m.fz || 1) + Math.sin(ta) * td; }   // never inside a prop
+        for (var t = 0; t < 16 && !c[4] && rwMonBlocked(px, pz); t++) { var ta = t * 2.4, td = 2 + t * 0.8; px = m.x + c[0] * (m.fx || 1) + Math.cos(ta) * td; pz = m.z + c[1] * (m.fz || 1) + Math.sin(ta) * td; }   // never inside a prop
         if (Math.floor(px / S) !== cx || Math.floor(pz / S) !== cz) { k++; return; }
         out.push({ id: cx + '_' + cz + '_' + (k++), kind: 'crate', tier: c[2], x: px, z: pz, y: c[3] || 0, r: 0.8, max: 1, sc: 1, v: 0.5 });
       });
@@ -10632,6 +10635,7 @@ Object.assign(EN, {
     var cx = m.x, cz = m.z, k = m.k;
     var hh = rwHash(Math.round(m.x), Math.round(m.z), RW.s); m.fx = hh < 0.5 ? 1 : -1; m.fz = (hh * 7.31) % 1 < 0.5 ? 1 : -1;   // each copy is mirrored its own way
     var fx = m.fx, fz = m.fz, sr = fz < 0 ? Math.PI : 0;
+    if (k === 'oilrig') { rwBuildOilRig(m); return; }
     function X(d) { return cx + fx * d; } function Z(d) { return cz + fz * d; }
     function B(kind, dx, dz, w, d, door) { put(kind, X(dx), Z(dz), w, d, door || faceCenter(fx * dx, fz * dz)); }
     function C(dx, dz, along, col, stack) { container(X(dx), Z(dz), along, col, stack); }
@@ -10835,13 +10839,13 @@ Object.assign(EN, {
   function rwMonExtrasReset() { RW.recy = []; RW.quarry = []; RW.spin = []; RW.vaults = []; }
 
   /* ---- loot: crates by tier, barrels ---- */
-  function rwLoot(n) {   // update 56: guns, explosives and bullets are much rarer; gun parts come from the better crates
+  function rwLoot(n) {   // update 56: guns, explosives and bullets are much rarer; 
     var near = rwMonNear(n.x, n.z), tier = n.tier || '', rich = !!near, r = Math.random(), items = [], c;
     function rnd(a, b) { return Math.round(a + Math.random() * (b - a)); }
     function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
     var HI = [1, 5, 6, 9, 10, 14, 15, 7].filter(function (i) { return WDEF[i]; }), MID = [2, 3, 4, 8, 11, 12, 13].filter(function (i) { return WDEF[i]; });
     if (tier === 'locked') {   // a cracked locked crate: the best loot on the island
-      items.push({ id: 'frags', n: rnd(250, 450) }, { id: 'parts', n: rnd(3, 5) }, { id: 'arif', n: rnd(16, 32) }, { id: 'apis', n: rnd(16, 32) }, { id: 'medkit', n: rnd(2, 3) }, { id: 'armor', n: 2 });
+      items.push({ id: 'frags', n: rnd(500, 800) }, { id: 'arif', n: rnd(16, 32) }, { id: 'apis', n: rnd(16, 32) }, { id: 'medkit', n: rnd(2, 3) }, { id: 'armor', n: 2 });
       if (Math.random() < 0.7) items.push({ id: 'g' + pick(HI), n: 1 });
       if (Math.random() < 0.3) items.push({ id: 'arkt', n: rnd(1, 2) });
       if (Math.random() < 0.15) items.push({ id: 'c4', n: 1 });
@@ -10849,7 +10853,7 @@ Object.assign(EN, {
       c = rnd(300, 500);
     } else if (tier === 'elite') {
       if (Math.random() < 0.25) items.push({ id: 'kcb', n: 1 }); else if (Math.random() < 0.15) items.push({ id: 'kcr', n: 1 });
-      items.push({ id: 'frags', n: rnd(120, 250) }, { id: 'parts', n: rnd(1, 3) });
+      items.push({ id: 'frags', n: rnd(220, 400) });
       if (Math.random() < 0.2) items.push({ id: 'g' + pick(HI), n: 1 });
       if (Math.random() < 0.6) items.push({ id: 'arif', n: rnd(8, 20) });
       if (Math.random() < 0.5) items.push({ id: 'armor', n: rnd(1, 2) });
@@ -10860,7 +10864,6 @@ Object.assign(EN, {
       if (Math.random() < 0.2) items.push({ id: 'kcg', n: 1 }); else if (Math.random() < 0.1) items.push({ id: 'kcb', n: 1 });
       if (n.vault !== undefined && Math.random() < 0.5) items.push({ id: RW.vaults[n.vault] && RW.vaults[n.vault].col === 'g' ? 'kcb' : 'kcr', n: 1 });   // each card room hands out the next card
       items.push({ id: 'frags', n: rnd(40, 100) });
-      if (Math.random() < 0.4) items.push({ id: 'parts', n: 1 });
       if (Math.random() < 0.06) items.push({ id: 'g' + pick(MID), n: 1 });
       if (Math.random() < 0.5) items.push({ id: Math.random() < 0.6 ? 'apis' : 'arif', n: rnd(6, 14) });
       if (Math.random() < 0.25) items.push({ id: 'armor', n: 1 });
@@ -10890,7 +10893,6 @@ Object.assign(EN, {
     if (Math.random() < 0.5) items.push({ id: 'cloth', n: rnd(2, 6) });
     if (Math.random() < 0.1) items.push({ id: 'apis', n: rnd(2, 5) });
     if (Math.random() < 0.08) items.push({ id: 'medkit', n: 1 });
-    if (Math.random() < 0.03) items.push({ id: 'parts', n: 1 });
     if (Math.random() < 0.005) items.push({ id: 'g0', n: 1 });
     if (Math.random() < 0.03) items.push({ id: 'kcg', n: 1 });
     var c = rnd(5, 15); coins += c;
@@ -11392,11 +11394,12 @@ Object.assign(EN, {
   function carAdd(d) {   // d: { id, x, y, z, yaw, col, seats }
     var c = CAR.list[d.id];
     if (!c) {
-      var hl = d.ty === 'h';
-      c = CAR.list[d.id] = { id: d.id, ty: hl ? 'h' : '', x: +d.x, y: +d.y, z: +d.z, yaw: +d.yaw || 0, p: 0, r: 0, sp: 0, vy: 0, vx: 0, vz: 0, st: 0, stT: 0, col: d.col || CAR_COLS[0], seats: hl ? [0, 0] : [0, 0, 0, 0], tgt: null };
-      c.g = hl ? heliModel(c.col) : carModel(c.col); RW.group.add(c.g);
+      var ty = d.ty === 'h' || d.ty === 'b' || d.ty === 'r' ? d.ty : '';
+      c = CAR.list[d.id] = { id: d.id, ty: ty, x: +d.x, y: +d.y, z: +d.z, yaw: +d.yaw || 0, p: 0, r: 0, sp: 0, vy: 0, vx: 0, vz: 0, st: 0, stT: 0, col: d.col || CAR_COLS[0], seats: [], tgt: null };
+      c.seats = carSeatsOf(c).map(function () { return 0; });
+      c.g = ty === 'h' ? heliModel(c.col) : (ty === 'b' || ty === 'r') ? boatModel(ty, c.col) : carModel(c.col); RW.group.add(c.g);
     }
-    if (d.seats) c.seats = d.seats.slice(0, c.ty === 'h' ? 2 : 4);
+    if (d.seats) c.seats = d.seats.slice(0, carSeatsOf(c).length);
     if (CAR.mine !== c || d.force) { c.x = +d.x; c.y = +d.y; c.z = +d.z; c.yaw = +d.yaw || 0; c.tgt = null; }
     carPlace(c);
     return c;
@@ -11413,16 +11416,17 @@ Object.assign(EN, {
         carAdd({ id: id, x: x, y: groundAt(x, z, 3), z: z, yaw: h * 6.283, col: CAR_COLS[Math.floor(h * 97) % CAR_COLS.length] });
       });
     });
+    rwMonBoats(have);
     (list || []).forEach(function (d) { carAdd(d); });
   }
   function carMyIndex(c) { return c.seats.indexOf(CO.id); }
   function rwCarMsg(m) {
     if (m.t === 'RVs' || m.t === 'RVc') {
       var c = carAdd(m.car); var si = carMyIndex(c);
-      if (si >= 0 && CAR.mine !== c) { CAR.mine = c; CAR.seat = si; c.sp = 0; P.yaw = c.yaw; P.pitch = -0.05; if (c.ty === 'h') { heliEntered(c, si); } else banner(si === 0 ? zt('你在驾驶座：W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。开车时只能用手枪', 'Driving: W/S go and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Pistols only while driving') : si === 1 ? zt('你坐在副驾驶：什么武器都能用，E 下车', 'Front passenger: you can use any weapon. E gets out') : zt('你坐在后座（' + (si + 1) + ' 号座）：只能用手枪，E 下车', 'Back seat ' + (si + 1) + ': pistols only. E gets out'), 2600); sfx('dooropen'); }
+      if (si >= 0 && CAR.mine !== c) { CAR.mine = c; CAR.seat = si; c.sp = 0; P.yaw = c.yaw; P.pitch = -0.05; if (c.ty === 'h') { heliEntered(c, si); } else if (c.ty === 'b' || c.ty === 'r') { boatEntered(c, si); } else banner(si === 0 ? zt('你在驾驶座：W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。开车时只能用手枪', 'Driving: W/S go and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Pistols only while driving') : si === 1 ? zt('你坐在副驾驶：什么武器都能用，E 下车', 'Front passenger: you can use any weapon. E gets out') : zt('你坐在后座（' + (si + 1) + ' 号座）：只能用手枪，E 下车', 'Back seat ' + (si + 1) + ': pistols only. E gets out'), 2600); sfx('dooropen'); }
       else if (si >= 0) CAR.seat = si;
       else if (CAR.mine === c) carLeftSeat(c);
-      if (m.t === 'RVc' && m.car.by === RW.me) banner(c.ty === 'h' ? zt('直升机放好了，走过去按 E 上去', 'Helicopter parked: walk up and press E to get in') : zt('车放好了，走过去按 E 上车', 'Car parked: walk up and press E to get in'), 2000);
+      if (m.t === 'RVc' && m.car.by === RW.me) banner(c.ty === 'b' || c.ty === 'r' ? zt('船放进水里了，游过去按 E 上船', 'Boat in the water: swim up and press E to get in') : c.ty === 'h' ? zt('直升机放好了，走过去按 E 上去', 'Helicopter parked: walk up and press E to get in') : zt('车放好了，走过去按 E 上车', 'Car parked: walk up and press E to get in'), 2000);
     } else if (m.t === 'RVm') {
       var c2 = CAR.list[m.id]; if (!c2 || CAR.mine === c2 && CAR.seat === 0) return;
       c2.tgt = { x: +m.x, y: +m.y, z: +m.z, yaw: +m.yaw, p: +m.p || 0, r: +m.r || 0 }; c2.sp = +m.sp || 0; c2.stT = +m.st || 0;
@@ -11432,6 +11436,7 @@ Object.assign(EN, {
   }
   function carLeftSeat(c) {   // put me down beside the car
     CAR.mine = null; CAR.seat = -1;
+    if (c.ty === 'b' || c.ty === 'r') { boatLeft(c); sfx('doorclose'); return; }
     var sx = Math.cos(c.yaw) * -2.3, sz = Math.sin(c.yaw) * 2.3, x = c.x + sx, z = c.z + sz;
     if (rwH(x, z) < RW_SEA - 1 || insideBox(x, c.y + 0.5, z)) { x = c.x - sx; z = c.z - sz; }
     var gy = groundAt(x, z, c.y + 1.5);
@@ -11441,20 +11446,21 @@ Object.assign(EN, {
   function rwCarNear() {   // a car within reach that you are not in
     if (CAR.mine) return null;
     var best = null, bd = 4.2;
-    for (var k in CAR.list) { var c = CAR.list[k], d = Math.hypot(c.x - P.x, c.z - P.z); if (d < (c.ty === 'h' ? 4.2 : 3.4) && d < bd && Math.abs(c.y - P.y) < 2.5) { bd = d; best = c; } }
+    for (var k in CAR.list) { var c = CAR.list[k], d = Math.hypot(c.x - P.x, c.z - P.z); if (d < (c.ty === 'h' ? 4.2 : c.ty === 'r' ? 3.8 : c.ty === 'b' ? 3.2 : 3.4) && d < bd && Math.abs(c.y - P.y) < 2.5) { bd = d; best = c; } }
     return best;
   }
   function rwCarUse() {   // E: get in, or get out
     if (CAR.cool > 0) return false;
     if (CAR.mine) { if (CAR.mine.ty === 'h' && CAR.seat === 0) heliPark(CAR.mine); dSend({ t: 'Vx' }); CAR.cool = 0.4; carLeftSeat(CAR.mine); return true; }
     var c = rwCarNear(); if (!c) return false;
-    if (c.seats.indexOf(0) < 0) { banner(c.ty === 'h' ? zt('直升机坐满了（2 人）', 'The helicopter is full (2 seats)') : zt('车上坐满了（4 人）', 'The car is full (4 seats)'), 1400); sfx('deny'); return true; }
-    dSend({ t: 'Ve', id: c.id, x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, col: c.col });
+    if (c.seats.indexOf(0) < 0) { banner(c.ty === 'b' ? zt('划艇坐满了（2 人）', 'The rowboat is full (2 seats)') : c.ty === 'h' ? zt('直升机坐满了（2 人）', 'The helicopter is full (2 seats)') : zt('车上坐满了（4 人）', 'The car is full (4 seats)'), 1400); sfx('deny'); return true; }
+    dSend({ t: 'Ve', id: c.id, ty: c.ty, x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, col: c.col });
     CAR.cool = 0.4;
     return true;
   }
   function rwCarPrompt() {
     if (CAR.mine && CAR.mine.ty === 'h') return heliPrompt();
+    if (CAR.mine && (CAR.mine.ty === 'b' || CAR.mine.ty === 'r')) return boatPrompt();
     var hn = rwCarNear(); if (hn && hn.ty === 'h') return heliNearPrompt(hn);
     if (CAR.mine) return KE() + ' ' + zt('下车', 'Get out') + (CAR.seat === 0 ? ' · W/S/A/D ' + zt('驾驶 · 空格刹车 · Shift 加速 · ', 'drive · Space brake · Shift boost · ') + Math.round(Math.abs(CAR.mine.sp) * 3.6) + ' km/h' : '');
     var c = rwCarNear(); if (!c) return '';
@@ -11463,6 +11469,7 @@ Object.assign(EN, {
   }
   function rwCarDeploy(i) {   // the crafted car item: park it in front of you
     var s = RW.inv[i]; if (s && s.id === 'heli') return heliDeploy(i);
+    if (s && (s.id === 'rowboat' || s.id === 'rhib')) return boatDeploy(i);
     if (!s || s.id !== 'car') return false;
     var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), x = P.x + fx * 4.5, z = P.z + fz * 4.5, h = rwH(x, z);
     var ok = h > RW_SEA + 0.3 && !insideBox(x, h + 0.6, z) && !insideBox(x + fx * 2, h + 0.6, z + fz * 2) && Math.abs(rwH(x + fx * 2, z + fz * 2) - rwH(x - fx * 2, z - fz * 2)) < 1.6;
@@ -11507,6 +11514,7 @@ Object.assign(EN, {
     for (var k in CAR.list) {
       var c = CAR.list[k];
       if (c.ty === 'h') { heliTick(c, dt); continue; }
+      if (c.ty === 'b' || c.ty === 'r') { boatTick(c, dt); continue; }
       if (CAR.mine === c && CAR.seat === 0 && !RW.dead) carDrive(c, dt);
       else if (c.tgt) {   // other people's cars glide to where their driver says they are
         var t = c.tgt, f = Math.min(1, dt * 10), dy = Math.atan2(Math.sin(t.yaw - c.yaw), Math.cos(t.yaw - c.yaw));
@@ -11528,11 +11536,11 @@ Object.assign(EN, {
       if (!CAR.warnT || gtime - CAR.warnT > 3) { CAR.warnT = gtime; if (CAR.mine.ty === 'h') banner(zt('驾驶直升机时两只手都要用，不能拿武器。坐副驾驶的人什么都能用', 'Flying takes both hands: the pilot cannot hold a weapon. The passenger can use anything'), 1800); else banner(zt(CAR.seat === 0 ? '开车时只能用手枪（Glock 17、Python .357、沙漠之鹰）' : '后座只能用手枪，副驾驶才能用其他武器', CAR.seat === 0 ? 'While driving you can only use a pistol (Glock 17, Python .357, Desert Eagle)' : 'Back seats: pistols only. The front passenger can use anything'), 1800); sfx('deny'); }
     }
   }
-  function carEyeZ(c) { return c.ty === 'h' ? 0.02 : 0.2; }   // how far forward of the seat centre your eyes are: clear of the seat back and headrest
+  function carEyeZ(c) { return c.ty === 'h' ? 0.02 : (c.ty === 'b' || c.ty === 'r') ? 0.05 : 0.2; }   // how far forward of the seat centre your eyes are: clear of the seat back and headrest
   function rwCarView() {   // after the camera is placed each frame: sit it exactly in your seat, tilted with the vehicle; draw the others in their seats
     if (CAR.mine && !RW.dead) {
       var cm = CAR.mine; rwCarSeat();
-      var SS = cm.ty === 'h' ? HELI_SEATS : CAR_SEATS, s = SS[CAR.seat] || SS[0];
+      var SS = carSeatsOf(cm), s = SS[CAR.seat] || SS[0];
       CAR.ev2 = CAR.ev2 || new THREE.Vector3(); var e = CAR.ev2.set(s[0], s[1] + 1.35, s[2] + carEyeZ(cm)).applyEuler(cm.g.rotation);
       camera.position.set(cm.x + e.x, cm.y + e.y, cm.z + e.z);   // the eye sits in the tilted seat, no walking bob
       CAR.qv = CAR.qv || new THREE.Quaternion(); CAR.ql = CAR.ql || new THREE.Quaternion(); CAR.ev = CAR.ev || new THREE.Euler(0, 0, 0, 'YXZ');
@@ -11545,7 +11553,7 @@ Object.assign(EN, {
   function rwCarRiders() {   // other players sitting in a vehicle are drawn in their seats, moving with it
     CAR.rv = CAR.rv || new THREE.Vector3();
     for (var k in CAR.list) {
-      var c = CAR.list[k], SS = c.ty === 'h' ? HELI_SEATS : CAR_SEATS;
+      var c = CAR.list[k], SS = carSeatsOf(c);
       for (var si = 0; si < c.seats.length; si++) {
         var id = c.seats[si]; if (!id || id === CO.id) continue;
         var p = CO.peers[id]; if (!p || !p.rem) continue;
@@ -11563,7 +11571,7 @@ Object.assign(EN, {
   }
   function rwCarSeat() {   // called after the player's own movement: sit in the seat instead
     var c = CAR.mine; if (!c) return false;
-    var SS = c.ty === 'h' ? HELI_SEATS : CAR_SEATS, s = SS[CAR.seat] || SS[0], v = new THREE.Vector3(s[0], s[1], s[2] + carEyeZ(c)).applyEuler(c.g.rotation);
+    var SS = carSeatsOf(c), s = SS[CAR.seat] || SS[0], v = new THREE.Vector3(s[0], s[1], s[2] + carEyeZ(c)).applyEuler(c.g.rotation);
     P.x = c.x + v.x; P.z = c.z + v.z; P.y = c.y + v.y - 0.35; P.vy = 0; P.ground = true; RW.px = P.x; RW.pz = P.z;
     return true;
   }
@@ -12153,7 +12161,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 56;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 58;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12685,20 +12693,20 @@ Object.assign(EN, {
     var at = -1;
     for (var i = RW_CRAFT.length - 1; i >= 0; i--) if (RW_CRAFT[i][0] === 'ammo') { at = i; RW_CRAFT.splice(i, 1); }
     if (at < 0) at = RW_CRAFT.length;
-    RW_CRAFT.splice(at, 0, ['apis', { frags: 40 }], ['arif', { frags: 70, cloth: 2 }], ['ashot', { frags: 50, cloth: 2 }], ['arkt', { frags: 400, cloth: 30, metal: 100, parts: 1 }]);
+    RW_CRAFT.splice(at, 0, ['apis', { frags: 40 }], ['arif', { frags: 70, cloth: 2 }], ['ashot', { frags: 50, cloth: 2 }], ['arkt', { frags: 500, cloth: 30, metal: 100 }]);
     var PARTS = { 0: 1, 3: 1, 8: 1, 2: 2, 11: 2, 12: 2, 4: 2, 13: 2, 1: 3, 9: 3, 10: 3, 14: 4, 5: 4, 6: 4, 15: 4, 7: 5 };
     RW_CRAFT.forEach(function (r) {
       if (/^g\d+$/.test(r[0])) {   // guns: 2.5 times the cost plus gun parts
         var gi = +r[0].slice(1), c = {}; for (var k in r[1]) c[k] = Math.round(r[1][k] * 2.5 / 5) * 5;
-        c.parts = PARTS[gi] || 2; r[1] = c;
+        c.frags = (c.frags || 0) + (PARTS[gi] || 2) * 100; r[1] = c;   // (gun parts were removed in update 58: the price is in fragments instead)
       }
-      if (r[0] === 'satchel') r[1] = { frags: 240, cloth: 40, parts: 1 };
-      if (r[0] === 'c4') r[1] = { frags: 900, cloth: 80, parts: 3 };
+      if (r[0] === 'satchel') r[1] = { frags: 340, cloth: 40 };
+      if (r[0] === 'c4') r[1] = { frags: 1200, cloth: 80 };
     });
     var t = RW_CRAFT.length; RW_CRAFT.forEach(function (r, j) { if (r[0] === 'mine') t = j + 1; });
-    RW_CRAFT.splice(t, 0, ['clay', { frags: 250, cloth: 20, parts: 1 }], ['gtrap', { frags: 400, wood: 100, cloth: 20, parts: 1 }], ['atur', { frags: 1200, metal: 300, cloth: 40, parts: 4 }]);
+    RW_CRAFT.splice(t, 0, ['clay', { frags: 350, cloth: 20 }], ['gtrap', { frags: 500, wood: 100, cloth: 20 }], ['atur', { frags: 1600, metal: 300, cloth: 40 }]);
     ['apis', 'arif', 'ashot', 'arkt', 'clay', 'gtrap', 'atur'].forEach(function (id) { RW_BENCH[id] = 1; });
-    for (var g = 0; g < WDEF.length; g++) if (!RW_RECY['g' + g]) RW_RECY['g' + g] = { parts: Math.max(1, (PARTS[g] || 2) - 1), frags: 40 };   // recycle a gun into parts
+    for (var g = 0; g < WDEF.length; g++) if (!RW_RECY['g' + g]) RW_RECY['g' + g] = { frags: 40 + (PARTS[g] || 2) * 50 };   // recycle a gun into parts
     RW_RECY.apis = { frags: 3 }; RW_RECY.arif = { frags: 5 };
   })();
 
@@ -12721,6 +12729,7 @@ Object.assign(EN, {
   function rwAmmoOf(i) { var d = WDEF[i]; return d ? (AMMO_OF[d.cls] || 'apis') : 'apis'; }
   function rwAmmoTick() {
     if (!RW.on) return;
+    var pl = rwCount('parts'); if (pl > 0) { rwTake('parts', pl, true); rwGive('frags', pl * 100); rwInvChanged(); }   // gun parts are gone: old ones become fragments
     var leg = rwCount('ammo');   // old ammo boxes from before become bullets once
     if (leg > 0) { rwTake('ammo', leg, true); rwGive('apis', leg * 6); rwGive('arif', leg * 6); rwInvChanged(); }
     var changed = false;
@@ -12754,7 +12763,7 @@ Object.assign(EN, {
     var tilt = new THREE.Group(); head.add(tilt);
     b(0.5, 0.32, 0.6, grey, 0, 0, 0, tilt); b(0.36, 0.08, 0.5, dark, 0, 0.2, -0.02, tilt);
     var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.75, 10), dark); bar.rotation.x = Math.PI / 2; bar.position.set(0.08, -0.02, 0.6); tilt.add(bar);
-    var bar2 = bar.clone(); bar2.position.x = -0.08; tilt.add(bar2);
+    var bar2 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.75, 10), dark); bar2.rotation.x = Math.PI / 2; bar2.position.set(-0.08, -0.02, 0.6); tilt.add(bar2);
     var eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: 0x40ff60 })); eye.position.set(0, 0.06, 0.31); tilt.add(eye);
     var fl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.9 })); fl.position.set(0, -0.02, 1.0); fl.visible = false; tilt.add(fl);
     p.tur = { head: head, tilt: tilt, eye: eye, flash: fl, fr: fr };
@@ -12786,6 +12795,22 @@ Object.assign(EN, {
     var t = rayWall(ax + dx * s, ay + dy * s, az + dz * s, dx, dy, dz, L - s);
     return t >= L - s - 0.25;
   }
+  function rwLosTur(hx, hy, hz, tx, ty, tz) {   // a turret's view: anything right at the turret (the roof or floor it stands on) does not count
+    var dx = hx - tx, dy = hy - ty, dz = hz - tz, L = Math.hypot(dx, dy, dz) || 1;
+    dx /= L; dy /= L; dz /= L;
+    var t = rayWall(tx, ty, tz, dx, dy, dz, L);
+    return t >= L - 2.6;
+  }
+  function rwTurNpc(hx, hy, hz) {   // the nearest monster or animal the turret can see (only the player who runs the monsters decides)
+    var best = null, bd = 32;
+    for (var i = 0; i < enemies.length; i++) {
+      var e = enemies[i]; if (e.dead || e.ghost) continue;
+      var p = e.g.position, d = Math.hypot(p.x - hx, p.y + 1.1 - hy, p.z - hz); if (d >= bd) continue;
+      if (!rwLosTur(hx, hy, hz, p.x, p.y + 1.1, p.z)) continue;
+      bd = d; best = e;
+    }
+    return best;
+  }
   function rwTurFront(p) { var a = p.r * Math.PI / 2; return [Math.sin(a), Math.cos(a)]; }
   function rwTurPeerPos(id) { var q = CO.peers[id]; if (!q || !q.rem) return null; return [q.rem.position.x, q.rem.position.y + 1.2, q.rem.position.z]; }
   function rwTurShotFx(p, from, to, hit, gun) {
@@ -12801,14 +12826,19 @@ Object.assign(EN, {
     var chest = P.y + 1.2, alive = !RW.dead && state !== 'over' && state !== 'menu';
     for (var i = 0; i < RW.plist.length; i++) {
       var p = RW.plist[i]; if (p.k !== 'at' && p.k !== 'gt' && p.k !== 'cm') continue;
-      var dx = P.x - p.x, dz = P.z - p.z, d = Math.hypot(dx, dz); if (d > 60) continue;
+      var dx = P.x - p.x, dz = P.z - p.z, d = Math.hypot(dx, dz); if (d > 60 && !(p.k === 'at' && RW.auth === CO.id)) continue;   // the player who runs the monsters works every turret against them
       var u = p.tur || (p.tur = {}); u.lock = u.lock || 0; u.fire = u.fire || 0;
       if (u.flash && u.flashT !== undefined) { u.flashT -= dt; if (u.flashT <= 0) u.flash.visible = false; }
       var hostile = alive && !rwSafeFrom(p);
       if (p.k === 'at') {
-        var hx = p.x, hy = p.y + 1.1, hz = p.z, see = hostile && d < 30 && rwLos(hx, hy, hz, P.x, chest, P.z), tgt = null;
-        if (see) { tgt = [P.x, chest, P.z]; u.lock += dt; } else u.lock = Math.max(0, u.lock - dt * 2);
+        var hx = p.x, hy = p.y + 1.1, hz = p.z, d3 = Math.hypot(dx, chest - hy, dz), see = hostile && d3 < 32 && rwLosTur(hx, hy, hz, P.x, chest, P.z), tgt = null;
+        if (see) { tgt = [P.x, chest, P.z]; u.lock += dt; }
+        var npc = null;
+        if (!see && RW.auth === CO.id) { u.npcT = (u.npcT || 0) - dt; if (u.npcT <= 0) { u.npcT = 0.3; u.npc = rwTurNpc(hx, hy, hz); } npc = u.npc && !u.npc.dead ? u.npc : null; }
+        if (npc) { tgt = [npc.g.position.x, npc.g.position.y + 1.1, npc.g.position.z]; u.lock += dt; }
+        if (!see && !npc) u.lock = Math.max(0, u.lock - dt * 2);
         if (!tgt && u.rtf && gtime < u.rtfT + 0.6) tgt = rwTurPeerPos(u.rtf);
+        if (!tgt && u.rtfG && gtime < u.rtfGT + 0.6) { var gh = CO.ghosts[u.rtfG]; if (gh && !gh.dead) tgt = [gh.g.position.x, gh.g.position.y + 1.1, gh.g.position.z]; }
         if (u.head) {   // aim: turn the head, tilt the guns; sweep slowly when idle
           var want, wantP = 0;
           if (tgt) { want = Math.atan2(tgt[0] - hx, tgt[2] - hz); wantP = -Math.atan2(tgt[1] - hy, Math.hypot(tgt[0] - hx, tgt[2] - hz)); }
@@ -12827,7 +12857,16 @@ Object.assign(EN, {
             if (hit) { RW.lastNpc = 'turret'; RW.lastNpcT = gtime; damage(8); }
           }
           if (!TUR.sendT[p.id] || gtime - TUR.sendT[p.id] > 0.25) { TUR.sendT[p.id] = gtime; dSend({ t: 'Rtf', id: p.id }); }
-        } else if (!see && u.rtf && gtime < u.rtfT + 0.3 && tgt) {   // firing at someone else: just the look of it
+        } else if (npc && u.lock > 0.5) {   // firing at a monster or an animal
+          u.fire -= dt;
+          while (u.fire <= 0) {
+            u.fire += 0.16;
+            var hitN = Math.random() < 0.75;
+            rwTurShotFx(p, [hx, hy, hz], tgt, hitN, false);
+            if (hitN && !npc.dead) { npc.hp -= 1.1; npc.flash = 0.06; npc.hurt = 4; if (npc.hp <= 0) { killEnemy(npc, false); u.npc = null; break; } }
+          }
+          if (!TUR.sendT[p.id] || gtime - TUR.sendT[p.id] > 0.25) { TUR.sendT[p.id] = gtime; dSend({ t: 'Rtf', id: p.id, g: npc.id }); }
+        } else if (!see && ((u.rtf && gtime < u.rtfT + 0.3) || (u.rtfG && gtime < u.rtfGT + 0.3)) && tgt) {   // firing at someone else: just the look of it
           u.fire -= dt; while (u.fire <= 0) { u.fire += 0.16; rwTurShotFx(p, [hx, hy, hz], tgt, Math.random() < 0.6, false); }
         } else u.fire = Math.max(0, u.fire);
       } else if (p.k === 'gt') {
@@ -12856,7 +12895,408 @@ Object.assign(EN, {
   }
   function rwTurMsg(m) {   // someone else is being shot at by this turret / trap
     var p = RW.pieces[m.id | 0]; if (!p) return;
-    var u = p.tur || (p.tur = {}); u.rtf = m.by | 0; u.rtfT = gtime;
+    var u = p.tur || (p.tur = {});
+    if (m.g !== undefined) { u.rtfG = m.g; u.rtfGT = gtime; } else { u.rtf = m.by | 0; u.rtfT = gtime; }
+  }
+  /* ================= UPDATE 57: PRIMITIVE WEAPONS =================
+     Bow and crossbow (they shoot arrows you make from wood and stone), a stone spear (long reach) and a machete.
+     They fill the gap now that nobody starts with a gun. */
+  (function () {
+    var BOW = { id: 'bow', cls: 'bow', name: 'Hunting Bow', price: 0, mag: 1, maxRes: 999, res: 0, pack: 1, cd: 0.85, reload: 0.7, auto: false, pellets: 1, spread: 0.012, aimSpread: 0.004, dmg: 1.7, head: 3.4, pierce: 0, rec: 0.6, f0: 190, f1: 80, vol: 0.05, trace: 0, zoom: 0.85, desc: '木头和布做的弓，射箭，安静，伤害不错。' };
+    var XBOW = { id: 'xbow', cls: 'bow', name: 'Crossbow', price: 0, mag: 1, maxRes: 999, res: 0, pack: 1, cd: 0.5, reload: 2.1, auto: false, pellets: 1, spread: 0.006, aimSpread: 0.0015, dmg: 2.7, head: 5.4, pierce: 0, rec: 1.1, f0: 260, f1: 90, vol: 0.07, trace: 0, zoom: 0.75, desc: '十字弩，上弦慢，但一箭很痛、很准。' };
+    [BOW, XBOW].forEach(function (d) {
+      var i = WDEF.length; WDEF.push(d);
+      var G = buildGun('pistol'); G.id = d.id; G.cls = 'bow'; G.tint = []; G.flash.material = flashMat.clone(); G.flash.visible = false; G.flash.scale.set(0.001, 0.001, 0.001); G.look = null; G.magLook = null; G.pulse = [];
+      G.g.children.slice().forEach(function (c) { if (c !== G.muzzle && c !== G.flash) c.visible = false; });
+      if (G.mag) G.mag.visible = false;
+      ['shell', 'sc', 'hand', 'fore'].forEach(function (k) { if (G[k] && G[k].visible !== undefined) G[k].visible = false; }); (G.irons || []).forEach(function (o) { if (o && o.visible !== undefined) o.visible = false; });
+      G.g.traverse(function (o) { if (o.isMesh && o.parent === G.g) o.visible = false; });
+      var mz = G.muzzle.position, wood = gmat(d.id === 'bow' ? 0x7a5230 : 0x5a3c22, 0.05, 0.75), str = gmat(0xe8e2cc, 0, 0.9), dark = gmat(0x2c2d2e, 0.5, 0.5), steel = gmat(0x9aa0a6, 0.8, 0.3);
+      var B = new THREE.Group(); G.g.add(B);
+      if (d.id === 'bow') { B.position.set(mz.x - 0.04, mz.y + 0.01, mz.z + 0.22); B.scale.set(0.5, 0.5, 0.6); B.rotation.z = 0.22; } else B.position.set(mz.x, mz.y - 0.02, mz.z + 0.2);
+      function bx(w, h, dd, m, x, y, z, rx, rz) { var o = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), m); o.position.set(x, y, z); if (rx) o.rotation.x = rx; if (rz) o.rotation.z = rz; o.renderOrder = 10; B.add(o); return o; }
+      if (d.id === 'bow') {   // a recurve bow held upright, the string pulled back to you
+        bx(0.03, 0.12, 0.035, gmat(0x3a2a1a, 0, 0.9), 0, 0, 0);   // grip wrap
+        for (var s = -1; s <= 1; s += 2) for (var k = 0; k < 5; k++) { var t = (k + 0.5) / 5; bx(0.024, 0.11, 0.03, wood, 0, s * (0.07 + t * 0.48), 0.04 * t * t + (k === 4 ? -0.02 : 0), s * (-0.12 - 0.25 * t)); }
+        var top = [0, 0.6, 0.02], bot = [0, -0.6, 0.02], nock = [0, 0, 0.32];
+        [top, bot].forEach(function (e) { var a = new THREE.Vector3(e[0], e[1], e[2]), b = new THREE.Vector3(nock[0], nock[1], nock[2]), L = a.distanceTo(b); var o = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, L, 4), str); o.position.copy(a).add(b).multiplyScalar(0.5); if (o.quaternion.setFromUnitVectors) o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); o.renderOrder = 10; B.add(o); });
+      } else {   // crossbow: stock along the view, a short bow across the front
+        bx(0.05, 0.06, 0.62, wood, 0, -0.02, 0.12); bx(0.045, 0.12, 0.08, wood, 0, -0.09, 0.32, 0.4);
+        bx(0.62, 0.03, 0.05, dark, 0, 0.01, -0.17); bx(0.06, 0.05, 0.06, steel, 0, 0.0, -0.17);
+        [-1, 1].forEach(function (s) { var a = new THREE.Vector3(s * 0.31, 0.01, -0.17), b = new THREE.Vector3(0, 0.02, 0.1), L = a.distanceTo(b); var o = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, L, 4), str); o.position.copy(a).add(b).multiplyScalar(0.5); if (o.quaternion.setFromUnitVectors) o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); o.renderOrder = 10; B.add(o); });
+      }
+      var arrow = new THREE.Group(); B.add(arrow);   // the arrow sitting ready on the string
+      var sh = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.008, d.id === 'bow' ? 0.62 : 0.42), wood); sh.position.set(0, d.id === 'bow' ? 0 : 0.035, d.id === 'bow' ? 0.02 : -0.04); sh.renderOrder = 11; arrow.add(sh);
+      var tip = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 4), steel); tip.rotation.x = -Math.PI / 2; tip.position.set(0, sh.position.y, sh.position.z - (d.id === 'bow' ? 0.33 : 0.23)); tip.renderOrder = 11; arrow.add(tip);
+      G.arrow = arrow;
+      // hands on it, like the guns
+      var hr = vmHand(1, 14), hl = vmHand(-1, 6);
+      hr.position.set(mz.x + 0.02, mz.y - 0.06, mz.z + (d.id === 'bow' ? 0.5 : 0.45)); hr.rotation.set(0.28, 0, 0.32);
+      hl.position.set(mz.x - 0.01, mz.y - 0.07, mz.z + (d.id === 'bow' ? 0.2 : 0.12)); hl.rotation.set(0.05, 0, -0.62);
+      G.g.add(hr); G.g.add(hl); G.lh = hl;
+      gunObjs.push(G);
+      if (ws) ws[i] = { ammo: 0, res: 0 };
+      owned[i] = false;
+      RWI['g' + i] = { n: [d.id === 'bow' ? '猎弓' : '十字弩', d.id === 'bow' ? 'Hunting Bow' : 'Crossbow'], st: 1, gun: i, d: [d.desc, d.id === 'bow' ? 'A bow of wood and cloth: quiet, decent damage. Shoots arrows.' : 'Slow to span, but each bolt hits hard and true. Shoots arrows.'] };
+    });
+  })();
+  var BOW_I = WDEF.length - 2, XBOW_I = WDEF.length - 1;
+  AMMO_OF.bow = 'arrow';
+  RWI.arrow = { n: ['箭', 'Arrows'], st: 64, d: ['弓和十字弩用的箭。木头和石头做，一次 4 支，不用工作台。', 'Arrows for the bow and the crossbow. Made from wood and stone, 4 a time, no workbench needed.'] };
+  RW_MAKE.arrow = 4;
+  RWI.spear = { n: ['石矛', 'Stone Spear'], st: 1, tool: 'spear', d: ['长矛够得远，戳人很痛。也能凑合采集。', 'Long reach and a nasty jab. Gathers a little too.'] };
+  RWI.machete = { n: ['砍刀', 'Machete'], st: 1, tool: 'machete', d: ['挥得快的近战武器，也能砍树。', 'A quick melee blade that chops wood too.'] };
+  VT.spear = { dur: 0.72, hit: 0.42, dmg: 2.3, reach: 3.6 }; VT.machete = { dur: 0.5, hit: 0.36, dmg: 1.9, reach: 2.5 };
+  RW_YIELD.spear = { tree: 3, rock: 2, ore: 1 }; RW_YIELD.machete = { tree: 8, rock: 1, ore: 0 };
+  (function () {   // crafting: early weapons are cheap and need no workbench (the crossbow and machete do)
+    var at = RW_CRAFT.length; RW_CRAFT.forEach(function (r, j) { if (r[0] === 'pickaxe') at = j + 1; });
+    RW_CRAFT.splice(at, 0, ['spear', { wood: 250, stone: 100 }], ['g' + BOW_I, { wood: 200, cloth: 50 }], ['arrow', { wood: 25, stone: 10 }], ['g' + XBOW_I, { wood: 300, frags: 75, cloth: 60 }], ['machete', { frags: 100, wood: 50 }]);
+    RW_BENCH['g' + XBOW_I] = 1; RW_BENCH.machete = 1;
+    RW_RECY['g' + BOW_I] = { cloth: 15 }; RW_RECY['g' + XBOW_I] = { frags: 30, cloth: 15 }; RW_RECY.spear = { stone: 30 }; RW_RECY.machete = { frags: 40 };
+  })();
+  (function () {   // first-person models for the spear and the machete
+    function T(name) { var g = new THREE.Group(); g.visible = false; VM.piv.add(g); VM.tools[name] = g; return g; }
+    var s = T('spear');
+    vmBox(s, 0.024, 1.25, 0.024, VMM.wood, 0, 0.36, -0.1, 22, -0.5, 0, 0);
+    vmBox(s, 0.03, 0.05, 0.03, VMM.dark, 0, 0.88, -0.38, 22, -0.5, 0, 0);
+    var tip = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.16, 5), VMM.stone); tip.position.set(0, 0.98, -0.45); tip.rotation.x = -0.5; tip.renderOrder = 22; tip.frustumCulled = false; s.add(tip);
+    var m = T('machete');
+    vmBox(m, 0.03, 0.13, 0.034, VMM.dark, 0, 0.04, 0, 22);
+    vmBox(m, 0.05, 0.02, 0.04, VMM.steel, 0, 0.115, 0, 22);
+    vmBox(m, 0.008, 0.42, 0.06, VMM.steel, 0, 0.33, -0.012, 22); vmBox(m, 0.009, 0.4, 0.014, VMM.steelL, 0, 0.33, -0.045, 22);
+  })();
+  (function () {   // icons
+    function cv(f) { var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d'); x.shadowColor = 'rgba(0,0,0,.7)'; x.shadowBlur = 3; x.lineCap = 'round'; f(x); return c; }
+    RWICON['g' + BOW_I] = cv(function (x) { x.strokeStyle = '#8a5a30'; x.lineWidth = 5; x.beginPath(); x.moveTo(18, 6); x.quadraticCurveTo(46, 32, 18, 58); x.stroke(); x.strokeStyle = '#e8e2cc'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(18, 6); x.lineTo(18, 58); x.stroke(); });
+    RWICON['g' + XBOW_I] = cv(function (x) { x.fillStyle = '#5a3c22'; x.fillRect(28, 12, 8, 46); x.strokeStyle = '#2c2d2e'; x.lineWidth = 5; x.beginPath(); x.moveTo(6, 22); x.quadraticCurveTo(32, 8, 58, 22); x.stroke(); x.strokeStyle = '#e8e2cc'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(6, 22); x.lineTo(32, 34); x.lineTo(58, 22); x.stroke(); });
+    RWICON.arrow = cv(function (x) { for (var i = 0; i < 3; i++) { x.strokeStyle = '#8a6a40'; x.lineWidth = 3; x.beginPath(); x.moveTo(10 + i * 8, 56); x.lineTo(34 + i * 8, 8); x.stroke(); x.fillStyle = '#9aa0a6'; x.beginPath(); x.moveTo(34 + i * 8, 4); x.lineTo(30 + i * 8, 12); x.lineTo(38 + i * 8, 12); x.fill(); x.fillStyle = '#d84a2a'; x.fillRect(8 + i * 8, 50, 5, 6); } });
+    RWICON.spear = cv(function (x) { x.strokeStyle = '#8a5a30'; x.lineWidth = 4; x.beginPath(); x.moveTo(8, 58); x.lineTo(50, 14); x.stroke(); x.fillStyle = '#8c8a84'; x.beginPath(); x.moveTo(58, 4); x.lineTo(46, 12); x.lineTo(52, 20); x.fill(); });
+    RWICON.machete = cv(function (x) { x.fillStyle = '#2c2d2e'; x.fillRect(10, 44, 16, 8); x.fillStyle = '#c8ccd0'; x.beginPath(); x.moveTo(24, 42); x.lineTo(58, 10); x.lineTo(60, 18); x.lineTo(28, 52); x.fill(); });
+  })();
+  // a flying arrow every time a bow or crossbow fires
+  var ARW = { list: [], last: {} };
+  function rwArrowTick(dt) {
+    for (var gi = BOW_I; gi <= XBOW_I; gi++) {
+      var a = ws[gi] ? ws[gi].ammo : 0, was = ARW.last[gi];
+      if (cur === gi && was !== undefined && a < was && !holster) rwArrowFly(gi);
+      ARW.last[gi] = a;
+      var G = gunObjs[gi]; if (G && G.arrow) G.arrow.visible = a > 0;
+    }
+    for (var i = ARW.list.length - 1; i >= 0; i--) {
+      var o = ARW.list[i], u = o.userData; u.t += dt;
+      u.v.y -= 9.8 * dt * 0.35; o.position.addScaledVector(u.v, dt); o.lookAt(o.position.clone().add(u.v));
+      if (u.t > u.life || o.position.y < rwH(o.position.x, o.position.z)) { scene.remove(o); ARW.list.splice(i, 1); }
+    }
+  }
+  function rwArrowFly(gi) {
+    var G = gunObjs[gi], from = G.muzzle.getWorldPosition(new THREE.Vector3()), dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    var g = new THREE.Group(), sh = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.7), new THREE.MeshLambertMaterial({ color: 0x8a6a40 })); g.add(sh);
+    var fl = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.005, 0.1), new THREE.MeshLambertMaterial({ color: 0xd84a2a })); fl.position.z = 0.3; g.add(fl);
+    g.position.copy(from); g.userData = { v: dir.multiplyScalar(gi === XBOW_I ? 80 : 60), t: 0, life: 1.2 };
+    scene.add(g); ARW.list.push(g);
+  }
+  /* ================= UPDATE 57: BOATS =================
+     Rowboat (2 seats, slow, cheap) and RHIB (4 seats, fast). They ride on the car system (ty 'b' / 'r'), so
+     everybody sees the same boats and who sits in them. Harbors, fishing villages and lighthouses have boats
+     moored offshore; you can also build them. They only go where the water is deep enough. */
+  var VEH_SEATS = {
+    b: [[0, -0.32, 0.55], [0, -0.32, -0.95]],
+    r: [[0, 0.42, 0.85], [-0.55, -0.02, -0.75], [0.55, -0.02, -0.75], [0, -0.02, 2.0]]
+  };
+  function carSeatsOf(c) { return c.ty === 'h' ? HELI_SEATS : VEH_SEATS[c.ty] || CAR_SEATS; }
+  var BOAT_COLS = { b: [0x7a5230, 0x5e6e44, 0x6a3a2a, 0x3e5266], r: [0x3a3e42, 0x2c3a2a, 0x46403a] };
+  var BOAT_V = { b: { max: 7, rev: 3, acc: 2.6, turn: 0.9, len: 4.2, rad: 1.2 }, r: { max: 20, rev: 5, acc: 7, turn: 0.75, len: 6.4, rad: 1.8 } };
+  Object.assign(RWI, {
+    rowboat: { n: ['划艇', 'Rowboat'], st: 1, use: 1, d: ['两人小划艇，慢但便宜。拿在手上按左键（或在背包里点“使用”）放进面前的水里。', 'A small two-seat rowboat: slow but cheap. Hold it and press left click (or Use) to put it in the water in front of you.'] },
+    rhib: { n: ['快艇', 'RHIB'], st: 1, use: 1, d: ['四人充气快艇，速度很快。放进面前的水里。', 'A fast four-seat rigid inflatable boat. Put it in the water in front of you.'] }
+  });
+  (function () {
+    var at = RW_CRAFT.length; RW_CRAFT.forEach(function (r, j) { if (r[0] === 'car') at = j; });
+    RW_CRAFT.splice(at, 0, ['rowboat', { wood: 500, frags: 100, cloth: 40 }], ['rhib', { frags: 1800, metal: 200, cloth: 150 }]);
+    RW_BENCH.rowboat = 1; RW_BENCH.rhib = 1;
+    function cv(f) { var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d'); x.shadowColor = 'rgba(0,0,0,.7)'; x.shadowBlur = 3; f(x); return c; }
+    RWICON.rowboat = cv(function (x) { x.fillStyle = '#7a5230'; x.beginPath(); x.moveTo(4, 30); x.lineTo(60, 30); x.lineTo(50, 46); x.lineTo(14, 46); x.closePath(); x.fill(); x.strokeStyle = '#c8b090'; x.lineWidth = 3; x.beginPath(); x.moveTo(12, 14); x.lineTo(40, 52); x.stroke(); });
+    RWICON.rhib = cv(function (x) { x.fillStyle = '#3a3e42'; x.beginPath(); x.moveTo(2, 36); x.quadraticCurveTo(4, 26, 16, 26); x.lineTo(56, 26); x.lineTo(56, 44); x.lineTo(16, 44); x.quadraticCurveTo(4, 44, 2, 36); x.fill(); x.fillStyle = '#d8d4c8'; x.fillRect(28, 14, 12, 12); x.fillStyle = '#2a2b2c'; x.fillRect(56, 22, 6, 24); });
+  })();
+
+  function boatModel(ty, col) {
+    var g = new THREE.Group(), U = g.userData;
+    function M(c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.6, metalness: 0.1 }, o || {})); }
+    function box(w, h, d, m, x, y, z, ry) { var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); if (ry) b.rotation.y = ry; g.add(b); return b; }
+    function outline(L, W, bowF) {   // a top-view hull outline: pointed bow at -z, square-ish stern at +z
+      var pts = [], i, n = 14;
+      for (i = 0; i <= n; i++) { var t = i / n, z = -L / 2 + t * L, w = W / 2 * Math.min(1, Math.pow(t / bowF, 0.6)); pts.push([w, z]); }
+      for (i = n; i >= 0; i--) { var t2 = i / n; pts.push([-W / 2 * Math.min(1, Math.pow(t2 / bowF, 0.6)), -L / 2 + t2 * L]); }
+      return pts;
+    }
+    function shapeOf(pts, sc) { var sh = new THREE.Shape(); pts.forEach(function (p, i) { if (i) sh.lineTo(p[0] * sc, p[1] * sc); else sh.moveTo(p[0] * sc, p[1] * sc); }); return sh; }
+    function slab(pts, sc, h, y, m, hole) {   // the outline pushed up by h (with an optional hollow inside)
+      var sh = shapeOf(pts, sc); if (hole) { var hp = new THREE.Path(); hole.forEach(function (p, i) { if (i) hp.lineTo(p[0], p[1]); else hp.moveTo(p[0], p[1]); }); sh.holes.push(hp); }
+      var geo = new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2, curveSegments: 6 });
+      geo.rotateX(Math.PI / 2); geo.translate(0, y + h, 0);
+      var o = new THREE.Mesh(geo, m); g.add(o); return o;
+    }
+    if (ty === 'b') {
+      var wood = M(col, { roughness: 0.85 }), woodL = M(0xa07a50, { roughness: 0.85 }), dark = M(0x3a2a1a, { roughness: 0.9 });
+      var out = outline(4.2, 1.5, 0.42), inner = out.map(function (p) { return [p[0] * 0.86, p[1] * 0.93]; });
+      slab(out, 0.62, 0.32, -0.32, wood);   // the bottom, below the waterline
+      slab(out, 1, 0.42, -0.02, wood, inner);   // the sides with the hollow inside
+      slab(inner, 1, 0.04, -0.06, dark);   // floor boards
+      box(1.3, 0.05, 0.28, woodL, 0, 0.18, 0.55); box(1.25, 0.05, 0.28, woodL, 0, 0.18, -0.95); box(0.9, 0.05, 0.25, woodL, 0, 0.18, 1.6);   // thwarts
+      for (var i = 0; i < 4; i++) box(0.02, 0.06, 3.6, dark, (i % 2 ? 1 : -1) * (i < 2 ? 0.55 : 0.3), 0.2 - Math.floor(i / 2) * 0.16, 0.1);   // strakes inside
+      U.oars = [];
+      [-1, 1].forEach(function (s) {
+        var piv = new THREE.Group(); piv.position.set(s * 0.72, 0.42, 0.45); g.add(piv);
+        var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.4, 6), woodL); shaft.rotation.z = Math.PI / 2; shaft.position.x = s * 0.7; piv.add(shaft);
+        var blade = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.16), woodL); blade.position.x = s * 1.85; piv.add(blade);
+        piv.rotation.z = s * -0.35; U.oars.push(piv);
+      });
+    } else {
+      var tubeM = M(col, { roughness: 0.55 }), hullM = M(0x26282a, { roughness: 0.5, metalness: 0.2 }), deck = M(0x4a4c4e, { roughness: 0.9 }), white = M(0xd8d4c8, { roughness: 0.5 }), black = M(0x161718, { roughness: 0.6 }), glass = M(0xaac8d8, { transparent: true, opacity: 0.3, roughness: 0.05 });
+      var o2 = outline(6.4, 2.6, 0.38);
+      slab(o2.map(function (p) { return [p[0] * 0.8, p[1] * 0.97]; }), 1, 0.45, -0.45, hullM);   // hard hull
+      slab(o2.map(function (p) { return [p[0] * 0.78, p[1] * 0.93]; }), 1, 0.04, 0.0, deck);
+      // the inflatable tube along the sides and round the bow
+      var path = []; o2.forEach(function (p) { path.push(new THREE.Vector3(p[0] * 0.86, 0.2, p[1] * 0.98)); });
+      var tg = null; try { if (THREE.TubeGeometry && THREE.CatmullRomCurve3) tg = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(path, false), 80, 0.26, 10, false); } catch (e) { tg = null; }
+      if (tg && tg.attributes && tg.attributes.position) g.add(new THREE.Mesh(tg, tubeM));
+      else { box(0.5, 0.5, 5.4, tubeM, -1.05, 0.2, 0.3); box(0.5, 0.5, 5.4, tubeM, 1.05, 0.2, 0.3); }
+      box(0.04, 0.06, 4.6, black, -1.31, 0.25, 0.5); box(0.04, 0.06, 4.6, black, 1.31, 0.25, 0.5);   // rub strips
+      // console with windscreen and steering wheel
+      box(0.8, 0.85, 0.6, white, 0, 0.45, 0.15); box(0.82, 0.06, 0.62, black, 0, 0.9, 0.15);
+      var ws = box(0.8, 0.35, 0.03, glass, 0, 1.08, -0.12); ws.rotation.x = -0.35;
+      var swg = new THREE.Group(); swg.position.set(0, 0.95, 0.42); swg.rotation.x = -0.9; g.add(swg);
+      var rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.018, 6, 20), black); swg.add(rim);
+      var sp1 = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.02, 0.02), black); swg.add(sp1); var sp2 = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.02, 0.02), black); sp2.rotation.z = Math.PI / 2; swg.add(sp2);
+      U.sw = swg;
+      box(0.9, 0.45, 0.5, white, 0, 0.25, 0.85); box(0.95, 0.1, 0.55, black, 0, 0.52, 0.85);   // helm seat
+      box(1.9, 0.35, 0.45, white, 0, 0.18, -0.75); box(1.95, 0.08, 0.5, black, 0, 0.38, -0.75);   // front bench
+      box(1.2, 0.35, 0.45, white, 0, 0.18, 2.0); box(1.25, 0.08, 0.5, black, 0, 0.38, 2.0);   // stern bench
+      // outboard motor
+      box(0.45, 0.6, 0.5, black, 0, 0.55, 3.05); box(0.4, 0.12, 0.45, white, 0, 0.88, 3.05);
+      box(0.14, 0.9, 0.16, black, 0, -0.05, 3.25);
+      var prop = new THREE.Group(); prop.position.set(0, -0.45, 3.25); g.add(prop); var pb = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.03), M(0x8a8e92, { metalness: 0.8 })); prop.add(pb); var pb2 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.03), pb.material); pb2.rotation.z = Math.PI / 2; prop.add(pb2);
+      U.prop = prop;
+      var nl = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a1a })); nl.position.set(-0.9, 0.5, -2.2); g.add(nl);
+      var nr = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0x2aff5a })); nr.position.set(-0.9, 0.5, -2.2); nr.position.x = 0.9; g.add(nr);
+    }
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = false; });
+    return g;
+  }
+  function boatPrompt() {
+    var c = CAR.mine;
+    if (CAR.seat !== 0) return KE() + ' ' + zt('下船', 'Get off');
+    return KE() + ' ' + zt('下船', 'Get off') + ' · ' + zt('W/S 油门 · A/D 转向 · ', 'W/S throttle · A/D steer · ') + Math.round(Math.abs(c.sp) * 3.6) + ' km/h';
+  }
+  function boatWaterOk(x, z) { return rwH(x, z) < RW_SEA - 0.35; }
+  function boatEntered(c, si) {
+    if (si === 0) banner(c.ty === 'b' ? zt('你在划船：W/S 前进后退，A/D 转向，E 下船', 'Rowing: W/S forward/back, A/D turn, E gets off') : zt('你在开快艇：W/S 油门，A/D 转向，E 下船', 'Driving the RHIB: W/S throttle, A/D steer, E gets off'), 2600);
+    else banner(zt('你坐在船上' + (si === 1 ? '（副驾驶，什么武器都能用）' : '（只能用手枪）') + '，E 下船', 'You sit in the boat' + (si === 1 ? ' (front passenger: any weapon)' : ' (pistols only)') + '. E gets off'), 2200);
+    sfx('dooropen');
+  }
+  function boatLeft(c) {   // step onto land if it is right there, otherwise into the water beside the boat
+    var best = null;
+    for (var k = 0; k < 8 && !best; k++) { var a = c.yaw + k * Math.PI / 4, x = c.x + Math.cos(a) * 2.6, z = c.z - Math.sin(a) * 2.6; if (rwH(x, z) > RW_SEA + 0.1 && !insideBox(x, rwH(x, z) + 0.5, z)) best = [x, z]; }
+    if (best) { P.x = best[0]; P.z = best[1]; P.y = groundAt(best[0], best[1], rwH(best[0], best[1]) + 2); }
+    else { var sx = Math.cos(c.yaw) * 2.2, sz = -Math.sin(c.yaw) * 2.2; P.x = c.x + sx; P.z = c.z + sz; P.y = RW_SEA - 1.0; }
+    P.vy = 0; P.ground = false; RW.px = P.x; RW.pz = P.z;
+  }
+  function boatDeploy(i) {
+    var s = RW.inv[i]; if (!s) return false;
+    var ty = s.id === 'rhib' ? 'r' : 'b', fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), x = P.x + fx * 5.5, z = P.z + fz * 5.5, ok = true;
+    for (var a = 0; a < 6 && ok; a++) { var ax = x + Math.cos(a * 1.05) * BOAT_V[ty].len / 2, az = z + Math.sin(a * 1.05) * BOAT_V[ty].len / 2; if (rwH(ax, az) > RW_SEA - 0.5 || insideBox(ax, RW_SEA + 0.3, az)) ok = false; }
+    if (!ok) { banner(zt('要对着水放：面前 5 米要是够深的水', 'Face the water: there must be deep enough water 5 m in front of you'), 1800); sfx('deny'); return false; }
+    var cols = BOAT_COLS[ty];
+    dSend({ t: 'Vc', ty: ty, x: Math.round(x * 100) / 100, y: RW_SEA, z: Math.round(z * 100) / 100, yaw: Math.round(P.yaw * 1000) / 1000, col: cols[Math.floor(Math.random() * cols.length)] });
+    s.n--; if (s.n <= 0) RW.inv[i] = null; rwInvChanged(); sfx('upgrade');
+    return true;
+  }
+  function boatTick(c, dt) {
+    var V = BOAT_V[c.ty], me = CAR.mine === c && CAR.seat === 0 && !RW.dead, U = c.g.userData;
+    var wave = Math.sin(gtime * 1.3 + c.x * 0.13) * 0.06 + Math.sin(gtime * 2.1 + c.z * 0.17) * 0.03;
+    if (me) {
+      var thr = (keys[KB.forward] ? 1 : 0) - (keys[KB.back] ? 1 : 0) - (stick ? stick.y : 0), tr = (keys[KB.left] ? 1 : 0) - (keys[KB.right] ? 1 : 0) + (stick ? -stick.x : 0);
+      thr = Math.max(-1, Math.min(1, thr)); tr = Math.max(-1, Math.min(1, tr));
+      var want = thr > 0 ? thr * V.max : thr * V.rev;
+      c.sp += Math.max(-V.acc * dt, Math.min(V.acc * dt, want - c.sp));
+      if (!thr) c.sp -= c.sp * Math.min(1, dt * 0.6);   // water slows you down
+      var turnK = c.ty === 'b' ? 0.5 + Math.min(1, Math.abs(c.sp) / 3) * 0.5 : Math.min(1, Math.abs(c.sp) / 4);
+      var turn = tr * V.turn * turnK * dt * (c.sp < -0.2 ? -1 : 1); c.yaw += turn; P.yaw += turn;
+      c.st += ((tr) - c.st) * Math.min(1, dt * 6);
+      var fx = -Math.sin(c.yaw), fz = -Math.cos(c.yaw), q = { x: c.x + fx * c.sp * dt, z: c.z + fz * c.sp * dt };
+      resolveCircle(q, V.rad, RW_SEA - 0.3);
+      var dir = c.sp >= 0 ? 1 : -1, nose = { x: q.x + fx * V.len * 0.45 * dir, z: q.z + fz * V.len * 0.45 * dir };
+      if (!boatWaterOk(nose.x, nose.z) || !boatWaterOk(q.x, q.z)) { if (Math.abs(c.sp) > 4) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.3; } c.sp *= -0.15; }   // ran aground
+      else { c.x = q.x; c.z = q.z; }
+      var lim = RW.half * 1.02; c.x = Math.max(-lim, Math.min(lim, c.x)); c.z = Math.max(-lim, Math.min(lim, c.z));
+      c.y = RW_SEA - 0.05 + wave;
+      c.p += ((Math.sin(gtime * 1.7 + c.x * 0.2) * 0.025 + Math.max(0, c.sp) / V.max * (c.ty === 'r' ? 0.06 : 0.02)) - c.p) * Math.min(1, dt * 3);
+      c.r += ((-tr * Math.min(1, Math.abs(c.sp) / V.max) * 0.08 + Math.sin(gtime * 1.1 + c.z * 0.2) * 0.02) - c.r) * Math.min(1, dt * 3);
+      carPlace(c);
+      CAR.sendT -= dt;
+      if (CAR.sendT <= 0) { CAR.sendT = Math.abs(c.sp) > 0.2 ? 0.08 : 1; dSend({ t: 'Vm', id: c.id, x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, sp: Math.round(c.sp * 10) / 10, p: Math.round(c.p * 100) / 100, r: Math.round(c.r * 100) / 100, st: Math.round(c.st * 100) / 100 }); }
+    } else {
+      if (c.seats[0] && c.tgt) {   // someone else steers: glide to where they say it is
+        var t = c.tgt, f = Math.min(1, dt * 8), dy = Math.atan2(Math.sin(t.yaw - c.yaw), Math.cos(t.yaw - c.yaw));
+        if (Math.hypot(t.x - c.x, t.z - c.z) > 40) { c.x = t.x; c.z = t.z; }
+        c.x += (t.x - c.x) * f; c.z += (t.z - c.z) * f; c.yaw += dy * f; c.sp = t.sp || 0;
+        if (CAR.mine === c) P.yaw += dy * f;
+        c.st += ((c.stT || 0) - c.st) * Math.min(1, dt * 6);
+      } else { c.sp *= 1 - Math.min(1, dt * 0.8); c.st *= 0.9; }
+      c.y = (boatWaterOk(c.x, c.z) ? RW_SEA - 0.05 : Math.max(RW_SEA - 0.05, groundAt(c.x, c.z, c.y + 1) + 0.25)) + wave;
+      c.p += ((Math.sin(gtime * 1.7 + c.x * 0.2) * 0.025) - c.p) * Math.min(1, dt * 3);
+      c.r += ((Math.sin(gtime * 1.1 + c.z * 0.2) * 0.025) - c.r) * Math.min(1, dt * 3);
+      carPlace(c);
+    }
+    if (U.sw) U.sw.rotation.z = -c.st * 2.2;
+    if (U.prop) U.prop.rotation.z += c.sp * dt * 6;
+    if (U.oars) { var ph = gtime * 2.6 * Math.min(1, Math.abs(c.sp) / 2), row = Math.abs(c.sp) > 0.3; U.oars.forEach(function (o, k) { var s = k ? 1 : -1; o.rotation.y = row ? Math.sin(ph) * 0.6 : 0; o.rotation.z = s * (row ? -0.25 - Math.cos(ph) * 0.12 : -0.35); }); }
+  }
+  // boats moored offshore at harbors, fishing villages and lighthouses (the same for everybody)
+  var RW_MONBOATS = { harbor: ['r', 'b', 'b'], village: ['b'], lighthouse: ['b', 'r'] };
+  function rwMonBoats(have) {
+    RW.mons.forEach(function (m, mi) {
+      var L = RW_MONBOATS[m.k]; if (!L) return;
+      var used = [];
+      L.forEach(function (ty, j) {
+        var id = 'm' + mi + '_' + (5 + j); if (have[id]) return;
+        var spot = null;
+        for (var r = m.r * 0.5; r < m.r + 220 && !spot; r += 4) for (var a = 0; a < 48 && !spot; a++) {
+          var aa = a / 48 * 6.283 + rwHash(mi, j, RW.s) * 0.4, x = m.x + Math.cos(aa) * r, z = m.z + Math.sin(aa) * r;
+          if (rwH(x, z) > RW_SEA - 1.4) continue;
+          var deep = true; for (var k = 0; k < 6 && deep; k++) { var kx = x + Math.cos(k * 1.05) * 4, kz = z + Math.sin(k * 1.05) * 4; if (rwH(kx, kz) > RW_SEA - 0.8) deep = false; }
+          if (!deep || used.some(function (u) { return Math.hypot(u[0] - x, u[1] - z) < 9; })) continue;
+          spot = [x, z, Math.atan2(m.x - x, m.z - z) + Math.PI];
+        }
+        if (!spot) return;
+        used.push(spot);
+        var cols = BOAT_COLS[ty];
+        carAdd({ id: id, ty: ty, x: spot[0], y: RW_SEA, z: spot[1], yaw: spot[2], col: cols[Math.floor(rwHash(mi, j + 9, RW.s) * 97) % cols.length] });
+      });
+    });
+  }
+  /* ================= UPDATE 57: THE OIL RIG =================
+     An offshore oil rig, out in deep water: only reachable by boat or a long swim. Stairs come up from a little
+     landing at the water. The main deck has military crates and cover, the upper deck elite crates and a locked
+     crate to hack, and armed guards patrol the decks (they stay on the platform). */
+  var RIG_D = 8;   // top of the main deck above the sea floor datum (the sea is at -1.5)
+  RW_NAMES.oilrig = ['海上钻井平台', 'Oil Rig'];
+  RW_CAMPS.oilrig = ['gunner', 'gunner', 'gunner', 'sniper', 'gunner'];
+  RW_MONLOOT.oilrig = [[-8, 8, 'mil', RIG_D, 1], [8, 9, 'mil', RIG_D, 1], [-9, -8, 'mil', RIG_D, 1], [7, -3.5, 'locked', RIG_D + 5, 1], [0, -7, 'elite', RIG_D + 5, 1], [8, -8, 'elite', RIG_D + 5, 1]];
+  function rwH(x, z) {   // monuments flatten the ground round them, except the rig standing in the sea
+    var h = rwBase(x, z), M = RW.mons;
+    for (var i = 0; i < M.length; i++) {
+      var m = M[i]; if (m.sea) continue;
+      var dx = x - m.x, dz = z - m.z, d2 = dx * dx + dz * dz;
+      if (d2 < m.R2) { var d = Math.sqrt(d2), w = d <= m.r ? 1 : 1 - rwSm((d - m.r) / (m.R - m.r)); h = h * (1 - w); }
+    }
+    return h;
+  }
+  function rwMonW(x, z) {
+    var M = RW.mons, w = 0;
+    for (var i = 0; i < M.length; i++) {
+      var m = M[i]; if (m.sea) continue;
+      var dx = x - m.x, dz = z - m.z, d2 = dx * dx + dz * dz;
+      if (d2 < m.R2) { var d = Math.sqrt(d2), q = d <= m.r ? 1 : 1 - rwSm((d - m.r) / (m.R - m.r)); if (q > w) w = q; }
+    }
+    return w;
+  }
+  function rwPlan() {
+    RW.mons = [];
+    var rg = seeded(hashStr('rwplan' + RW.seed)), list = [], H = RW.half;
+    RW_SPECS.forEach(function (s) { for (var i = 0; i < s[2]; i++) list.push(s); });
+    list.forEach(function (s) {
+      var best = null, tries, lim = s[0] === 'outpost' ? 260 : H * 0.72;
+      for (tries = 0; tries < 450 && !best; tries++) {
+        var x = (rg() * 2 - 1) * lim, z = (rg() * 2 - 1) * lim;
+        if (rwSiteOk(x, z, s[1], tries)) best = { x: x, z: z };
+      }
+      if (best) { RW.mons.push({ k: s[0], x: best.x, z: best.z, r: s[1], R: s[1] + 80, R2: (s[1] + 80) * (s[1] + 80), y: 0, camp: [], rs: [], npcs: 0, meshes: [] }); }
+    });
+    for (var i = 0; i < RW.mons.length; i++) if (RW.mons[i].k === 'outpost') { RW.safe = { x: RW.mons[i].x, z: RW.mons[i].z, r: RW.mons[i].r }; }
+    rwPlaceRig();
+    rwPlanHerds();
+  }
+  function rwPlaceRig() {   // deep water, but within reach of a coast (the same spot for everybody)
+    var rg = seeded(hashStr('rwrig' + RW.seed)), H = RW.half, best = null;
+    for (var t = 0; t < 900 && !best; t++) {
+      var a = rg() * 6.283, r = H * (0.45 + rg() * 0.5), x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (Math.abs(x) > H * 0.9 || Math.abs(z) > H * 0.9 || rwBase(x, z) > -9) continue;
+      var deep = true, k; for (k = 0; k < 12 && deep; k++) { var ka = k / 12 * 6.283; if (rwBase(x + Math.cos(ka) * 40, z + Math.sin(ka) * 40) > -5) deep = false; }
+      if (!deep) continue;
+      var coast = false; for (k = 0; k < 24 && !coast; k++) { var ca = k / 24 * 6.283; for (var cr = 120; cr <= 320 && !coast; cr += 40) if (rwBase(x + Math.cos(ca) * cr, z + Math.sin(ca) * cr) > 1) coast = true; }
+      if (!coast) continue;
+      if (RW.mons.some(function (m) { return Math.hypot(m.x - x, m.z - z) < m.r + 120; })) continue;
+      best = { x: x, z: z };
+    }
+    if (best) RW.mons.push({ k: 'oilrig', sea: true, deck: RIG_D, deckR: 11, x: best.x, z: best.z, r: 22, R: 40, R2: 1600, y: 0, camp: [], rs: [], npcs: 0, meshes: [] });
+  }
+  function rwBuildOilRig(m) {
+    m.camp = RW_CAMPS.oilrig.slice();
+    var cx = m.x, cz = m.z, D = RIG_D, bed = Math.min(-4, rwH(cx, cz));
+    var steel = 0x5a5e62, rust = 0x7a4a2a, yel = 0xc9a227, dark = 0x2a2c2e, white = 0xd8d4c8;
+    // legs with bracing
+    [[-10, -10], [10, -10], [-10, 10], [10, 10]].forEach(function (q) { mxCyl(cx + q[0], cz + q[1], 1.1, D - 0.6 - bed, yel, bed, true, 14); });
+    for (var lv = 0; lv < 3; lv++) { var yb = bed + 3 + lv * 4; if (yb > D - 2) break; [[0, -10, 20, 0.4], [0, 10, 20, 0.4], [-10, 0, 0.4, 20], [10, 0, 0.4, 20]].forEach(function (b) { deco(cx + b[0], yb, cz + b[1], b[2], 0.4, b[3], rust); }); }
+    // main deck, edge rails (gap where the stairs arrive)
+    solid(cx, cz, 26, 26, D - 0.6, D, steel);
+    solid(cx, cz - 13, 26, 0.15, D, D + 1.0, dark); solid(cx - 13, cz, 0.15, 26, D, D + 1.0, dark);
+    solid(cx, cz + 13, 26, 0.15, D, D + 1.0, dark); solid(cx + 13, cz - 10.5, 0.15, 5, D, D + 1.0, dark); solid(cx + 13, cz + 4, 0.15, 18, D, D + 1.0, dark);
+    // containers and machinery: cover on the main deck
+    solid(cx - 6, cz + 3, 2.6, 6, D, D + 2.6, 0x8a3a2a); solid(cx + 2, cz + 7, 6, 2.6, D, D + 2.6, 0x2f5a7a); solid(cx - 9, cz - 3, 2.4, 2.4, D, D + 2.4, 0x4a5a3a);
+    mxCyl(cx + 5, cz + 1, 1.3, 3.2, white, D, true, 14); mxCyl(cx - 2, cz - 10, 1.0, 2.6, white, D, true, 12);
+    // upper deck on posts, with stairs up from the main deck
+    var ux = cx + 3, uz = cz - 3, U = D + 5;
+    solid(ux, uz, 13, 13, U - 0.5, U, steel);
+    [[-6, -6], [6, -6], [-6, 6], [6, 6]].forEach(function (q) { solid(ux + q[0], uz + q[1], 0.5, 0.5, D, U - 0.5, yel); });
+    solid(ux, uz - 6.5, 13, 0.12, U, U + 1, dark); solid(ux + 6.5, uz, 0.12, 13, U, U + 1, dark); solid(ux - 6.5, uz - 2, 0.12, 9, U, U + 1, dark);
+    for (var s = 0; s < 17; s++) { var sy = D + (s + 1) * 0.3; solid(ux - 5.6 + 0, uz + 6.5 + 6.6 - s * 0.42 - 0.21, 1.8, 0.42, sy - 0.3, sy, dark); }   // stairs up the side of the upper deck
+    deco(ux, U + 0.02, uz, 8, 0.04, 8, yel, { basic: true }); deco(ux, U + 0.03, uz, 6.6, 0.04, 6.6, steel, { basic: true });   // helipad ring
+    // the derrick: a tall lattice tower, and a flare boom
+    var tx = cx - 8, tz = cz - 8, TH = 22;
+    [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]].forEach(function (q) { solid(tx + q[0], tz + q[1], 0.3, 0.3, D, D + TH, rust); });
+    for (var h = D + 2; h < D + TH; h += 3) { deco(tx, h, tz - 1.4, 3.1, 0.18, 0.18, rust); deco(tx, h, tz + 1.4, 3.1, 0.18, 0.18, rust); deco(tx - 1.4, h, tz, 0.18, 0.18, 3.1, rust); deco(tx + 1.4, h, tz, 0.18, 0.18, 3.1, rust); }
+    deco(tx, D + TH + 0.5, tz, 3.4, 1, 3.4, dark);
+    deco(cx - 13 - 4, D + 3, cz + 8, 8, 0.3, 0.3, rust, null, { z: 0.4 });
+    var fl = new THREE.Mesh(new THREE.SphereGeometry(0.8, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff8a2a })); fl.position.set(cx - 20.5, D + 4.7, cz + 8); fl.scale.set(1, 1.6, 1); mapGroup.add(fl);
+    // landing at the water and a long staircase up the east side to the deck
+    var lx = cx + 15.5, lz = cz + 12;
+    solid(lx, lz, 4, 4, RW_SEA - 0.9, RW_SEA - 0.2, steel);
+    mxCyl(lx + 1.6, lz + 1.6, 0.25, RW_SEA + 1.4 - bed, yel, bed, true, 8); mxCyl(lx - 1.6, lz + 1.6, 0.25, RW_SEA + 1.4 - bed, yel, bed, true, 8);
+    var y0 = RW_SEA - 0.2, n = Math.ceil((D - y0) / 0.3), run = Math.min(0.5, 21 / n);
+    for (var k = 0; k < n; k++) { var yy = Math.min(D, y0 + (k + 1) * ((D - y0) / n)); solid(lx, lz - 2 - (k + 0.5) * run, 2.2, run + 0.02, yy - 0.3, yy, dark); }
+    var topZ = lz - 2 - n * run;
+    solid(lx - 1.3, topZ - 1, 2.8, 2, D - 0.3, D, steel);   // landing onto the deck
+    for (var hp = 0; hp <= n; hp += 3) { var hz = lz - 2 - hp * run, hy = y0 + hp * ((D - y0) / n); deco(lx + 1.05, hy + 0.5, hz, 0.06, 1.0, 0.06, yel); }   // handrail posts
+    var hl = Math.hypot(lz - 2 - topZ, D - y0), rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, hl), new THREE.MeshStandardMaterial({ color: yel, roughness: 0.6 }));
+    rail.position.set(lx + 1.05, (y0 + D) / 2 + 1.0, (lz - 2 + topZ) / 2); rail.rotation.x = Math.atan2(D - y0, lz - 2 - topZ); mapGroup.add(rail);
+    // lights
+    var lamp = new THREE.MeshBasicMaterial({ color: 0xfff2b0 });
+    [[-12.5, -12.5], [12.5, -12.5], [-12.5, 12.5], [12.5, 12.5]].forEach(function (q) { var o = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), lamp); o.position.set(cx + q[0], D + 1.3, cz + q[1]); mapGroup.add(o); });
+  }
+  // guards on the rig spawn on the deck and never walk off it
+  function rwSpawnNpc(m, s) {
+    for (var tries = 0; tries < 20; tries++) {
+      var a = Math.random() * Math.PI * 2, d = m.deck ? 2 + Math.random() * (m.deckR - 2) : 8 + Math.random() * (m.r * 0.7), x = m.x + Math.cos(a) * d, z = m.z + Math.sin(a) * d;
+      var by = m.deck ? m.deck : 0;
+      if (insideBox(x, by + 0.4, z) || insideBox(x, by + 1.4, z)) continue;
+      if (rwPlayersNear(x, z, m.deck ? 6 : 22)) continue;
+      var e = makeEnemy(s.type); e.rw = true; e.camp = m; e.slot = s;
+      e.g.position.set(x, m.deck ? groundAt(x, z, m.deck + 0.5) : rwH(x, z), z); scene.add(e.g); enemies.push(e); s.e = e;
+      e.ox = x; e.oz = z;
+      return true;
+    }
+    return false;
+  }
+  function rwNpcFloor(e, pos) {   // where an enemy stands: the terrain, or the rig's deck (and it will not step off)
+    var m = e.camp;
+    if (m && m.deck) {
+      var gy = groundAt(pos.x, pos.z, pos.y + 0.8);
+      if (gy < m.deck - 1 || Math.hypot(pos.x - m.x, pos.z - m.z) > 14) { pos.x = e.ox === undefined ? pos.x : e.ox; pos.z = e.oz === undefined ? pos.z : e.oz; gy = groundAt(pos.x, pos.z, pos.y + 0.8); }
+      e.ox = pos.x; e.oz = pos.z;
+      return gy;
+    }
+    return rwH(pos.x, pos.z);
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable

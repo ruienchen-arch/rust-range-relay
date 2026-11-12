@@ -163,7 +163,7 @@ const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw
 const HP = { at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|apis|arif|ashot|arkt|parts|atur|gtrap|clay|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|rowboat|rhib|arrow|spear|machete|apis|arif|ashot|arkt|parts|atur|gtrap|clay|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
@@ -246,7 +246,7 @@ const AIR_MS = Math.max(60000, (+process.env.AIRDROP_MINUTES || 10) * 60000);
 let airNext = Date.now() + AIR_MS * 0.5, airSeq = 0, airCur = null;
 function airItems() {
   const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1)), pick = (a) => a[Math.floor(Math.random() * a.length)];
-  const it = [['frags', R(150, 300)], ['medkit', R(1, 3)], ['parts', R(2, 4)], ['arif', R(16, 32)], ['apis', R(16, 32)]];   // update 56: guns and explosives are rarer
+  const it = [['frags', R(300, 600)], ['medkit', R(1, 3)], ['arif', R(16, 32)], ['apis', R(16, 32)]];   // update 56: guns and explosives are rarer
   if (Math.random() < 0.5) it.push(['g' + pick([1, 5, 6, 9, 10, 14, 15]), 1]);
   else it.push(['g' + pick([2, 3, 4, 8, 11, 12, 13]), 1]);
   if (Math.random() < 0.6) it.push(['armor', R(1, 2)]);
@@ -355,8 +355,9 @@ function worldStatKill(c, m) {   // a player's own game reports an enemy or anim
 // ---- cars (update 38): every car on the island, who sits where, kept in DATA_DIR/cars.json ----
 const CAR_FILE = path.join(DATA_DIR, 'cars.json');
 let cars = new Map(), carSeed = '', carSeq = 1, carT = null;
-const carSeats = (ty) => ty === 'h' ? [0, 0] : [0, 0, 0, 0];   // a helicopter seats a pilot and one passenger
-try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), ty: q.ty === 'h' ? 'h' : '', seats: carSeats(q.ty) }); }); } catch (e) {}
+const VTY = (t) => (t === 'h' || t === 'b' || t === 'r') ? t : '';   // h helicopter, b rowboat, r RHIB
+const carSeats = (ty) => ty === 'h' || ty === 'b' ? [0, 0] : [0, 0, 0, 0];   // a helicopter seats a pilot and one passenger
+try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), ty: VTY(q.ty), seats: carSeats(q.ty) }); }); } catch (e) {}
 function saveCars() {
   if (carT) return;
   carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })) })); } catch (e) {} }, 3000);
@@ -371,7 +372,8 @@ function worldCarEnter(c, m) {
   let q = cars.get(id);
   if (!q) {   // a monument car nobody has touched yet: it starts where every game puts it
     if (id[0] !== 'm') return; const p = carXYZ(m); if (!p) return;
-    q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: '', seats: [0, 0, 0, 0] }; cars.set(id, q);
+    const ty = VTY(m.ty) === 'h' ? '' : VTY(m.ty);   // monument boats arrive here the first time somebody gets in
+    q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: '', ty, seats: carSeats(ty) }; cars.set(id, q);
   }
   if (c.hasPos && Math.hypot(c.x - q.x, c.z - q.z) > 10) return;
   const had = carSeatOf(c.id); if (had && had[0] === q) return;
@@ -391,7 +393,7 @@ function worldCarMake(c, m) {
   const p = carXYZ(m); if (!p) return;
   if (c.hasPos && Math.hypot(c.x - p[0], c.z - p[2]) > 14) return;
   if ([...cars.values()].filter((q) => q.by && q.by === c.owner).length >= 3) { c.send(J({ t: 'RVf', id: '', why: 'max' })); return; }
-  const id = 'p' + (carSeq++), ty = m.ty === 'h' ? 'h' : '';
+  const id = 'p' + (carSeq++), ty = VTY(m.ty);
   const q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: c.owner || '', ty, seats: carSeats(ty) };
   cars.set(id, q); saveCars(); worldAll(J({ t: 'RVc', car: carPub(q) }));
 }
@@ -498,7 +500,7 @@ function wbRestore(c, str) {
     for (const q of Array.isArray(w.cars) ? w.cars.slice(0, 500) : []) {
       if (!q || typeof q.id !== 'string' || !/^(m\d{1,3}_\d|p\d{1,7})$/.test(q.id) || cars.has(q.id) || wbCarKnown.has(q.id)) continue;
       const p = carXYZ(q); if (!p) continue;
-      const car = { id: q.id, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: q.ty === 'h' ? 'h' : '', seats: carSeats(q.ty) };
+      const car = { id: q.id, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: VTY(q.ty), seats: carSeats(q.ty) };
       cars.set(q.id, car); wbCarKnown.add(q.id); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
     }
     if ((+w.cs | 0) > carSeq) carSeq = +w.cs | 0;
@@ -965,9 +967,9 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Ry') { worldLockTry(c, m); return; }
   if (c.world && m.t === 'Rt') { worldTrap(c, m); return; }
   if (c.world && m.t === 'Rtf') {   // a turret or a gun trap is shooting at this player: let everyone see it fire
-    const a = builds.get(m.id | 0); if (!a || (a[1] !== 'at' && a[1] !== 'gt') || !near(c, a, 45)) return;
-    const now = Date.now(); if (now - (c.tfT || 0) < 150) return; c.tfT = now;
-    worldOthers(c, JSON.stringify({ t: 'RTF', id: a[0], by: c.id }));
+    const a = builds.get(m.id | 0); if (!a || (a[1] !== 'at' && a[1] !== 'gt') || !near(c, a, m.g !== undefined ? 400 : 45)) return;
+    const now = Date.now(); if (now - (c.tfT || 0) < 120) return; c.tfT = now;
+    worldOthers(c, JSON.stringify(m.g !== undefined ? { t: 'RTF', id: a[0], g: m.g | 0 } : { t: 'RTF', id: a[0], by: c.id }));   // g: it is shooting a monster
     return;
   }
   if (c.world && m.t === 'Rs') { worldSave(c, m); return; }
