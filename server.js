@@ -80,7 +80,7 @@ function worldJoin(c, m) {
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub), ev: eventsFor() }));
   setTimeout(() => { if (!c.closed) raidsOnJoin(c); }, 3000);
-  teamSeed(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); }   // after the island has loaded on their side
+  teamSeed(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
   setTimeout(() => bkSend(c, true), 3000);
   setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
@@ -305,14 +305,16 @@ const sameTeam = (a, b) => !!a && !!b && (a === b || (teamOf(a) || []).indexOf(b
 function ownerName(o) {
   for (const c of world.clients.values()) if (c.owner === o) return c.name || '';
   if (o.startsWith('u:') && db.users[o.slice(2)]) return db.users[o.slice(2)].name || o.slice(2);
-  return gnames[o] || '?';
+  return gnames[o] || (stats[o] && stats[o].n) || '?';
 }
 function ownersByName(n) {   // everybody who goes (or went) by this name
   const low = String(n || '').trim().toLowerCase(), out = new Set(); if (!low) return [];
   for (const c of world.clients.values()) if (c.owner && c.owner[0] !== 'c' && String(c.name || '').toLowerCase() === low) out.add(c.owner);
   for (const k in gnames) if (String(gnames[k]).toLowerCase() === low) out.add(k);
   for (const u in db.users || {}) if (u.toLowerCase() === low || String(db.users[u].name || '').toLowerCase() === low) out.add('u:' + u);
-  return [...out];
+  for (const k in stats) if (k[0] !== 'c' && String((stats[k] || {}).n || '').toLowerCase() === low) out.add(k);   // the leaderboard remembers names too, and it survives restarts (world backup)
+  const onl = new Set(); for (const c of world.clients.values()) if (c.owner) onl.add(c.owner);
+  return [...out].sort((a, b) => (onl.has(b) - onl.has(a)) || (((stats[b] || {}).t || 0) - ((stats[a] || {}).t || 0)));   // online first, then whoever played last
 }
 function teamAccess(t, add, who) {   // tool cupboards and code-locked doors built by one teammate list all the others
   const all = t || [];
@@ -330,7 +332,7 @@ function teamAccess(t, add, who) {   // tool cupboards and code-locked doors bui
 }
 function teamSend(o, say, arg) {
   const t = teamOf(o), inv = invites.get(o), on = new Map(); for (const c of world.clients.values()) if (c.owner) on.set(c.owner, c.id);
-  const msg = JSON.stringify({ t: 'RTM', m: (t || []).map((q) => ({ o: q, n: ownerName(q), id: on.get(q) || 0 })), inv: inv && Date.now() - inv.t < 120000 ? { n: inv.n } : null, say: say || '', a: arg || '' });
+  const msg = JSON.stringify({ t: 'RTM', m: (t || []).map((q) => ({ o: q, n: ownerName(q), id: on.get(q) || 0 })), inv: inv && Date.now() < inv.exp ? { n: inv.n } : null, say: say || '', a: arg || '' });
   for (const c of world.clients.values()) if (c.owner === o) c.send(msg);
 }
 function teamSendAll(t, say, arg) { for (const o of t || []) teamSend(o, say, arg); }
@@ -366,18 +368,20 @@ function worldTeam(c, m) {
   if (a === 'inv') {
     if (now - (c.tmT || 0) < 2000) return; c.tmT = now;
     const n = String(m.n || '').trim(); if (!n) return teamSend(c.owner);
-    let tgt = null; for (const o of world.clients.values()) if (o.owner && o.owner[0] !== 'c' && String(o.name || '').toLowerCase() === n.toLowerCase()) tgt = o;
-    if (!tgt) return teamSend(c.owner, 'no_one', n);
-    if (tgt.owner === c.owner) return teamSend(c.owner, 'self');
-    if (sameTeam(c.owner, tgt.owner)) return teamSend(c.owner, 'already', tgt.name);
+    const to = ownersByName(n)[0];   // online or not: an offline player sees the invite when they next come
+    if (!to) return teamSend(c.owner, 'no_one', n);
+    if (to === c.owner) return teamSend(c.owner, 'self');
+    const toName = ownerName(to) !== '?' ? ownerName(to) : n;
+    if (sameTeam(c.owner, to)) return teamSend(c.owner, 'already', toName);
     if ((teamOf(c.owner) || [c.owner]).length >= TEAM_MAX) return teamSend(c.owner, 'full');
-    invites.set(tgt.owner, { from: c.owner, n: c.name, t: now });
-    teamSend(c.owner, 'sent', tgt.name); teamSend(tgt.owner, 'got', c.name);
+    let on = false; for (const o of world.clients.values()) if (o.owner === to) on = true;
+    invites.set(to, { from: c.owner, n: c.name, t: now, exp: now + (on ? 120000 : 7 * 86400000) });
+    teamSend(c.owner, on ? 'sent' : 'sent_off', toName); if (on) teamSend(to, 'got', c.name);
     return;
   }
   if (a === 'acc') {
     const inv = invites.get(c.owner); invites.delete(c.owner);
-    if (!inv || now - inv.t > 120000) return teamSend(c.owner, 'noinv');
+    if (!inv || now > inv.exp) return teamSend(c.owner, 'noinv');
     if ((teamOf(inv.from) || [inv.from]).length >= TEAM_MAX) return teamSend(c.owner, 'full');
     teamJoin(inv.from, c.owner); return;
   }

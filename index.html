@@ -12164,7 +12164,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 62;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 63;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -13403,6 +13403,7 @@ Object.assign(EN, {
     var A = String(a || '');   // banner and chat use textContent
     var T = {
       sent: zt('已向 ' + A + ' 发出组队邀请', 'Team invite sent to ' + A),
+      sent_off: zt(A + ' 不在线：邀请已留下，他下次上线时按 Y 就能加入', A + ' is offline: the invite waits, and they can press Y when they next come'),
       got: zt(A + ' 邀请你组队：按 Y 同意，或在聊天里输入 /accept', A + ' invites you to a team: press Y to accept, or type /accept'),
       joined: zt(A + ' 加入了队伍', A + ' joined the team'),
       left: zt(A + ' 退出了队伍', A + ' left the team'),
@@ -13412,7 +13413,7 @@ Object.assign(EN, {
       self: zt('不能邀请自己', 'You cannot invite yourself'),
       already: zt(A + ' 已经是你的队友', A + ' is already on your team'),
       full: zt('队伍满了（最多 8 人）', 'The team is full (8 at most)'),
-      noinv: zt('没有待接受的邀请（邀请 2 分钟后失效）', 'No invite to accept (invites last 2 minutes)'),
+      noinv: zt('没有待接受的邀请（在线邀请 2 分钟、离线邀请 7 天后失效）', 'No invite to accept (2 minutes if you were online, 7 days if not)'),
       nokey: zt('这个浏览器不能组队（请刷新页面再进）', 'Teams need a saved player key: reload the page')
     };
     return T[code] || '';
@@ -13458,7 +13459,7 @@ Object.assign(EN, {
       h += '<div class="tml">';
       TEAM.m.forEach(function (q) { h += '<div class="tmr"><i class="' + (q.id ? 'on' : '') + '"></i>' + duEsc(q.n || '?') + (q.o === RW.me ? ' <em>' + zt('（你）', '(you)') + '</em>' : '') + '<small>' + (q.id ? zt('在线', 'online') : zt('离线', 'offline')) + '</small></div>'; });
       h += '</div>';
-    } else h += '<div class="nmh">' + zt('你现在没有队伍。输入在线玩家的名字邀请他。', 'You have no team yet. Type the name of a player who is online to invite them.') + '</div>';
+    } else h += '<div class="nmh">' + zt('你现在没有队伍。输入玩家的名字邀请他（不在线也可以，他下次上线会看到）。', 'You have no team yet. Type a player\'s name to invite them (offline is fine: they see it when they next come).') + '</div>';
     h += '<div class="tmf"><input id="rwTeamIn" maxlength="16" autocomplete="off" spellcheck="false" placeholder="' + zt('玩家名字', 'Player name') + '"><button type="button" class="rwbtn" data-a="inv">' + zt('邀请（Enter）', 'Invite (Enter)') + '</button></div>' +
       '<div class="nmh">' + zt('聊天里也可以：/team 名字 邀请，/accept 同意，/leave 退出', 'In the chat: /team Name to invite, /accept, /leave') + '</div></div>' +
       '<div class="lbf">' + (TEAM.m.length ? '<button type="button" class="rwbtn alt" data-a="leave">' + zt('退出队伍', 'Leave team') + '</button>' : '<span></span>') + '<button type="button" class="rwbtn" data-a="x">' + zt('关闭（Esc）', 'Close (Esc)') + '</button></div>';
