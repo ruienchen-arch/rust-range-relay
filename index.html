@@ -5416,7 +5416,7 @@ Object.assign(EN, {
     var sp = rwSpawnPoint();
     if (bag && bag.k === 'sb') { sp = [bag.x + 0.8, bag.z + 0.8, groundAt(bag.x + 0.8, bag.z + 0.8, bag.y + 1)]; RW.bagCd[bag.id] = gtime + 60; }
     P.hp = P.maxHp; P.armor = 0; P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; RW.px = P.x; RW.pz = P.z;
-    resetLoadout(); resetInv(); if (!RW.joinDead) coins = Math.floor(coins * 0.5); grenades = 1; adrenT = 0; W.cd = 0; W.reload = 0; aiming = false; updateSlots(); rwInvReset(false);
+    resetLoadout(); resetInv(); if (!RW.joinDead) coins = Math.floor(coins * 0.5); grenades = 0; adrenT = 0; W.cd = 0; W.reload = 0; aiming = false; updateSlots(); rwInvReset(false);
     RW.dead = false; RW.joinDead = false; $('menu').hidden = true; requestLock(); rwSaveNow(true);
     banner(bag ? zt('你在睡袋重生了', 'You respawned at your sleeping bag') : zt('你在海岸重生了', 'You respawned on the coast'), 1500);
   }
@@ -5518,6 +5518,7 @@ Object.assign(EN, {
       case 'RVO': case 'RHK': case 'RAD': rwEvMsg(m); break;
       case 'RNM': rwNameMsg(m); break;
       case 'RSG': rwSignMsg(m); break;
+      case 'RTF': rwTurMsg(m); break;
       case 'RRA': rwRaidLive(m); break;
       case 'RRL': rwRaidList(m); break;
       case 'ROP': banner(zt('这里的主人都不在线，房子受离线保护，炸不动', 'The owners are offline: this base is protected and takes no damage'), 2200); sfx('deny'); break;
@@ -5608,7 +5609,7 @@ Object.assign(EN, {
     nades.forEach(function (n) { scene.remove(n.m); }); nades = []; rockets.forEach(function (n) { scene.remove(n.m); }); rockets = []; blasts.forEach(function (b) { scene.remove(b.m); }); blasts = [];
     pickups.forEach(function (p) { p.cool = 0; p.g.visible = true; });
     gunAcc.color.setHex(0x1a1b1c);   // sights stay dark steel
-    grenades = 2; coins = 120; adrenT = 0; vit = 0; resetInv(); resetLoadout(); updateSlots(); rwInvReset(true); drawT = 0; RW.lastHeld = rwHeldSlot() ? rwHeldSlot().id : '';
+    grenades = 0; coins = 120; adrenT = 0; vit = 0; resetInv(); resetLoadout(); updateSlots(); rwInvReset(true); drawT = 0; RW.lastHeld = rwHeldSlot() ? rwHeldSlot().id : '';
     P.maxHp = CH.hp; P.armor = 0; P.hp = P.maxHp;
     var sp = rwSpawnPoint(); P.x = sp[0]; P.z = sp[1]; P.y = sp[2]; P.vy = 0; P.yaw = Math.atan2(P.x, P.z) + Math.PI; P.pitch = 0; RW.px = P.x; RW.pz = P.z;
     W.cd = 0; W.reload = 0; aiming = false; aimT = 0; latched = false;
@@ -6413,7 +6414,8 @@ Object.assign(EN, {
   function rwInvReset(fresh) {
     rwInvClear(); RW.hot = 0; holster = false;
     RW.inv[RW_HOT0] = { id: 'rock', n: 1 };
-    if (fresh) { RW.inv[RW_HOT0 + 1] = { id: 'g0', n: 1 }; RW.inv[0] = { id: 'medkit', n: 1 }; }
+    if (fresh) RW.inv[0] = { id: 'bandage', n: 3 };   // no gun to start with: guns have to be earned
+    for (var wi = 0; wi < WDEF.length; wi++) if (ws[wi]) ws[wi].ammo = 0;   // and nothing comes pre-loaded
     rwInvChanged();
   }
   function rwCount(id) { var n = 0; for (var i = 0; i < RW_SLOTS; i++) { var s = RW.inv[i]; if (s && s.id === id) n += s.n; } return n; }
@@ -6569,9 +6571,9 @@ Object.assign(EN, {
     if (!r) return;
     if (RW_BENCH[id] && !rwNearBench()) { sfx('deny'); banner(zt('要站在工作台旁边才能制作', 'Stand next to a workbench to craft this'), 1500); return; }
     if (!rwPay(r[1])) { sfx('deny'); banner(zt('材料不够', 'Not enough materials'), 1000); return; }
-    var left = rwGive(id, 1);
+    var mk = (typeof RW_MAKE !== 'undefined' && RW_MAKE[id]) || 1, left = rwGive(id, mk);   // bullets come several to a craft
     if (left > 0) { var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw); rwDropAdd([{ id: id, n: left }], P.x + fx, P.z + fz, null, 600, groundAt(P.x + fx, P.z + fz, P.y + 0.7)); banner(zt('背包满了，东西放在脚边', 'Inventory full: dropped at your feet'), 1500); }
-    rwNote(id, 1);
+    rwNote(id, mk);
     sfx('craft');
   }
 
@@ -7142,7 +7144,7 @@ Object.assign(EN, {
       if (q.length === 1) { h += q[0]; return; }
       var nb = RW_BENCH[q[0]] && !bench, ok = rwHas(q[1]) && !nb;
       if (rwIsGunRec(q[0])) { h += '<div class="rwcr gun"><img src="' + rwIconUrl(q[0]) + '" alt=""><div>' + duEsc(rwIN(q[0])) + '<small>' + rwGunTag(q[0]) + '</small><small>' + rwCostTxt(q[1], true) + '</small></div><button class="rwbtn" data-c="' + q[0] + '" type="button"' + (ok ? '' : ' disabled') + '>' + zt('制作', 'Craft') + '</button></div>'; return; }
-      h += '<div class="rwcr"><img src="' + rwIconUrl(q[0]) + '" alt=""><div>' + duEsc(rwIN(q[0])) + '<small>' + rwCostTxt(q[1], true) + (RW_BENCH[q[0]] ? ' · <em class="' + (nb ? 'no' : '') + '">' + zt('需要工作台', 'needs a workbench') + '</em>' : '') + '</small></div><button class="rwbtn" data-c="' + q[0] + '" type="button"' + (ok ? '' : ' disabled') + '>' + zt('制作', 'Craft') + '</button></div>';
+      h += '<div class="rwcr"><img src="' + rwIconUrl(q[0]) + '" alt=""><div>' + duEsc(rwIN(q[0])) + (RW_MAKE[q[0]] ? ' ×' + RW_MAKE[q[0]] : '') + '<small>' + rwCostTxt(q[1], true) + (RW_BENCH[q[0]] ? ' · <em class="' + (nb ? 'no' : '') + '">' + zt('需要工作台', 'needs a workbench') + '</em>' : '') + '</small></div><button class="rwbtn" data-c="' + q[0] + '" type="button"' + (ok ? '' : ' disabled') + '>' + zt('制作', 'Craft') + '</button></div>';
     });
     $('rwiCraft').innerHTML = h;
     }
@@ -7826,7 +7828,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint();
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -7857,7 +7859,7 @@ Object.assign(EN, {
     }
     if (!m) m = { k: 'any', n: 6, coin: 170 };
     m.p = 0; m.id = ++RWM.n;
-    if (Math.random() < 0.55) m.item = [['ammo', 1], ['medkit', 1], ['metal', 80], ['armor', 1], ['stone', 150]][Math.floor(Math.random() * 5)];
+    if (Math.random() < 0.55) m.item = [['apis', 8], ['medkit', 1], ['metal', 80], ['armor', 1], ['stone', 150]][Math.floor(Math.random() * 5)];
     return m;
   }
   function rwMSave() { try { localStorage.setItem('rustrange-rwm', JSON.stringify({ seed: RW.seed, list: RWM.list, done: RWM.done, n: RWM.n })); } catch (e) {} }
@@ -8887,6 +8889,12 @@ Object.assign(EN, {
       rwLampLit(p);
     } else if (k === 'sg') {
       rwSignMesh(p, B, M, inner);
+    } else if (k === 'at') {
+      rwTurretMesh(p, B, M, inner);
+    } else if (k === 'gt') {
+      rwGunTrapMesh(p, B, M, inner);
+    } else if (k === 'cm') {
+      rwClayMesh(p, B, M, inner);
     } else if (k === 'ch') {
       B(0.55, 0.06, 0.55, M.wood, 0, 0.45, 0); [-0.24, 0.24].forEach(function (x) { [-0.24, 0.24].forEach(function (z) { B(0.05, 0.45, 0.05, M.trim, x, 0.225, z); }); });
       B(0.55, 0.5, 0.05, M.wood, 0, 0.75, -0.25);
@@ -9705,6 +9713,8 @@ Object.assign(EN, {
         [zt('地形', 'Terrain'), zt('北边冷（苔原和雪山），中间温带（草地和森林），南边是沙漠（沙丘和仙人掌）。到处都是山丘，山脉里金属矿更多。在山坡上也能放地基，地基会自动加高支脚。', 'The north is cold (tundra and snowy mountains), the middle temperate (grass and forest), the south desert (dunes and cacti). Hills everywhere; mountains have more ore. Foundations work on hillsides, standing on taller footings.')],
         [zt('天气', 'Weather'), zt('晴、多云、阴天、大雾、下雨、雷雨每几分钟变一次，所有人看到的一样。天气只是好看，不影响玩法。小地图下面会写现在的天气和地形。', 'Clear, partly cloudy, overcast, fog, rain and thunderstorms change every few minutes, the same for everyone. Weather only changes how things look. It shows under the minimap with the biome.')],
         [zt('汽车', 'Cars'), zt('很多建筑群旁边停着车（加油站、小镇、超市、火车站等），走过去按 E 上车，先坐驾驶座，最多 4 人。W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。也可以在工作台做一辆（金属碎片 500、木材 300、布 40），拿在手上左键放下，每人最多 3 辆。车停在哪里服务器都会记住。', 'Cars stand at many monuments (gas station, town, supermarket, train yard…). Walk up and press E: the driver seat first, up to 4 people. W/S drive and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Build one at a workbench (500 fragments, 300 wood, 40 cloth), hold it and left-click to park it; up to 3 per player. The server remembers where every car is parked.')],
+        [zt('子弹和枪', 'Ammo and guns'), zt('开局没有枪。子弹要在工作台自己做：手枪子弹一次 8 发、步枪子弹一次 8 发、霰弹一次 4 发，背包里有多少备弹就是多少，换弹会扣掉。做枪和炸药要用枪械零件，零件从军用箱、精英箱、上锁箱子、空投里拿，或者把枪放进回收机拆。', 'Nobody starts with a gun. Bullets are crafted at a workbench (8 pistol, 8 rifle or 4 shells a time); your spare ammo is what you carry and reloading uses it. Guns and explosives need gun parts from military, elite and locked crates, airdrops, or recycled guns.')],
+        [zt('自动炮塔和陷阱', 'Turrets and traps'), zt('自动炮塔：30 米内看得见的陌生人都会被它打，你下线了也照样开火；领地柜上授权的人不会被打。霰弹陷阱：朝着放置时你站的方向，6 米内有陌生人就轰一枪。定向地雷：陌生人走到它前面 4 米内就爆炸，一次性。', 'Auto turret: fires at any stranger it can see within 30 m, even while you are offline; people on the tool cupboard are safe. Shotgun trap: blasts strangers within 6 m in front (it faces where you stood). Claymore: explodes when a stranger walks within 4 m in front; single use.')],
         [zt('直升机', 'Helicopter'), zt('只能在工作台造，很贵：金属碎片 2500、金属 600、布 150、木头 400，外加一张红色门卡。双座：飞行员 + 1 名乘客。上去后等旋翼转起来，空格上升，Shift 下降，W/S 前进后退，A/D 转向，E 下来（在空中下来会掉下去）。飞行员不能拿武器，副驾驶什么都能用。没人开的直升机会落回地面。', 'Workbench only, and expensive: 2500 metal fragments, 600 metal, 150 cloth, 400 wood and a red keycard. Two seats: pilot + 1 passenger. Get in, wait for the rotor to spin up, Space climbs, Shift descends, W/S forward/back, A/D turn, E gets out (in the air you fall). The pilot cannot hold a weapon; the passenger can use anything. A helicopter nobody flies comes back down.')],
         [zt('游泳', 'Swimming'), zt('深水里会浮起来游泳，比在陆地上慢。往下看再按前进就潜下去，按空格往上浮。水下有 30 秒氧气，用完会溺水掉血。', 'In deep water you float and swim, slower than on land. Look down and press forward to dive, Space to come up. You have 30 seconds of breath under water, then you start drowning.')]
       ]);
@@ -10825,31 +10835,34 @@ Object.assign(EN, {
   function rwMonExtrasReset() { RW.recy = []; RW.quarry = []; RW.spin = []; RW.vaults = []; }
 
   /* ---- loot: crates by tier, barrels ---- */
-  function rwLoot(n) {
+  function rwLoot(n) {   // update 56: guns, explosives and bullets are much rarer; gun parts come from the better crates
     var near = rwMonNear(n.x, n.z), tier = n.tier || '', rich = !!near, r = Math.random(), items = [], c;
     function rnd(a, b) { return Math.round(a + Math.random() * (b - a)); }
     function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+    var HI = [1, 5, 6, 9, 10, 14, 15, 7].filter(function (i) { return WDEF[i]; }), MID = [2, 3, 4, 8, 11, 12, 13].filter(function (i) { return WDEF[i]; });
     if (tier === 'locked') {   // a cracked locked crate: the best loot on the island
-      items.push({ id: 'frags', n: rnd(250, 450) }, { id: 'ammo', n: rnd(3, 5) }, { id: 'medkit', n: rnd(2, 3) }, { id: 'armor', n: 2 });
-      items.push({ id: 'g' + pick([1, 5, 6, 9, 10, 14, 15, 7].filter(function (i) { return WDEF[i]; })), n: 1 }, { id: 'g' + pick([5, 6, 10, 14, 15].filter(function (i) { return WDEF[i]; })), n: 1 });
-      if (Math.random() < 0.5) items.push({ id: 'c4', n: rnd(1, 2) });
+      items.push({ id: 'frags', n: rnd(250, 450) }, { id: 'parts', n: rnd(3, 5) }, { id: 'arif', n: rnd(16, 32) }, { id: 'apis', n: rnd(16, 32) }, { id: 'medkit', n: rnd(2, 3) }, { id: 'armor', n: 2 });
+      if (Math.random() < 0.7) items.push({ id: 'g' + pick(HI), n: 1 });
+      if (Math.random() < 0.3) items.push({ id: 'arkt', n: rnd(1, 2) });
+      if (Math.random() < 0.15) items.push({ id: 'c4', n: 1 });
       if (Math.random() < 0.5) items.push({ id: 'kcr', n: 1 });
       c = rnd(300, 500);
     } else if (tier === 'elite') {
       if (Math.random() < 0.25) items.push({ id: 'kcb', n: 1 }); else if (Math.random() < 0.15) items.push({ id: 'kcr', n: 1 });
-      items.push({ id: 'frags', n: rnd(120, 250) });
-      if (Math.random() < 0.7) items.push({ id: 'g' + pick([1, 5, 6, 9, 10, 14, 15, 7].filter(function (i) { return WDEF[i]; })), n: 1 });
+      items.push({ id: 'frags', n: rnd(120, 250) }, { id: 'parts', n: rnd(1, 3) });
+      if (Math.random() < 0.2) items.push({ id: 'g' + pick(HI), n: 1 });
+      if (Math.random() < 0.6) items.push({ id: 'arif', n: rnd(8, 20) });
       if (Math.random() < 0.5) items.push({ id: 'armor', n: rnd(1, 2) });
-      items.push({ id: 'ammo', n: rnd(1, 3) });
       if (Math.random() < 0.5) items.push({ id: 'medkit', n: rnd(1, 2) });
-      if (Math.random() < 0.08) items.push({ id: 'c4', n: 1 });
+      if (Math.random() < 0.03) items.push({ id: 'c4', n: 1 });
       c = rnd(150, 260);
     } else if (tier === 'mil') {
       if (Math.random() < 0.2) items.push({ id: 'kcg', n: 1 }); else if (Math.random() < 0.1) items.push({ id: 'kcb', n: 1 });
       if (n.vault !== undefined && Math.random() < 0.5) items.push({ id: RW.vaults[n.vault] && RW.vaults[n.vault].col === 'g' ? 'kcb' : 'kcr', n: 1 });   // each card room hands out the next card
       items.push({ id: 'frags', n: rnd(40, 100) });
-      if (Math.random() < 0.3) items.push({ id: 'g' + pick([2, 3, 4, 8, 11, 12, 13, 1].filter(function (i) { return WDEF[i]; })), n: 1 });
-      items.push({ id: 'ammo', n: rnd(1, 2) });
+      if (Math.random() < 0.4) items.push({ id: 'parts', n: 1 });
+      if (Math.random() < 0.06) items.push({ id: 'g' + pick(MID), n: 1 });
+      if (Math.random() < 0.5) items.push({ id: Math.random() < 0.6 ? 'apis' : 'arif', n: rnd(6, 14) });
       if (Math.random() < 0.25) items.push({ id: 'armor', n: 1 });
       if (Math.random() < 0.35) items.push({ id: 'medkit', n: 1 });
       if (Math.random() < 0.4) items.push({ id: 'cloth', n: rnd(5, 15) });
@@ -10857,11 +10870,11 @@ Object.assign(EN, {
     } else {
       items.push({ id: Math.random() < 0.5 ? 'wood' : 'stone', n: rnd(rich ? 80 : 40, rich ? 180 : 100) });
       if (r < 0.5) items.push({ id: 'metal', n: rnd(rich ? 30 : 15, rich ? 80 : 40) });
-      if (Math.random() < 0.35) items.push({ id: 'ammo', n: 1 });
+      if (Math.random() < 0.15) items.push({ id: 'apis', n: rnd(3, 6) });
       if (Math.random() < 0.3) items.push({ id: 'medkit', n: 1 });
       if (Math.random() < (rich ? 0.08 : 0.04)) items.push({ id: 'kcg', n: 1 });
       if (rich && Math.random() < 0.15) items.push({ id: 'armor', n: 1 });
-      if (rich && Math.random() < 0.1) { var gpool = [2, 3, 4, 5, 6]; for (var gq = 8; gq < WDEF.length; gq++) gpool.push(gq); items.push({ id: 'g' + pick(gpool), n: 1 }); }
+      if (rich && Math.random() < 0.01) items.push({ id: 'g' + pick([0, 3, 8].filter(function (i) { return WDEF[i]; })), n: 1 });
       c = Math.round((rich ? 70 : 35) * (0.6 + Math.random() * 0.9));
     }
     coins += c;
@@ -10875,9 +10888,10 @@ Object.assign(EN, {
     function rnd(a, b) { return Math.round(a + Math.random() * (b - a)); }
     var items = [{ id: 'frags', n: rnd(10, 30) }];
     if (Math.random() < 0.5) items.push({ id: 'cloth', n: rnd(2, 6) });
-    if (Math.random() < 0.15) items.push({ id: 'ammo', n: 1 });
+    if (Math.random() < 0.1) items.push({ id: 'apis', n: rnd(2, 5) });
     if (Math.random() < 0.08) items.push({ id: 'medkit', n: 1 });
-    if (Math.random() < 0.02) items.push({ id: 'g0', n: 1 });
+    if (Math.random() < 0.03) items.push({ id: 'parts', n: 1 });
+    if (Math.random() < 0.005) items.push({ id: 'g0', n: 1 });
     if (Math.random() < 0.03) items.push({ id: 'kcg', n: 1 });
     var c = rnd(5, 15); coins += c;
     rwDropAdd(items, n.x, n.z, null, 420, n.y + 0.2);
@@ -12139,7 +12153,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 55;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 56;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12639,6 +12653,210 @@ Object.assign(EN, {
       el.className = 'on';
       if (gtime - TCH.warned > 180) { TCH.warned = gtime; sfx('beep'); }
     } else el.className = '';
+  }
+  /* ================= UPDATE 56: HARDER RAIDS, REAL AMMO, TURRETS AND TRAPS =================
+     - Ammo is real: pistol bullets, rifle bullets, shotgun shells and rockets are items you craft at a workbench
+       (8, 8, 4 and 1 per craft). A gun's spare ammo is exactly what you carry; reloading uses it up.
+     - Nobody starts with a gun or grenades. Guns need gun parts (from military, elite and locked crates, airdrops,
+       or by recycling guns) and cost much more; crates hand out far fewer guns, explosives and bullets.
+     - Explosives cost a lot more (satchel, timed explosive, rockets all need gun parts).
+     - Auto turret: shoots anyone not authorised on a tool cupboard there, owner online or not.
+       Shotgun trap: a blast at whoever walks in front of it. Claymore: blows up when a stranger walks in front. */
+  var AMMO_OF = { pistol: 'apis', revolver: 'apis', smg: 'apis', rifle: 'arif', lmg: 'arif', sniper: 'arif', shotgun: 'ashot', rpg: 'arkt' };
+  Object.assign(RWI, {
+    apis: { n: ['手枪子弹', 'Pistol Bullets'], st: 128, d: ['手枪、左轮、冲锋枪用的子弹。在工作台做，一次 8 发。换弹时从背包里扣。', 'For pistols, revolvers and SMGs. Made at a workbench, 8 a time. Reloading takes them from your backpack.'] },
+    arif: { n: ['步枪子弹', 'Rifle Bullets'], st: 128, d: ['步枪、机枪、狙击枪用的子弹。在工作台做，一次 8 发。', 'For rifles, machine guns and sniper rifles. Made at a workbench, 8 a time.'] },
+    ashot: { n: ['霰弹', 'Shotgun Shells'], st: 64, d: ['霰弹枪用的子弹。在工作台做，一次 4 发。', 'For shotguns. Made at a workbench, 4 a time.'] },
+    arkt: { n: ['火箭弹', 'Rocket'], st: 5, d: ['火箭筒用的火箭弹，很贵。', 'A rocket for the launcher. Expensive.'] },
+    parts: { n: ['枪械零件', 'Gun Parts'], st: 20, d: ['做枪和炸药必须的零件。军用箱、精英箱、上锁箱子和空投里有，也可以把枪放进回收机拆出来。', 'Needed for guns and explosives. Found in military, elite and locked crates and airdrops, or by recycling guns.'] },
+    atur: { n: ['自动炮塔', 'Auto Turret'], st: 1, dep: 'at', d: ['放在家里，会自动向所有没在领地柜授权的人开火，你下线了也一样。30 米射程，要看得见才打。', 'Put it in your base: it fires at anyone not authorised on the tool cupboard, even while you are offline. 30 m range, needs a clear line of sight.'] },
+    gtrap: { n: ['霰弹陷阱', 'Shotgun Trap'], st: 3, dep: 'gt', d: ['朝着放置时你站的方向，6 米内有陌生人就轰一枪。', 'Fires a shotgun blast at any stranger within 6 m in front of it (it faces where you stood).'] },
+    clay: { n: ['定向地雷', 'Claymore'], st: 5, dep: 'cm', d: ['陌生人走到它前面 4 米内就爆炸，用一次就没了。', 'Explodes when a stranger walks within 4 m in front of it. Single use.'] }
+  });
+  RW_DEPSZ.at = [0.9, 1.45, 0.9, 1]; RW_DEPSZ.gt = [0.7, 0.8, 0.6, 1]; RW_DEPSZ.cm = [0.45, 0.4, 0.25, 0];
+  Object.assign(RWD, { at: 'atur', gt: 'gtrap', cm: 'clay' });
+  RWB.at = { c: {}, n: RWI.atur.n }; RWB.gt = { c: {}, n: RWI.gtrap.n }; RWB.cm = { c: {}, n: RWI.clay.n };
+  Object.assign(RW_HP, { at: 700, gt: 300, cm: 80 });
+  Object.assign(RW_NPCN, { turret: ['自动炮塔', 'an auto turret'], gtrap: ['霰弹陷阱', 'a shotgun trap'], clay: ['定向地雷', 'a claymore'] });
+  var RW_MAKE = { apis: 8, arif: 8, ashot: 4 };
+
+  // ---- the crafting list: real ammo, dearer guns and explosives, the new defences ----
+  (function () {
+    var at = -1;
+    for (var i = RW_CRAFT.length - 1; i >= 0; i--) if (RW_CRAFT[i][0] === 'ammo') { at = i; RW_CRAFT.splice(i, 1); }
+    if (at < 0) at = RW_CRAFT.length;
+    RW_CRAFT.splice(at, 0, ['apis', { frags: 40 }], ['arif', { frags: 70, cloth: 2 }], ['ashot', { frags: 50, cloth: 2 }], ['arkt', { frags: 400, cloth: 30, metal: 100, parts: 1 }]);
+    var PARTS = { 0: 1, 3: 1, 8: 1, 2: 2, 11: 2, 12: 2, 4: 2, 13: 2, 1: 3, 9: 3, 10: 3, 14: 4, 5: 4, 6: 4, 15: 4, 7: 5 };
+    RW_CRAFT.forEach(function (r) {
+      if (/^g\d+$/.test(r[0])) {   // guns: 2.5 times the cost plus gun parts
+        var gi = +r[0].slice(1), c = {}; for (var k in r[1]) c[k] = Math.round(r[1][k] * 2.5 / 5) * 5;
+        c.parts = PARTS[gi] || 2; r[1] = c;
+      }
+      if (r[0] === 'satchel') r[1] = { frags: 240, cloth: 40, parts: 1 };
+      if (r[0] === 'c4') r[1] = { frags: 900, cloth: 80, parts: 3 };
+    });
+    var t = RW_CRAFT.length; RW_CRAFT.forEach(function (r, j) { if (r[0] === 'mine') t = j + 1; });
+    RW_CRAFT.splice(t, 0, ['clay', { frags: 250, cloth: 20, parts: 1 }], ['gtrap', { frags: 400, wood: 100, cloth: 20, parts: 1 }], ['atur', { frags: 1200, metal: 300, cloth: 40, parts: 4 }]);
+    ['apis', 'arif', 'ashot', 'arkt', 'clay', 'gtrap', 'atur'].forEach(function (id) { RW_BENCH[id] = 1; });
+    for (var g = 0; g < WDEF.length; g++) if (!RW_RECY['g' + g]) RW_RECY['g' + g] = { parts: Math.max(1, (PARTS[g] || 2) - 1), frags: 40 };   // recycle a gun into parts
+    RW_RECY.apis = { frags: 3 }; RW_RECY.arif = { frags: 5 };
+  })();
+
+  // ---- icons ----
+  (function () {
+    function cv(f) { var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d'); x.shadowColor = 'rgba(0,0,0,.7)'; x.shadowBlur = 3; f(x); return c; }
+    function bullets(x, body, tip, n, w, h) { for (var i = 0; i < n; i++) { var bx = 10 + i * (44 / (n - 1 || 1)) - w / 2 + (n === 1 ? 22 : 0); x.fillStyle = body; x.fillRect(bx, 58 - h, w, h * 0.68); x.fillStyle = tip; x.beginPath(); x.moveTo(bx, 58 - h * 0.68 - 0.5 + 1); x.lineTo(bx + w / 2, 58 - h - 2); x.lineTo(bx + w, 58 - h * 0.68 + 1); x.fill(); } }
+    RWICON.apis = cv(function (x) { bullets(x, '#d6a84a', '#b8743a', 4, 9, 30); });
+    RWICON.arif = cv(function (x) { bullets(x, '#c9a040', '#8a8e92', 3, 9, 46); });
+    RWICON.ashot = cv(function (x) { for (var i = 0; i < 3; i++) { x.fillStyle = '#b83228'; x.fillRect(10 + i * 16, 20, 13, 30); x.fillStyle = '#d8b04a'; x.fillRect(10 + i * 16, 44, 13, 10); } });
+    RWICON.arkt = cv(function (x) { x.fillStyle = '#5a6a3a'; x.fillRect(26, 14, 12, 36); x.fillStyle = '#3a3c3e'; x.beginPath(); x.moveTo(26, 14); x.lineTo(32, 2); x.lineTo(38, 14); x.fill(); x.fillStyle = '#2a2b2c'; x.fillRect(20, 50, 24, 8); });
+    RWICON.parts = cv(function (x) { x.fillStyle = '#7a8088'; x.beginPath(); x.arc(24, 30, 14, 0, 6.3); x.fill(); x.fillStyle = '#2a2c2e'; x.beginPath(); x.arc(24, 30, 5, 0, 6.3); x.fill(); x.fillStyle = '#9aa1a8'; x.fillRect(36, 26, 22, 8); x.fillRect(38, 40, 6, 18); x.strokeStyle = '#c8ccd0'; x.lineWidth = 3; x.beginPath(); for (var i = 0; i < 6; i++) { x.moveTo(40, 12 + i * 3); x.lineTo(54, 12 + i * 3); } x.stroke(); });
+    RWICON.atur = cv(function (x) { x.fillStyle = '#3a3d40'; x.fillRect(22, 44, 20, 14); x.fillStyle = '#5a6066'; x.fillRect(14, 22, 30, 20); x.fillStyle = '#2a2b2c'; x.fillRect(44, 28, 16, 6); x.fillStyle = '#ff3a2a'; x.beginPath(); x.arc(22, 30, 3, 0, 6.3); x.fill(); });
+    RWICON.gtrap = cv(function (x) { x.fillStyle = '#6a4a2a'; x.fillRect(12, 26, 30, 26); x.fillStyle = '#2a2b2c'; x.fillRect(38, 32, 22, 6); x.fillRect(38, 40, 22, 6); });
+    RWICON.clay = cv(function (x) { x.fillStyle = '#5a6a3a'; x.beginPath(); x.moveTo(10, 24); x.quadraticCurveTo(32, 14, 54, 24); x.lineTo(54, 44); x.quadraticCurveTo(32, 36, 10, 44); x.fill(); x.fillStyle = '#2a2b2c'; x.fillRect(18, 44, 4, 14); x.fillRect(42, 44, 4, 14); x.fillStyle = '#e8e2c8'; x.font = 'bold 9px sans-serif'; x.fillText('FRONT', 18, 34); });
+  })();
+
+  // ---- real ammo: a gun's spare rounds are the bullets in your backpack ----
+  var AM = { set: [] };
+  function rwAmmoOf(i) { var d = WDEF[i]; return d ? (AMMO_OF[d.cls] || 'apis') : 'apis'; }
+  function rwAmmoTick() {
+    if (!RW.on) return;
+    var leg = rwCount('ammo');   // old ammo boxes from before become bullets once
+    if (leg > 0) { rwTake('ammo', leg, true); rwGive('apis', leg * 6); rwGive('arif', leg * 6); rwInvChanged(); }
+    var changed = false;
+    for (var i = 0; i < WDEF.length; i++) {
+      if (!ws[i]) continue;
+      var t = rwAmmoOf(i);
+      if (AM.set[i] !== undefined && ws[i].res < AM.set[i]) {   // a reload took some
+        var used = Math.min(AM.set[i] - ws[i].res, rwCount(t));
+        if (used > 0) { rwTake(t, used, true); changed = true; }
+      }
+    }
+    if (changed) rwInvChanged();
+    var cnt = {};
+    for (i = 0; i < WDEF.length; i++) { if (!ws[i]) continue; var tt = rwAmmoOf(i); if (cnt[tt] === undefined) cnt[tt] = rwCount(tt); ws[i].res = cnt[tt]; AM.set[i] = ws[i].res; }
+  }
+  function rwAmmoHint() {   // when a gun is empty and there is nothing to reload with
+    var s = rwHeldSlot(); if (!s || !RWI[s.id] || RWI[s.id].gun === undefined) return;
+    var gi = RWI[s.id].gun; if (!ws[gi] || ws[gi].ammo > 0 || ws[gi].res > 0) return;
+    if (gtime - (AM.hintT || 0) < 4) return; AM.hintT = gtime;
+    banner(zt('没子弹了：在工作台做' + rwIN(rwAmmoOf(gi)), 'Out of ammo: craft ' + rwIN(rwAmmoOf(gi)) + ' at a workbench'), 1800);
+  }
+
+  // ---- models ----
+  function rwTurretMesh(p, B, M, inner) {
+    var fr = new THREE.Group(); fr.rotation.y = p.r * Math.PI; inner.add(fr);   // so that local +z faces where you stood
+    var dark = new THREE.MeshStandardMaterial({ color: 0x2c2f32, roughness: 0.55, metalness: 0.6 }), grey = new THREE.MeshStandardMaterial({ color: 0x5a6066, roughness: 0.5, metalness: 0.55 });
+    function b(w, h, d, m, x, y, z, par) { var o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); (par || fr).add(o); return o; }
+    b(0.8, 0.12, 0.8, dark, 0, 0.06, 0); b(0.22, 0.75, 0.22, grey, 0, 0.5, 0); b(0.4, 0.12, 0.4, dark, 0, 0.9, 0);
+    [[1, 1], [-1, 1], [1, -1], [-1, -1]].forEach(function (q) { var l = b(0.06, 0.5, 0.06, dark, q[0] * 0.28, 0.25, q[1] * 0.28); l.rotation.z = -q[0] * 0.35; l.rotation.x = q[1] * 0.35; });
+    var head = new THREE.Group(); head.position.set(0, 1.1, 0); fr.add(head);
+    var tilt = new THREE.Group(); head.add(tilt);
+    b(0.5, 0.32, 0.6, grey, 0, 0, 0, tilt); b(0.36, 0.08, 0.5, dark, 0, 0.2, -0.02, tilt);
+    var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.75, 10), dark); bar.rotation.x = Math.PI / 2; bar.position.set(0.08, -0.02, 0.6); tilt.add(bar);
+    var bar2 = bar.clone(); bar2.position.x = -0.08; tilt.add(bar2);
+    var eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: 0x40ff60 })); eye.position.set(0, 0.06, 0.31); tilt.add(eye);
+    var fl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.9 })); fl.position.set(0, -0.02, 1.0); fl.visible = false; tilt.add(fl);
+    p.tur = { head: head, tilt: tilt, eye: eye, flash: fl, fr: fr };
+  }
+  function rwGunTrapMesh(p, B, M, inner) {
+    var fr = new THREE.Group(); fr.rotation.y = p.r * Math.PI; inner.add(fr);
+    var wood = M.wood, dark = new THREE.MeshStandardMaterial({ color: 0x2a2b2c, roughness: 0.5, metalness: 0.6 });
+    function b(w, h, d, m, x, y, z) { var o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); fr.add(o); return o; }
+    b(0.62, 0.5, 0.5, wood, 0, 0.35, -0.05); b(0.66, 0.06, 0.54, M.trim || wood, 0, 0.62, -0.05); b(0.5, 0.1, 0.4, M.trim || wood, 0, 0.05, -0.05);
+    [-0.07, 0.07].forEach(function (x) { var c = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.5, 8), dark); c.rotation.x = Math.PI / 2; c.position.set(x, 0.42, 0.38); fr.add(c); });
+    var fl = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.9 })); fl.position.set(0, 0.42, 0.75); fl.visible = false; fr.add(fl);
+    p.tur = { flash: fl, fr: fr };
+  }
+  function rwClayMesh(p, B, M, inner) {
+    var fr = new THREE.Group(); fr.rotation.y = p.r * Math.PI; inner.add(fr);
+    var g = new THREE.MeshStandardMaterial({ color: 0x55613a, roughness: 0.8 }), dark = new THREE.MeshStandardMaterial({ color: 0x232425, roughness: 0.6 });
+    var body = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.06), g); body.position.set(0, 0.28, 0); fr.add(body);
+    [-0.12, 0.12].forEach(function (x) { var l = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.22, 0.025), dark); l.position.set(x, 0.1, -0.02); l.rotation.x = -0.25; fr.add(l); });
+    var led = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 5), new THREE.MeshBasicMaterial({ color: 0xff3020 })); led.position.set(0.13, 0.36, 0.035); fr.add(led);
+    p.tur = { led: led, fr: fr };
+  }
+
+  // ---- shooting: every player's own game decides whether the defences hit that player ----
+  var TUR = { v: null, sendT: {} };
+  function rwLos(ax, ay, az, bx, by, bz) {
+    var dx = bx - ax, dy = by - ay, dz = bz - az, L = Math.hypot(dx, dy, dz) || 1;
+    dx /= L; dy /= L; dz /= L;
+    var s = 0.75;   // start just outside the turret's own box
+    var t = rayWall(ax + dx * s, ay + dy * s, az + dz * s, dx, dy, dz, L - s);
+    return t >= L - s - 0.25;
+  }
+  function rwTurFront(p) { var a = p.r * Math.PI / 2; return [Math.sin(a), Math.cos(a)]; }
+  function rwTurPeerPos(id) { var q = CO.peers[id]; if (!q || !q.rem) return null; return [q.rem.position.x, q.rem.position.y + 1.2, q.rem.position.z]; }
+  function rwTurShotFx(p, from, to, hit, gun) {
+    TUR.v = TUR.v || new THREE.Vector3(); var a = new THREE.Vector3(from[0], from[1], from[2]), b = new THREE.Vector3(to[0], to[1], to[2]);
+    if (!hit) { b.x += (Math.random() - 0.5) * 1.6; b.y += (Math.random() - 0.3) * 1.2; b.z += (Math.random() - 0.5) * 1.6; }
+    if (gun) { for (var k = 0; k < 4; k++) { var c = b.clone(); c.x += (Math.random() - 0.5) * 1.4; c.y += (Math.random() - 0.5) * 1.0; c.z += (Math.random() - 0.5) * 1.4; addTracer(a, c, 0xffd890); } }
+    else addTracer(a, b, 0xffc070);
+    if (p.tur && p.tur.flash) { p.tur.flash.visible = true; p.tur.flashT = 0.05; }
+    sfx(gun ? 'shot' : 'turret', { x: p.x, z: p.z, v: 0.7 });
+  }
+  function rwTurretTick(dt) {
+    if (!RW.on) return;
+    var chest = P.y + 1.2, alive = !RW.dead && state !== 'over' && state !== 'menu';
+    for (var i = 0; i < RW.plist.length; i++) {
+      var p = RW.plist[i]; if (p.k !== 'at' && p.k !== 'gt' && p.k !== 'cm') continue;
+      var dx = P.x - p.x, dz = P.z - p.z, d = Math.hypot(dx, dz); if (d > 60) continue;
+      var u = p.tur || (p.tur = {}); u.lock = u.lock || 0; u.fire = u.fire || 0;
+      if (u.flash && u.flashT !== undefined) { u.flashT -= dt; if (u.flashT <= 0) u.flash.visible = false; }
+      var hostile = alive && !rwSafeFrom(p);
+      if (p.k === 'at') {
+        var hx = p.x, hy = p.y + 1.1, hz = p.z, see = hostile && d < 30 && rwLos(hx, hy, hz, P.x, chest, P.z), tgt = null;
+        if (see) { tgt = [P.x, chest, P.z]; u.lock += dt; } else u.lock = Math.max(0, u.lock - dt * 2);
+        if (!tgt && u.rtf && gtime < u.rtfT + 0.6) tgt = rwTurPeerPos(u.rtf);
+        if (u.head) {   // aim: turn the head, tilt the guns; sweep slowly when idle
+          var want, wantP = 0;
+          if (tgt) { want = Math.atan2(tgt[0] - hx, tgt[2] - hz); wantP = -Math.atan2(tgt[1] - hy, Math.hypot(tgt[0] - hx, tgt[2] - hz)); }
+          else { u.scan = (u.scan || 0) + dt * 0.6; want = p.r * Math.PI / 2 + Math.sin(u.scan) * 1.2; }
+          var cur = (u.yaw === undefined ? p.r * Math.PI / 2 : u.yaw), dd = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+          u.yaw = cur + dd * Math.min(1, dt * (tgt ? 9 : 2)); u.pit = (u.pit || 0) + (wantP - (u.pit || 0)) * Math.min(1, dt * 8);
+          u.head.rotation.y = u.yaw - u.fr.rotation.y - (u.fr.parent ? u.fr.parent.rotation.y : 0); u.tilt.rotation.x = u.pit;
+          if (u.eye) u.eye.material.color.setHex(tgt ? 0xff2a1a : 0x40ff60);
+        }
+        if (see && u.lock > 0.6) {   // firing at me
+          u.fire -= dt;
+          while (u.fire <= 0) {
+            u.fire += 0.16;
+            var hit = Math.random() < (d < 15 ? 0.7 : 0.5);
+            rwTurShotFx(p, [hx, hy, hz], [P.x, chest, P.z], hit, false);
+            if (hit) { RW.lastNpc = 'turret'; RW.lastNpcT = gtime; damage(8); }
+          }
+          if (!TUR.sendT[p.id] || gtime - TUR.sendT[p.id] > 0.25) { TUR.sendT[p.id] = gtime; dSend({ t: 'Rtf', id: p.id }); }
+        } else if (!see && u.rtf && gtime < u.rtfT + 0.3 && tgt) {   // firing at someone else: just the look of it
+          u.fire -= dt; while (u.fire <= 0) { u.fire += 0.16; rwTurShotFx(p, [hx, hy, hz], tgt, Math.random() < 0.6, false); }
+        } else u.fire = Math.max(0, u.fire);
+      } else if (p.k === 'gt') {
+        var f = rwTurFront(p), fx = p.x + f[0] * 0.5, fz = p.z + f[1] * 0.5, ddx = P.x - fx, ddz = P.z - fz, dl = Math.hypot(ddx, ddz) || 1;
+        var inFront = (ddx * f[0] + ddz * f[1]) / dl > 0.64;   // about 100 degrees wide
+        var seeG = hostile && dl < 6.5 && inFront && Math.abs(P.y - p.y) < 2.5 && rwLos(p.x, p.y + 0.42, p.z, P.x, chest, P.z);
+        u.fire -= dt;
+        if (seeG && u.fire <= 0) {
+          u.fire = 1.3;
+          rwTurShotFx(p, [p.x + f[0] * 0.7, p.y + 0.42, p.z + f[1] * 0.7], [P.x, chest, P.z], true, true);
+          RW.lastNpc = 'gtrap'; RW.lastNpcT = gtime; damage(Math.round(42 - dl * 3.5)); VM.shake = 0.35;
+          dSend({ t: 'Rtf', id: p.id });
+        } else if (!seeG && u.rtf && gtime < u.rtfT + 0.2 && u.fire <= 0) { var pp = rwTurPeerPos(u.rtf); if (pp) { u.fire = 1.3; rwTurShotFx(p, [p.x + f[0] * 0.7, p.y + 0.42, p.z + f[1] * 0.7], pp, true, true); } }
+      } else if (p.k === 'cm') {
+        if (u.led) u.led.visible = (gtime % 1) < 0.15;
+        if (RW.trig[p.id]) { if (gtime - RW.trig[p.id] > 1.5) { RW.trig[p.id] = gtime; dSend({ t: 'Rt', id: p.id }); } continue; }   // still there: tell the server again
+        if (!hostile) continue;
+        var f2 = rwTurFront(p), cx = P.x - p.x, cz = P.z - p.z, cl = Math.hypot(cx, cz) || 1;
+        if (cl < 4 && (cx * f2[0] + cz * f2[1]) / cl > 0.5 && Math.abs(P.y - p.y) < 2 && rwLos(p.x, p.y + 0.3, p.z, P.x, chest, P.z)) {
+          RW.trig[p.id] = gtime; dSend({ t: 'Rt', id: p.id });
+          RW.noBlast = true; explode(p.x + f2[0] * 0.3, p.y + 0.4, p.z + f2[1] * 0.3, 3.5, 0, false); RW.noBlast = false;
+          RW.lastNpc = 'clay'; RW.lastNpcT = gtime; damage(Math.round(95 * (1 - cl / 5.5))); VM.shake = 0.8;
+        }
+      }
+    }
+  }
+  function rwTurMsg(m) {   // someone else is being shot at by this turret / trap
+    var p = RW.pieces[m.id | 0]; if (!p) return;
+    var u = p.tur || (p.tur = {}); u.rtf = m.by | 0; u.rtfT = gtime;
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable

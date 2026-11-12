@@ -155,15 +155,15 @@ saveDb();   // writes the secret on first start
 // Same disk caveat as accounts.json.
 const BUILD_FILE = path.join(DATA_DIR, 'world.json');
 const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr', 'bx', 'fu', 'tc', 'sb',
-  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg']);
+  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm']);
 const DOORS = new Set(['dr', 'sd', 'd2', 'gd', 'xg']);                       // open and close, take a code lock
 const HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // inserts and the wall they sit in
 const CONT = { bx: 18, lb: 30, fu: 4, cf: 4 };                               // containers and their slots
-const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg']);
-const HP = { dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
+const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm']);
+const HP = { at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|apis|arif|ashot|arkt|parts|atur|gtrap|clay|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
@@ -225,6 +225,7 @@ function worldSave(c, m) {
   players[c.owner] = s; savePlayers();
 }
 function worldAll(s) { for (const o of world.clients.values()) o.send(s); }
+function worldOthers(c, s) { for (const o of world.clients.values()) if (o !== c) o.send(s); }
 
 // ---- monument events (update 43): keycard vault doors, hackable locked crates, airdrops ----
 world.vaults = new Map();   // vault key -> open until (ms)
@@ -245,10 +246,12 @@ const AIR_MS = Math.max(60000, (+process.env.AIRDROP_MINUTES || 10) * 60000);
 let airNext = Date.now() + AIR_MS * 0.5, airSeq = 0, airCur = null;
 function airItems() {
   const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1)), pick = (a) => a[Math.floor(Math.random() * a.length)];
-  const it = [['g' + pick([1, 5, 6, 9, 10, 14, 15]), 1], ['ammo', R(2, 4)], ['frags', R(150, 300)], ['medkit', R(1, 3)]];
-  if (Math.random() < 0.6) it.push(['g' + pick([2, 3, 4, 8, 11, 12, 13]), 1]);
+  const it = [['frags', R(150, 300)], ['medkit', R(1, 3)], ['parts', R(2, 4)], ['arif', R(16, 32)], ['apis', R(16, 32)]];   // update 56: guns and explosives are rarer
+  if (Math.random() < 0.5) it.push(['g' + pick([1, 5, 6, 9, 10, 14, 15]), 1]);
+  else it.push(['g' + pick([2, 3, 4, 8, 11, 12, 13]), 1]);
   if (Math.random() < 0.6) it.push(['armor', R(1, 2)]);
-  if (Math.random() < 0.25) it.push(['c4', 1]);
+  if (Math.random() < 0.1) it.push(['c4', 1]);
+  if (Math.random() < 0.2) it.push(['arkt', 1]);
   if (Math.random() < 0.3) it.push([pick(['kcb', 'kcr']), 1]);
   return it;
 }
@@ -632,8 +635,8 @@ function worldLockTry(c, m) {   // someone types a code: right adds them and ope
   worldAll(JSON.stringify({ t: 'Ro', id: a[0], o: 1 }));
 }
 function worldTrap(c, m) {   // a player stepped on a landmine (it is used up) or a bear trap (it springs)
-  const a = builds.get(m.id | 0); if (!a || (a[1] !== 'lm' && a[1] !== 'bt') || a[7] === c.owner || !near(c, a, 12)) return;
-  if (a[1] === 'lm') { dropPart(a, null); return; }
+  const a = builds.get(m.id | 0); if (!a || (a[1] !== 'lm' && a[1] !== 'bt' && a[1] !== 'cm') || a[7] === c.owner || !near(c, a, 12)) return;
+  if (a[1] === 'lm' || a[1] === 'cm') { dropPart(a, null); return; }   // a landmine or a claymore is used up
   if (a[8]) return;
   a[8] = 1; saveBuilds();
   worldAll(JSON.stringify({ t: 'Ro', id: a[0], o: 1 }));
@@ -961,6 +964,12 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Rz') { worldLockSet(c, m); return; }
   if (c.world && m.t === 'Ry') { worldLockTry(c, m); return; }
   if (c.world && m.t === 'Rt') { worldTrap(c, m); return; }
+  if (c.world && m.t === 'Rtf') {   // a turret or a gun trap is shooting at this player: let everyone see it fire
+    const a = builds.get(m.id | 0); if (!a || (a[1] !== 'at' && a[1] !== 'gt') || !near(c, a, 45)) return;
+    const now = Date.now(); if (now - (c.tfT || 0) < 150) return; c.tfT = now;
+    worldOthers(c, JSON.stringify({ t: 'RTF', id: a[0], by: c.id }));
+    return;
+  }
   if (c.world && m.t === 'Rs') { worldSave(c, m); return; }
   if (c.world && m.t === 'Ve') { worldCarEnter(c, m); return; }
   if (c.world && m.t === 'Rkc') { worldStatKill(c, m); return; }
