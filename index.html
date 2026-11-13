@@ -3113,6 +3113,7 @@ Object.assign(EN, {
     for (var i = rockets.length - 1; i >= 0; i--) {
       var r = rockets[i], p = r.m.position, v = 42, dist = v * dt, hitT = rayWall(p.x, p.y, p.z, r.dir.x, r.dir.y, r.dir.z, dist + 0.3), boom = false, direct = null;
       r.life -= dt; r.trail -= dt;
+      if (RW.on) { var w0 = r.went === undefined ? 1.0 : r.went; r.went = w0 + dist; if (r.went > RW_TUR_RANGE && !(hitT < dist + 0.3 && w0 + hitT <= RW_TUR_RANGE)) { scene.remove(r.m); rockets.splice(i, 1); burst(p.clone(), 8, partMatG, 2); continue; } }   // measured from the shooter (it starts 1 m out)
       if (hitT < dist + 0.3) { p.x += r.dir.x * Math.max(0, hitT - 0.05); p.y += r.dir.y * Math.max(0, hitT - 0.05); p.z += r.dir.z * Math.max(0, hitT - 0.05); boom = true; }
       else {
         p.x += r.dir.x * dist; p.y += r.dir.y * dist; p.z += r.dir.z * dist;
@@ -12164,7 +12165,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 63;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 64;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12695,6 +12696,8 @@ Object.assign(EN, {
      - Explosives cost a lot more (satchel, timed explosive, rockets all need gun parts).
      - Auto turret: shoots anyone not authorised on a tool cupboard there, owner online or not.
        Shotgun trap: a blast at whoever walks in front of it. Claymore: blows up when a stranger walks in front. */
+  var RW_TUR_RANGE = 32;   // auto turret reach (metres, straight line) - the rocket launcher reaches exactly as far
+  var RW_TUR_LOCK = 0.08;   // seconds a turret needs to lock on before it fires (was 0.6)
   var AMMO_OF = { pistol: 'apis', revolver: 'apis', smg: 'apis', rifle: 'arif', lmg: 'arif', sniper: 'arif', shotgun: 'ashot', rpg: 'arkt' };
   Object.assign(RWI, {
     apis: { n: ['手枪子弹', 'Pistol Bullets'], st: 128, d: ['手枪、左轮、冲锋枪用的子弹。在工作台做，一次 8 发。换弹时从背包里扣。', 'For pistols, revolvers and SMGs. Made at a workbench, 8 a time. Reloading takes them from your backpack.'] },
@@ -12827,7 +12830,7 @@ Object.assign(EN, {
     return t >= L - 2.6;
   }
   function rwTurNpc(hx, hy, hz) {   // the nearest monster or animal the turret can see (only the player who runs the monsters decides)
-    var best = null, bd = 32;
+    var best = null, bd = RW_TUR_RANGE;
     for (var i = 0; i < enemies.length; i++) {
       var e = enemies[i]; if (e.dead || e.ghost) continue;
       var p = e.g.position, d = Math.hypot(p.x - hx, p.y + 1.1 - hy, p.z - hz); if (d >= bd) continue;
@@ -12856,7 +12859,7 @@ Object.assign(EN, {
       if (u.flash && u.flashT !== undefined) { u.flashT -= dt; if (u.flashT <= 0) u.flash.visible = false; }
       var hostile = alive && !rwSafeFrom(p);
       if (p.k === 'at') {
-        var hx = p.x, hy = p.y + 1.1, hz = p.z, d3 = Math.hypot(dx, chest - hy, dz), see = hostile && d3 < 32 && rwLosTur(hx, hy, hz, P.x, chest, P.z), tgt = null;
+        var hx = p.x, hy = p.y + 1.1, hz = p.z, d3 = Math.hypot(dx, chest - hy, dz), see = hostile && d3 < RW_TUR_RANGE && rwLosTur(hx, hy, hz, P.x, chest, P.z), tgt = null;
         if (see) { tgt = [P.x, chest, P.z]; u.lock += dt; }
         var npc = null;
         if (!see && RW.auth === CO.id) { u.npcT = (u.npcT || 0) - dt; if (u.npcT <= 0) { u.npcT = 0.3; u.npc = rwTurNpc(hx, hy, hz); } npc = u.npc && !u.npc.dead ? u.npc : null; }
@@ -12869,11 +12872,11 @@ Object.assign(EN, {
           if (tgt) { want = Math.atan2(tgt[0] - hx, tgt[2] - hz); wantP = -Math.atan2(tgt[1] - hy, Math.hypot(tgt[0] - hx, tgt[2] - hz)); }
           else { u.scan = (u.scan || 0) + dt * 0.6; want = p.r * Math.PI / 2 + Math.sin(u.scan) * 1.2; }
           var cur = (u.yaw === undefined ? p.r * Math.PI / 2 : u.yaw), dd = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
-          u.yaw = cur + dd * Math.min(1, dt * (tgt ? 9 : 2)); u.pit = (u.pit || 0) + (wantP - (u.pit || 0)) * Math.min(1, dt * 8);
+          u.yaw = cur + dd * Math.min(1, dt * (tgt ? 30 : 2)); u.pit = (u.pit || 0) + (wantP - (u.pit || 0)) * Math.min(1, dt * 30);   // snaps onto a target
           u.head.rotation.y = u.yaw - u.fr.rotation.y - (u.fr.parent ? u.fr.parent.rotation.y : 0); u.tilt.rotation.x = u.pit;
           if (u.eye) u.eye.material.color.setHex(tgt ? 0xff2a1a : 0x40ff60);
         }
-        if (see && u.lock > 0.6) {   // firing at me
+        if (see && u.lock > RW_TUR_LOCK) {   // firing at me
           u.fire -= dt;
           while (u.fire <= 0) {
             u.fire += 0.16;
@@ -12882,7 +12885,7 @@ Object.assign(EN, {
             if (hit) { RW.lastNpc = 'turret'; RW.lastNpcT = gtime; damage(8); }
           }
           if (!TUR.sendT[p.id] || gtime - TUR.sendT[p.id] > 0.25) { TUR.sendT[p.id] = gtime; dSend({ t: 'Rtf', id: p.id }); }
-        } else if (npc && u.lock > 0.5) {   // firing at a monster or an animal
+        } else if (npc && u.lock > RW_TUR_LOCK) {   // firing at a monster or an animal
           u.fire -= dt;
           while (u.fire <= 0) {
             u.fire += 0.16;
