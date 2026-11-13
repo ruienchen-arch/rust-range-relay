@@ -759,6 +759,7 @@ Object.assign(EN, {
   }
 
   // ray against everything that stops bullets; returns distance or Infinity
+  var RAYSKIP = null;
   function rayWall(ox, oy, oz, dx, dy, dz, maxT) {
     var best = maxT;
     if (RW.on) {   // the ground is the terrain: walk along the ray until it dips under it
@@ -775,6 +776,7 @@ Object.assign(EN, {
     for (var i = 0; i < blockers.length; i++) {
       var b = blockers[i];
       if (b.maxX < sx0 || b.minX > sx1 || b.maxY < sy0 || b.minY > sy1 || b.maxZ < sz0 || b.minZ > sz1) continue;
+      if (RAYSKIP && b.pc && RAYSKIP(b.pc)) continue;
       var t0 = 0, t1 = best, ta, tb, tt;
       if (Math.abs(dx) < 1e-9) { if (ox < b.minX || ox > b.maxX) continue; }
       else { ta = (b.minX - ox) / dx; tb = (b.maxX - ox) / dx; if (ta > tb) { tt = ta; ta = tb; tb = tt; } if (ta > t0) t0 = ta; if (tb < t1) t1 = tb; if (t0 > t1) continue; }
@@ -7321,7 +7323,7 @@ Object.assign(EN, {
       p.parts.forEach(function (q) {
         if (!q[6] || (q[8] && p.op)) return;   // an open door leaf lets you through
         var x = p.x + q[0], y = p.y + q[1], z = p.z + q[2], hw = q[3] / 2, hh = q[4] / 2, hd = q[5] / 2;
-        var b = { minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd, y0: y - hh, h: y + hh, rwp: 1, pc: p }, k = { minX: x - hw, maxX: x + hw, minY: y - hh, maxY: y + hh, minZ: z - hd, maxZ: z + hd };
+        var b = { minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd, y0: y - hh, h: y + hh, rwp: 1, pc: p }, k = { minX: x - hw, maxX: x + hw, minY: y - hh, maxY: y + hh, minZ: z - hd, maxZ: z + hd, pc: p };
         boxes.push(b); blockers.push(k); p.cb.push(b); p.bl.push(k);
       });
     } else if (!on && p.cb.length) {
@@ -7836,7 +7838,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -12169,7 +12171,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 66;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 67;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12827,10 +12829,13 @@ Object.assign(EN, {
     var t = rayWall(ax + dx * s, ay + dy * s, az + dz * s, dx, dy, dz, L - s);
     return t >= L - s - 0.25;
   }
-  function rwLosTur(hx, hy, hz, tx, ty, tz) {   // a turret's view: anything right at the turret (the roof or floor it stands on) does not count
+  function rwLosTur(hx, hy, hz, tx, ty, tz, mode) {   // a turret's view: anything right at the turret (the roof or floor it stands on) does not count
     var dx = hx - tx, dy = hy - ty, dz = hz - tz, L = Math.hypot(dx, dy, dz) || 1;
     dx /= L; dy /= L; dz /= L;
-    var t = rayWall(tx, ty, tz, dx, dy, dz, L);
+    // looking DOWN at somebody (update 67): the base the turret sits on (floors, roofs, walls within 24 m) does not hide them,
+    // only the ground, rocks, trees and whatever the target built itself do - so a turret up on a roof covers the ground all round
+    if (mode && ty < hy - 1) RAYSKIP = function (pc) { return Math.hypot(pc.x - hx, pc.z - hz) < 24 && (mode === 'n' || pc.o !== RW.me); };
+    var t; try { t = rayWall(tx, ty, tz, dx, dy, dz, L); } finally { RAYSKIP = null; }
     return t >= L - 2.6;
   }
   function rwTurNpc(hx, hy, hz) {   // the nearest monster or animal the turret can see (only the player who runs the monsters decides)
@@ -12838,7 +12843,7 @@ Object.assign(EN, {
     for (var i = 0; i < enemies.length; i++) {
       var e = enemies[i]; if (e.dead || e.ghost) continue;
       var p = e.g.position, d = Math.hypot(p.x - hx, p.y + 1.1 - hy, p.z - hz); if (d >= bd) continue;
-      if (!rwLosTur(hx, hy, hz, p.x, p.y + 1.1, p.z)) continue;
+      if (!rwLosTur(hx, hy, hz, p.x, p.y + 1.1, p.z, 'n')) continue;
       bd = d; best = e;
     }
     return best;
@@ -12863,7 +12868,7 @@ Object.assign(EN, {
       if (u.flash && u.flashT !== undefined) { u.flashT -= dt; if (u.flashT <= 0) u.flash.visible = false; }
       var hostile = alive && !rwSafeFrom(p);
       if (p.k === 'at') {
-        var hx = p.x, hy = p.y + 1.1, hz = p.z, d3 = Math.hypot(dx, chest - hy, dz), see = hostile && d3 < RW_TUR_RANGE && rwLosTur(hx, hy, hz, P.x, chest, P.z), tgt = null;
+        var hx = p.x, hy = p.y + 1.1, hz = p.z, d3 = Math.hypot(dx, chest - hy, dz), see = hostile && d3 < RW_TUR_RANGE && rwLosTur(hx, hy, hz, P.x, chest, P.z, 'p'), tgt = null;
         if (see) { tgt = [P.x, chest, P.z]; u.lock += dt; }
         var npc = null;
         if (!see && RW.auth === CO.id) { u.npcT = (u.npcT || 0) - dt; if (u.npcT <= 0) { u.npcT = 0.3; u.npc = rwTurNpc(hx, hy, hz); } npc = u.npc && !u.npc.dead ? u.npc : null; }
@@ -13672,6 +13677,45 @@ Object.assign(EN, {
   function rwTeamSayNow(notice) {
     var i = $('rwTeamChatIn'), v = i ? i.value.trim() : ''; if (!v) return;
     dSend({ t: 'Rtc', m: v, n: notice ? 1 : 0 }); i.value = '';
+  }
+
+  /* ---- update 67: nothing grows through a building. A tree, rock or bush under (or right next to) any building part stays gone
+     while the building is there - even after it would have grown back - and comes back if the building is taken down. ---- */
+  var NCOV = { sig: '', grid: {}, t: 0 };
+  function rwCovSig() { var L = RW.plist, n = L.length; return n + '|' + (n ? L[n - 1].id + '|' + L[0].id : ''); }
+  function rwCovBuild() {
+    var g = {}, C = 4;
+    RW.plist.forEach(function (p) {
+      (p.parts || []).forEach(function (q) {
+        var x = p.x + q[0], y = p.y + q[1], z = p.z + q[2], hw = q[3] / 2, hh = q[4] / 2, hd = q[5] / 2;
+        var b = { x0: x - hw, x1: x + hw, z0: z - hd, z1: z + hd, y0: y - hh, y1: y + hh };
+        for (var cx = Math.floor((b.x0 - 3) / C); cx <= Math.floor((b.x1 + 3) / C); cx++) for (var cz = Math.floor((b.z0 - 3) / C); cz <= Math.floor((b.z1 + 3) / C); cz++) (g[cx + ',' + cz] = g[cx + ',' + cz] || []).push(b);
+      });
+    });
+    NCOV.grid = g;
+  }
+  function rwNodeCovered(n) {
+    if (n.cvs === NCOV.sig) return n.cv;
+    var L = NCOV.grid[Math.floor(n.x / 4) + ',' + Math.floor(n.z / 4)], cov = false;
+    if (L) {
+      var m = (n.r || 0.4) + (n.kind === 'tree' ? 1.0 : 0.25), top = n.y + (n.kind === 'tree' ? 14 : 3);   // a tree's crown needs room too
+      for (var i = 0; i < L.length; i++) { var b = L[i]; if (n.x > b.x0 - m && n.x < b.x1 + m && n.z > b.z0 - m && n.z < b.z1 + m && b.y1 > n.y - 0.6 && b.y0 < top) { cov = true; break; } }
+    }
+    n.cvs = NCOV.sig; n.cv = cov; return cov;
+  }
+  function rwNodeAlive(n) { var h = RW.nst[n.id]; if (!(h === undefined || h > 0)) return false; return !rwNodeCovered(n); }
+  function rwCovTick(dt) {   // building parts changed: hide or show what is under them
+    NCOV.t -= dt; if (NCOV.t > 0) return; NCOV.t = 0.5;
+    if (!RW.on || !RW.chunks) return;
+    var sig = rwCovSig(); if (sig === NCOV.sig) return;
+    var before = {};
+    for (var k in RW.chunks) RW.chunks[k].nodes.forEach(function (n) { if (n.cvs !== undefined) before[n.id] = n.cv; });
+    NCOV.sig = sig; rwCovBuild();
+    for (var k2 in RW.chunks) {
+      var ch = RW.chunks[k2], ch0 = false;
+      ch.nodes.forEach(function (n) { var c = rwNodeCovered(n); if ((before[n.id] || false) !== c) ch0 = true; });
+      if (ch0 && typeof rwRebuildDecor === 'function') rwRebuildDecor(ch);
+    }
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
