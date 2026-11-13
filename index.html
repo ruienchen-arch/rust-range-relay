@@ -5531,9 +5531,9 @@ Object.assign(EN, {
       case 'RRA': rwRaidLive(m); break;
       case 'RRL': rwRaidList(m); break;
       case 'ROP': banner(zt('这里的主人都不在线，房子受离线保护，炸不动', 'The owners are offline: this base is protected and takes no damage'), 2200); sfx('deny'); break;
-      case 'RR': { var lf = rwGive(String(m.it), m.n | 0); if (lf > 0) rwDropAdd([{ id: String(m.it), n: lf }], P.x, P.z, null, 600, P.y); banner(zt('放不下，还给你了', 'No room: returned to you'), 1100); break; }
-      case 'RG': { var lg = rwGive(String(m.it), m.n | 0), tk = (m.n | 0) - lg; if (tk > 0) rwNote(String(m.it), tk); if (lg > 0) { rwDropAdd([{ id: String(m.it), n: lg }], P.x, P.z, null, 600, P.y); banner(zt('背包满了，放在脚边', 'Inventory full: dropped at your feet'), 1300); } break; }
-      case 'RD': if (m.at && m.it) rwDropAdd(m.it.map(function (q) { return { id: String(q[0]), n: q[1] | 0 }; }), +m.at[0], +m.at[2], null, 600, +m.at[1]); break;
+      case 'RR': { var lf = rwGive(String(m.it), m.n | 0, m.u); if (lf > 0) rwDropAdd([{ id: String(m.it), n: lf, u: rwUClean(m.u) }], P.x, P.z, null, 600, P.y); banner(zt('放不下，还给你了', 'No room: returned to you'), 1100); break; }
+      case 'RG': { var lg = rwGive(String(m.it), m.n | 0, m.u), tk = (m.n | 0) - lg; if (tk > 0) rwNote(String(m.it), tk); if (lg > 0) { rwDropAdd([{ id: String(m.it), n: lg, u: rwUClean(m.u) }], P.x, P.z, null, 600, P.y); banner(zt('背包满了，放在脚边', 'Inventory full: dropped at your feet'), 1300); } break; }
+      case 'RD': if (m.at && m.it) rwDropAdd(m.it.map(function (q) { return { id: String(q[0]), n: q[1] | 0, u: rwUClean(q[2]) }; }), +m.at[0], +m.at[2], null, 600, +m.at[1]); break;
       case 'RN': banner(zt('先把里面的东西拿空才能拆', 'Empty it before removing it'), 1400); delete RW.myX[m.id | 0]; break;
       case 'Rx': rwPieceDel(m.id | 0); break;
       case 'Ro': rwPieceDoor(m.id | 0, m.o | 0); break;
@@ -7839,7 +7839,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync();
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -8106,7 +8106,7 @@ Object.assign(EN, {
     var s = RW.inv[i]; if (!s || !RW.cont || !RW.cont.s) return;
     if (RW.cont.k === 'fu' && s.id !== 'wood' && s.id !== 'metal' && s.id !== 'meat') { banner(zt('熔炉只能放木材、金属矿、生肉', 'The furnace takes wood, metal ore and raw meat'), 1400); return; }
     if (RW.cont.k === 'cf' && s.id !== 'wood' && s.id !== 'meat') { banner(zt('篝火只能放木材和生肉', 'The campfire takes wood and raw meat'), 1400); return; }
-    dSend({ t: 'Bp', id: RW.cont.id, it: s.id, n: s.n });
+    dSend({ t: 'Bp', id: RW.cont.id, it: s.id, n: s.n, u: s.u || null });
     RW.inv[i] = null; rwInvChanged();
     sfx('stash');
   }
@@ -8562,6 +8562,7 @@ Object.assign(EN, {
         placed = true;
       }
     }
+    rwInvUpgradesIn(s);   // update 70: each gun's own upgrades
     holster = false; rwInvChanged(); updateSlots();
     RW.lastHeld = rwHeldSlot() ? rwHeldSlot().id : '';
     RW.restored = s.dead ? 0 : placed ? 2 : 1;
@@ -12172,7 +12173,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 69;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 70;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -13726,6 +13727,120 @@ Object.assign(EN, {
     if (RW.rich && !was) { coins = 999999999; banner(zt('你有无限金币', 'You have endless coins'), 2500); }
   }
   function rwRichTick() { if (RW.on && RW.rich && coins < 900000000) coins = 999999999; }
+  /* ================= UPDATE 70: WEAPON UPGRADES BELONG TO THE GUN =================
+     Each gun in the backpack carries its own level and traits (slot.u = { l: level, p: [trait ids] }).
+     Give it to somebody (drop it), put it in a box, die and have it looted from your bag: the upgrades go with it.
+     A new gun (crafted, looted, bought) starts at level 1. The game's per-weapon arrays (wlv / wperk) simply mirror
+     the gun you hold, and an upgrade bought for a weapon is written onto that gun. */
+  function rwUClean(u) {
+    if (!u || typeof u !== 'object') return null;
+    var l = Math.max(1, Math.min(GMAX, u.l | 0)), p = Array.isArray(u.p) ? u.p.filter(function (id) { return typeof id === 'string' && PERKS.some(function (q) { return q.id === id; }); }).slice(0, Math.floor(l / 3)) : [];
+    return l > 1 || p.length ? { l: l, p: p } : null;
+  }
+  function rwGive(id, n, u) {   // puts n of an item into the inventory; returns how many did NOT fit (an upgraded gun gets a slot of its own)
+    var d = RWI[id]; if (!d || !(n > 0)) return n || 0;
+    u = rwUClean(u);
+    var st = d.st || 1, i, s, k;
+    if (!u) for (i = 0; i < RW_SLOTS && n > 0; i++) { s = RW.inv[i]; if (s && s.id === id && !s.u && s.n < st) { k = Math.min(n, st - s.n); s.n += k; n -= k; } }
+    var beltFirst = !!(d.tool || d.gun !== undefined || d.use);
+    for (i = 0; i < RW_SLOTS && n > 0; i++) {
+      var j = beltFirst ? (i < 6 ? RW_HOT0 + i : i - 6) : i;
+      if (!RW.inv[j]) { k = u ? 1 : Math.min(n, st); RW.inv[j] = u ? { id: id, n: k, u: { l: u.l, p: u.p.slice() } } : { id: id, n: k }; n -= k; }
+    }
+    rwInvChanged();
+    return n;
+  }
+  function rwItemArr(q) { return q.u ? [q.id, q.n, { l: q.u.l, p: q.u.p.slice() }] : [q.id, q.n]; }
+  function rwDropAdd(items, x, z, src, ttl, y, bag) {
+    items = (items || []).filter(function (q) { return q && q.n > 0 && RWI[q.id]; });
+    if (!items.length) return null;
+    if (!rwDropNetOn()) return rwDropLocal(items, x, z, src, ttl, y, bag);
+    if (y === undefined || y === null) y = rwH(x, z);
+    dSend({ t: 'Gd', x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, z: Math.round(z * 100) / 100, it: items.map(rwItemArr), src: src ? String(src) : '', ttl: ttl || 600, bag: bag ? 1 : 0 });
+    return null;   // it appears when the server confirms it, for everybody at once
+  }
+  function rwDropSlot(i, one) {
+    var s = RW.inv[i]; if (!s) return;
+    var n = one ? 1 : s.n, fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), x = P.x + fx * 1.4, z = P.z + fz * 1.4;
+    rwDropAdd([{ id: s.id, n: n, u: s.u }], x, z, null, 600, groundAt(x, z, P.y + 0.7));
+    s.n -= n; if (s.n <= 0) RW.inv[i] = null;
+    sfx('drop');
+    rwInvChanged();
+  }
+  function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot - upgrades included
+    var items = [];
+    RW.inv.forEach(function (s) { if (s) items.push({ id: s.id, n: s.n, u: s.u }); });
+    if (items.length) rwDropAdd(items, P.x, P.z, null, 900, P.y, true);
+    rwInvClear(); rwSyncOwned(); rwHotRender(true);
+  }
+  function rwDropGot(m) {   // the server gave us a drop
+    var got = 0, left = [];
+    (m.it || []).forEach(function (q) { var id = String(q[0]), n = q[1] | 0, u = q[2]; if (!RWI[id]) return; var l = rwGive(id, n, u); if (n - l > 0) { rwNote(id, n - l); got++; } if (l > 0) left.push({ id: id, n: l, u: rwUClean(u) }); });
+    if (got) sfx('pickup');
+    if (m.bag && m.bo && m.bo !== RW.me && got) banner(zt('你拿走了 ' + (m.bn || '?') + ' 的背包', 'You looted ' + (m.bn || '?') + "'s bag"), 1400);
+    if (left.length) { var at = m.at || [P.x, P.y, P.z]; rwDropAdd(left, +at[0], +at[2], null, 600, +at[1]); banner(zt('背包满了，剩下的还在地上', 'Inventory full: the rest is still on the ground'), 1500); }
+    rwInvChanged();
+  }
+  function rwDropPick(d) {
+    if (d.sid) {   // ask the server: whoever asks first gets it
+      if (d.pend && gtime - d.pend < 1.5) return;
+      d.pend = gtime; dSend({ t: 'Gp', id: d.sid }); return;
+    }
+    var got = 0;
+    d.it.forEach(function (q) { var left = rwGive(q.id, q.n, q.u), k = q.n - left; if (k > 0) { rwNote(q.id, k); got++; } q.n = left; });
+    d.it = d.it.filter(function (q) { return q.n > 0; });
+    if (!d.it.length) rwDropRemove(d); else { rwDropLabel(d); banner(zt('背包满了，剩下的还在地上', 'Inventory full: the rest is still on the ground'), 1500); }
+    if (got) sfx('pickup');
+  }
+  // keep wlv / wperk (what the game uses for damage, fire rate, the HUD and the upgrade shop) in step with the guns themselves
+  var WSY = {};   // gun index -> { o: the slot object it mirrors, l, p }
+  function rwGunRep(gi) {   // the gun of this kind that counts: the one in your hand, else the first one in the backpack
+    var h = rwHeldSlot(); if (h && RWI[h.id] && RWI[h.id].gun === gi) return h;
+    for (var i = 0; i < RW_SLOTS; i++) { var s = RW.inv[i]; if (s && RWI[s.id] && RWI[s.id].gun === gi) return s; }
+    return null;
+  }
+  function rwWeapSync() {
+    if (!RW.on || RW.dead) return;
+    for (var gi = 0; gi < WDEF.length; gi++) {
+      var o = rwGunRep(gi), S = WSY[gi], curP = (wperk[gi] || []).join(',');
+      if (S && S.o === o && o && (wlv[gi] !== S.l || curP !== S.p)) {   // bought an upgrade or a trait: it goes onto this gun
+        o.u = rwUClean({ l: wlv[gi], p: (wperk[gi] || []).slice() }) || undefined; if (!o.u) delete o.u;
+        WSY[gi] = { o: o, l: wlv[gi], p: curP }; rwSaveSoon(); continue;
+      }
+      var want = o && o.u ? o.u : { l: 1, p: [] }, wp = want.p.join(',');
+      if (wlv[gi] !== want.l || curP !== wp) { wlv[gi] = want.l; wperk[gi] = want.p.slice(); try { refreshGunLook(gi); } catch (e) {} }
+      WSY[gi] = { o: o, l: wlv[gi], p: wp };
+    }
+  }
+
+  // the save: guns keep their upgrades (and the first time, upgrades from the old per-weapon system go onto the guns you carry)
+  function rwSaveState() {
+    var s = { v: 1, t: Date.now(), hot: RW.hot | 0, coins: Math.max(0, coins | 0), gr: Math.max(0, grenades | 0), wm: 1 };
+    s.mk = RW.marks.map(function (m) { return [Math.round(m[0]), Math.round(m[1])]; });
+    if (RW.dead) {
+      s.inv = []; for (var i = 0; i < RW_SLOTS; i++) s.inv.push(0);
+      s.inv[RW_HOT0] = ['rock', 1]; s.hot = 0; s.coins = RW.joinDead ? Math.max(0, coins | 0) : Math.floor(coins * 0.5); s.dead = 1;
+      return s;
+    }
+    s.inv = RW.inv.map(function (o) { return o && o.n > 0 ? rwItemArr(o) : 0; });
+    s.hp = Math.max(1, Math.round(P.hp)); s.ar = Math.max(0, Math.round(P.armor || 0));
+    s.ws = ws.map(function (w) { return [w.ammo | 0, w.res | 0]; });
+    s.x = Math.round(P.x * 10) / 10; s.y = Math.round(P.y * 10) / 10; s.z = Math.round(P.z * 10) / 10; s.yaw = Math.round(P.yaw * 100) / 100;
+    return s;
+  }
+  function rwInvUpgradesIn(s) {   // called right after rwRestore put the backpack back
+    if (!s || !Array.isArray(s.inv)) return;
+    for (var i = 0; i < RW_SLOTS && i < s.inv.length; i++) { var o = s.inv[i], it = RW.inv[i]; if (it && Array.isArray(o) && o[2]) { var u = rwUClean(o[2]); if (u) { it.u = u; it.n = 1; } } }
+    if (!s.wm && Array.isArray(s.wl)) {   // an old save: the levels you bought per weapon go onto the guns you have now
+      var done = {};
+      for (var j = 0; j < RW_SLOTS; j++) {
+        var q = RW.inv[j]; if (!q || !RWI[q.id] || RWI[q.id].gun === undefined) continue;
+        var gi = RWI[q.id].gun; if (done[gi] || q.u) continue; done[gi] = 1;
+        var u2 = rwUClean({ l: s.wl[gi], p: Array.isArray(s.wp) && s.wp[gi] }); if (u2) q.u = u2;
+      }
+    }
+    WSY = {};
+  }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
      (AK selector lever and slant brake, MP5 cocking tube and sight ring, Python vent rib, 870 corn-cob pump,

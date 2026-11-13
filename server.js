@@ -209,7 +209,8 @@ function cleanSave(s) {
   if (!s || typeof s !== 'object' || !Array.isArray(s.inv) || s.inv.length !== 30) return null;
   const o = { v: 1, t: int(s.t, 0, 9e15), hot: int(s.hot, 0, 5), coins: int(s.coins, 0, 1e9), gr: int(s.gr, 0, 9), inv: [] };
   if (Array.isArray(s.mk)) o.mk = s.mk.filter((m) => Array.isArray(m) && num(m[0], WORLD_SIZE * 2) !== null && num(m[1], WORLD_SIZE * 2) !== null).slice(0, 6).map((m) => [Math.round(+m[0]), Math.round(+m[1])]);   // map markers
-  for (const it of s.inv) o.inv.push(Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1 ? [it[0], int(it[1], 1, 100000)] : 0);
+  for (const it of s.inv) o.inv.push(cleanSlot(it) || 0);
+  if (s.wm) o.wm = 1;
   if (Array.isArray(s.wl) && s.wl.length <= 24) o.wl = s.wl.map((v) => int(v, 1, 20));   // weapon upgrade levels
   if (Array.isArray(s.wp) && s.wp.length <= 24) o.wp = s.wp.map((a) => (Array.isArray(a) ? a.filter((id) => typeof id === 'string' && /^[a-z0-9_]{1,20}$/i.test(id)).slice(0, 3) : []));
   if (s.dead) { o.dead = 1; return o; }
@@ -634,7 +635,12 @@ function bkSend(c, force) {
   c.bkH = h; c.send(JSON.stringify({ op: 'world-backup', bk }));
 }
 setInterval(() => { for (const o of world.clients.values()) bkSend(o); }, 15000).unref();
-const cleanSlot = (it) => (Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1 ? [it[0], int(it[1], 1, 100000)] : null);
+function cleanU(u) {   // a gun's own upgrades (update 70): { l: level, p: [trait ids] } - nothing for a plain level-1 gun
+  if (!u || typeof u !== 'object') return null;
+  const l = int(u.l, 1, 20), p = Array.isArray(u.p) ? u.p.filter((id) => typeof id === 'string' && /^[a-z0-9_]{1,20}$/i.test(id)).slice(0, 3) : [];
+  return l > 1 || p.length ? { l, p } : null;
+}
+const cleanSlot = (it) => { if (!(Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1)) return null; const u = cleanU(it[2]); return u ? [it[0], 1, u] : [it[0], int(it[1], 1, 100000)]; };
 function bkRestore(c, bk) {
   try {
     if (!c.owner || c.owner[0] === 'c' || !bk || typeof bk !== 'object' || bk.v !== 1 || bk.seed !== worldSeed() || typeof bk.o !== 'string' || !Array.isArray(bk.b)) return;
@@ -777,7 +783,7 @@ function worldDrop(c, m) {   // a player drops something (or dies and leaves a b
   if (c.hasPos && Math.hypot(c.x - x, c.z - z) > 200) return;   // near yourself (an animal you shot can be a way off)
   const src = typeof m.src === 'string' || typeof m.src === 'number' ? String(m.src).slice(0, 40) : '';
   if (src && it.length === 1 && !m.bag) {   // gathering with a full backpack: one growing pile per tree / rock
-    for (const d of world.drops.values()) if (d.src === src && d.by === c.owner && d.it.length === 1 && d.it[0][0] === it[0][0]) {
+    for (const d of world.drops.values()) if (d.src === src && d.by === c.owner && d.it.length === 1 && d.it[0][0] === it[0][0] && !d.it[0][2] && !it[0][2]) {
       d.it[0][1] = Math.min(100000, d.it[0][1] + it[0][1]); d.until = Math.max(d.until, now + 300000);
       worldAll(JSON.stringify({ t: 'RU', id: d.id, it: d.it })); return;
     }
@@ -963,10 +969,15 @@ function worldCont(c, m) {
   const S = a[10].s;
   if (m.t === 'Bq') { c.open = a[0]; contView(c, a); return; }
   if (m.t === 'Bp') {   // put n of an item in
-    const it = String(m.it || ''), n0 = Math.min(10000, Math.max(0, m.n | 0)); let n = n0;
+    const it = String(m.it || ''), n0 = Math.min(10000, Math.max(0, m.n | 0)), u = cleanU(m.u); let n = n0;
     if (!ITEM_RE.test(it) || !n) return;
+    if (u) {   // an upgraded gun keeps its upgrades: a slot of its own
+      const i = isFurn(a[1]) || n !== 1 ? -1 : S.findIndex((q) => !q);
+      if (i >= 0) { S[i] = [it, 1, u]; saveBuilds(); contWatchers(a); } else c.send(JSON.stringify({ t: 'RR', it, n, u }));
+      return;
+    }
     if (!isFurn(a[1])) {
-      for (let i = 0; i < S.length && n > 0; i++) if (S[i] && S[i][0] === it && S[i][1] < 1000) { const k = Math.min(n, 1000 - S[i][1]); S[i][1] += k; n -= k; }
+      for (let i = 0; i < S.length && n > 0; i++) if (S[i] && S[i][0] === it && !S[i][2] && S[i][1] < 1000) { const k = Math.min(n, 1000 - S[i][1]); S[i][1] += k; n -= k; }
       for (let i = 0; i < S.length && n > 0; i++) if (!S[i]) { const k = Math.min(n, 1000); S[i] = [it, k]; n -= k; }
     } else {
       const slot = it === 'wood' ? 0 : FU_IN[it] && (a[1] === 'fu' || it === 'meat') ? 1 : -1;   // the campfire only cooks
@@ -979,7 +990,7 @@ function worldCont(c, m) {
   if (m.t === 'Bt') {   // take a whole slot out
     const i = m.s | 0; if (i < 0 || i >= S.length || !S[i]) return;
     const q = S[i]; S[i] = null; saveBuilds();
-    c.send(JSON.stringify({ t: 'RG', it: q[0], n: q[1] }));
+    c.send(JSON.stringify(q[2] ? { t: 'RG', it: q[0], n: q[1], u: q[2] } : { t: 'RG', it: q[0], n: q[1] }));
     contWatchers(a);
     return;
   }
