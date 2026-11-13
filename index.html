@@ -5525,6 +5525,7 @@ Object.assign(EN, {
       case 'RGF': rwGiftMsg(m); break;
       case 'RTC': rwTeamEntry(m); break;
       case 'RTH': rwTeamHist(m); break;
+      case 'RRICH': rwRichMsg(m); break;
       case 'RSG': rwSignMsg(m); break;
       case 'RTF': rwTurMsg(m); break;
       case 'RRA': rwRaidLive(m); break;
@@ -12171,7 +12172,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 67;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 69;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -13573,6 +13574,7 @@ Object.assign(EN, {
     if (el.innerHTML !== h) el.innerHTML = h;
   }
   function rwHudTick(dt) {   // keep the missions right under the buttons on the right
+    rwRichTick();
     TBD.posT -= dt; if (TBD.posT > 0) return; TBD.posT = 0.5;
     var mis = $('rwMis'); if (mis) {
       mis.classList.toggle('off', TBD.misOff);
@@ -13717,6 +13719,13 @@ Object.assign(EN, {
       if (ch0 && typeof rwRebuildDecor === 'function') rwRebuildDecor(ch);
     }
   }
+
+  /* ---- update 69: endless coins for the player the server names (RICH_NAMES) - only that one player key ---- */
+  function rwRichMsg(m) {
+    var was = RW.rich; RW.rich = !!m.on;
+    if (RW.rich && !was) { coins = 999999999; banner(zt('你有无限金币', 'You have endless coins'), 2500); }
+  }
+  function rwRichTick() { if (RW.on && RW.rich && coins < 900000000) coins = 999999999; }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
      (AK selector lever and slant brake, MP5 cocking tube and sight ring, Python vent rib, 870 corn-cob pump,

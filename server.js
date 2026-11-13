@@ -80,7 +80,7 @@ function worldJoin(c, m) {
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub), ev: eventsFor() }));
   setTimeout(() => { if (!c.closed) raidsOnJoin(c); }, 3000);
-  teamSeed(); leadSeed(); giftSeed(); setTimeout(() => { if (!c.closed) giftSend(c); }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); teamHist(c.owner); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
+  teamSeed(); leadSeed(); giftSeed(); setTimeout(() => { if (!c.closed) { giftSend(c); richSend(c); } }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); teamHist(c.owner); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
   setTimeout(() => bkSend(c, true), 3000);
   setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
@@ -473,15 +473,25 @@ function worldTeam(c, m) {
 }
 // ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
 const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
-// GIFT_SEED="name:item:count;name:item:count" - each is given once, to whoever has that name (most recently played)
-const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:atur:50' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => g.length === 3 && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
-let gifts = {}, giftDone = {}, giftT = null;
-try { const o = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')); gifts = o.g || {}; giftDone = o.d || {}; } catch (e) {}
-function saveGifts() { if (giftT) return; giftT = setTimeout(() => { giftT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(GIFT_FILE, JSON.stringify({ g: gifts, d: giftDone })); } catch (e) {} }, 1000); }
+// GIFT_SEED="name:item:count[:batch];..." - each line is given once. A new batch name gives the same thing again.
+const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:atur:50:b2' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+// RICH_NAMES="ryan" - these players have endless coins
+const RICH_NAMES = (process.env.RICH_NAMES === undefined ? 'ryan' : process.env.RICH_NAMES).split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean);
+let gifts = {}, giftDone = {}, giftT = null, nameBind = {};   // nameBind: name -> the ONE player (key) it was given to, fixed the first time, so somebody who later calls himself the same gets nothing
+try { const o = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')); gifts = o.g || {}; giftDone = o.d || {}; nameBind = o.w || {}; } catch (e) {}
+function saveGifts() { if (giftT) return; giftT = setTimeout(() => { giftT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(GIFT_FILE, JSON.stringify({ g: gifts, d: giftDone, w: nameBind })); } catch (e) {} }, 1000); }
+function boundOwner(n) {   // the player a name means for gifts and coins: chosen once (the one in a team, else whoever played last), then never changes
+  const low = n.toLowerCase(); if (nameBind[low]) return nameBind[low];
+  const L = ownersByName(low); const o = L.find((q) => teamOf(q)) || L[0]; if (!o) return '';
+  nameBind[low] = o; saveGifts(); console.log('name bound: ' + low + ' -> ' + o); return o;
+}
+const isRich = (o) => !!o && RICH_NAMES.some((n) => nameBind[n] === o);
+function richSend(c) { if (!c.closed) c.send(JSON.stringify({ t: 'RRICH', on: isRich(c.owner) ? 1 : 0 })); }
 function giftSeed() {
+  for (const n of RICH_NAMES) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
   for (const g of GIFT_SEED) {
-    const key = g[0].toLowerCase() + '|' + g[1] + '|' + g[2]; if (giftDone[key]) continue;
-    const o = ownersByName(g[0])[0]; if (!o) continue;
+    const key = g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : ''); if (giftDone[key]) continue;
+    const o = boundOwner(g[0]); if (!o) continue;
     giftDone[key] = 1; (gifts[o] = gifts[o] || []).push({ id: g[1], n: Math.min(999, +g[2] | 0), k: key }); saveGifts();
     console.log('gift queued: ' + key + ' -> ' + o);
     for (const c of world.clients.values()) if (c.owner === o) setTimeout(() => giftSend(c), 1500);
@@ -667,7 +677,7 @@ const WB_KEY = crypto.createHash('sha256').update('world-backup|' + BK_KEY).dige
 const wbKnown = new Set(), wbCarKnown = new Set();
 function wbNote() { for (const a of builds.values()) wbKnown.add(a[7]); for (const id of cars.keys()) wbCarKnown.add(id); }
 function wbMake() {
-  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tid: teams.map((t) => t.id), tmeta: teamMeta, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
+  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tid: teams.map((t) => t.id), tmeta: teamMeta, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, gfw: nameBind, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
   const h = crypto.createHash('sha1').update(body).digest('hex');
   if (h === wbMake.h) return null;
   const zz = zlib.deflateRawSync(body); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
@@ -731,6 +741,7 @@ function wbRestore(c, str) {
     }
     if (w.gfd && typeof w.gfd === 'object') {   // gifts: never give one twice, finish one that was half given
       for (const q in w.gfd) giftDone[q] = 1;
+      if (w.gfw && typeof w.gfw === 'object') for (const q in w.gfw) if (!nameBind[q] && /^[uk]:/.test(String(w.gfw[q]))) nameBind[q] = String(w.gfw[q]);
       if (w.gf && typeof w.gf === 'object') for (const o in w.gf) if (!gifts[o] && Array.isArray(w.gf[o])) gifts[o] = w.gf[o].filter((g) => g && RWI_OK.test(String(g.id)) && g.n > 0).map((g) => ({ id: String(g.id), n: Math.min(999, Math.floor(g.n)), k: String(g.k || '') }));
       saveGifts();
     }
