@@ -80,7 +80,7 @@ function worldJoin(c, m) {
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub), ev: eventsFor() }));
   setTimeout(() => { if (!c.closed) raidsOnJoin(c); }, 3000);
-  teamSeed(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
+  teamSeed(); giftSeed(); setTimeout(() => { if (!c.closed) giftSend(c); }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
   setTimeout(() => bkSend(c, true), 3000);
   setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
@@ -296,10 +296,10 @@ const TEAM_FILE = path.join(DATA_DIR, 'teams.json'), TEAM_MAX = 8;
 // Players bound together from the start, by name (not case sensitive). Each group is joined once, the first time
 // all of its names are found; after that it is an ordinary team. TEAM_SEED="ryan+eonn;anna+bob" changes it, TEAM_SEED="" turns it off.
 const TEAM_SEED = (process.env.TEAM_SEED === undefined ? 'ryan+eonn' : process.env.TEAM_SEED).split(';').map((g) => g.split('+').map((n) => n.trim().toLowerCase()).filter(Boolean)).filter((g) => g.length >= 2);
-let teams = [], seedDone = {}, teamT = null;
+let teams = [], seedDone = {}, teamT = null, vice = {};   // team[0] is the captain (队长); vice[owner] marks a vice-captain (副队长)
 const invites = new Map();   // owner invited -> { from: owner, n: name, t }
-try { const o = JSON.parse(fs.readFileSync(TEAM_FILE, 'utf8')); teams = Array.isArray(o.t) ? o.t : []; seedDone = o.s || {}; } catch (e) {}
-function saveTeams() { if (teamT) return; teamT = setTimeout(() => { teamT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(TEAM_FILE, JSON.stringify({ t: teams, s: seedDone })); } catch (e) {} }, 1500); }
+try { const o = JSON.parse(fs.readFileSync(TEAM_FILE, 'utf8')); teams = Array.isArray(o.t) ? o.t : []; seedDone = o.s || {}; vice = o.v || {}; } catch (e) {}
+function saveTeams() { if (teamT) return; teamT = setTimeout(() => { teamT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(TEAM_FILE, JSON.stringify({ t: teams, s: seedDone, v: vice })); } catch (e) {} }, 1500); }
 const teamOf = (o) => teams.find((t) => t.indexOf(o) >= 0) || null;
 const sameTeam = (a, b) => !!a && !!b && (a === b || (teamOf(a) || []).indexOf(b) >= 0);
 function ownerName(o) {
@@ -332,10 +332,20 @@ function teamAccess(t, add, who) {   // tool cupboards and code-locked doors bui
 }
 function teamSend(o, say, arg) {
   const t = teamOf(o), inv = invites.get(o), on = new Map(); for (const c of world.clients.values()) if (c.owner) on.set(c.owner, c.id);
-  const msg = JSON.stringify({ t: 'RTM', m: (t || []).map((q) => ({ o: q, n: ownerName(q), id: on.get(q) || 0 })), inv: inv && Date.now() < inv.exp ? { n: inv.n } : null, say: say || '', a: arg || '' });
+  const msg = JSON.stringify({ t: 'RTM', m: (t || []).map((q, i) => ({ o: q, n: ownerName(q), id: on.get(q) || 0, r: roleOf(q, t) })), inv: inv && Date.now() < inv.exp ? { n: inv.n } : null, say: say || '', a: arg || '' });
   for (const c of world.clients.values()) if (c.owner === o) c.send(msg);
 }
-function teamSendAll(t, say, arg) { for (const o of t || []) teamSend(o, say, arg); }
+function teamSendAll(t, say, arg) { for (const o of t || []) teamSend(o, say, arg); teamBoard(); }
+const roleOf = (o, t) => (t && t[0] === o ? 'L' : vice[o] ? 'V' : '');
+let boardT = null;
+function teamBoard() {   // every player sees every team (top left of the screen)
+  if (boardT) return; boardT = setTimeout(() => {
+    boardT = null; const on = new Set(); for (const c of world.clients.values()) if (c.owner) on.add(c.owner);
+    const list = teams.map((t) => t.map((q) => [ownerName(q), on.has(q) ? 1 : 0, roleOf(q, t)]));
+    list.sort((a, b) => b.filter((q) => q[1]).length - a.filter((q) => q[1]).length || b.length - a.length);
+    worldAll(JSON.stringify({ t: 'RTL', l: list.slice(0, 40) }));
+  }, 400);
+}
 function teamJoin(a, b) {   // b joins a's team (or the two start one)
   let t = teamOf(a);
   const tb = teamOf(b); if (tb && tb !== t) teamLeave(b, true);
@@ -343,14 +353,19 @@ function teamJoin(a, b) {   // b joins a's team (or the two start one)
   if (t.indexOf(b) < 0) t.push(b);
   saveTeams(); teamAccess(t, true); teamSendAll(t, 'joined', ownerName(b));
 }
-function teamLeave(o, quiet) {
+function teamLeave(o, quiet, kicked) {
   const t = teamOf(o); if (!t) return;
   teamAccess(t, false, o);
-  t.splice(t.indexOf(o), 1);
+  const wasLead = t[0] === o;
+  t.splice(t.indexOf(o), 1); delete vice[o];
+  if (wasLead && t.length) { const v = t.find((q) => vice[q]); if (v) { t.splice(t.indexOf(v), 1); t.unshift(v); delete vice[v]; } }   // a vice-captain takes over, else the longest member
   if (t.length < 2) teams.splice(teams.indexOf(t), 1);
   saveTeams();
-  if (!quiet) { teamSend(o, 'left_me'); teamSendAll(t, 'left', ownerName(o)); }
+  if (kicked) { teamSend(o, 'kicked_me'); teamSendAll(t, 'kicked', ownerName(o)); }
+  else if (!quiet) { teamSend(o, 'left_me'); teamSendAll(t, 'left', ownerName(o)); }
   else teamSendAll(t, 'left', ownerName(o));
+  if (wasLead && t.length >= 2) teamSendAll(t, 'newlead', ownerName(t[0]));
+  teamBoard();
 }
 function teamSeed() {
   for (const g of TEAM_SEED) {
@@ -365,8 +380,10 @@ function worldTeam(c, m) {
   if (!c.owner || c.owner[0] === 'c') return teamSend(c.owner, 'nokey');
   const a = String(m.a || ''), now = Date.now();
   if (a === 'get') return teamSend(c.owner);
+  const myT = teamOf(c.owner), myR = roleOf(c.owner, myT);
   if (a === 'inv') {
     if (now - (c.tmT || 0) < 2000) return; c.tmT = now;
+    if (myT && !myR) return teamSend(c.owner, 'notlead');   // only the captain and vice-captains invite
     const n = String(m.n || '').trim(); if (!n) return teamSend(c.owner);
     const to = ownersByName(n)[0];   // online or not: an offline player sees the invite when they next come
     if (!to) return teamSend(c.owner, 'no_one', n);
@@ -386,8 +403,46 @@ function worldTeam(c, m) {
     teamJoin(inv.from, c.owner); return;
   }
   if (a === 'no') { const inv = invites.get(c.owner); invites.delete(c.owner); if (inv) teamSend(inv.from, 'declined', c.name); return teamSend(c.owner); }
-  if (a === 'leave') { if (!teamOf(c.owner)) return teamSend(c.owner); teamLeave(c.owner); return; }
+  if (a === 'leave') {   // asks first: a second /leave (or the confirm button) within 15 seconds really leaves
+    if (!myT) return teamSend(c.owner);
+    if (!m.c && !(c.leaveAsk && now - c.leaveAsk < 15000)) { c.leaveAsk = now; return teamSend(c.owner, 'leave_ask'); }
+    c.leaveAsk = 0; teamLeave(c.owner); return;
+  }
+  const tgt = String(m.o || ''); if (!myT || myT.indexOf(tgt) < 0 || tgt === c.owner) return teamSend(c.owner);
+  if (a === 'kick') {   // the captain kicks anybody, a vice-captain only ordinary members
+    if (!(myR === 'L' || (myR === 'V' && !roleOf(tgt, myT)))) return teamSend(c.owner, 'notlead');
+    teamLeave(tgt, false, true); return;
+  }
+  if (myR !== 'L') return teamSend(c.owner, 'notlead');
+  if (a === 'vice') { if (m.on) vice[tgt] = 1; else delete vice[tgt]; saveTeams(); teamSendAll(myT, m.on ? 'vice_on' : 'vice_off', ownerName(tgt)); return; }
+  if (a === 'lead') { myT.splice(myT.indexOf(tgt), 1); myT.unshift(tgt); delete vice[tgt]; vice[c.owner] = 1; saveTeams(); teamSendAll(myT, 'newlead', ownerName(tgt)); return; }
 }
+// ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
+const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
+// GIFT_SEED="name:item:count;name:item:count" - each is given once, to whoever has that name (most recently played)
+const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:atur:50' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => g.length === 3 && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+let gifts = {}, giftDone = {}, giftT = null;
+try { const o = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')); gifts = o.g || {}; giftDone = o.d || {}; } catch (e) {}
+function saveGifts() { if (giftT) return; giftT = setTimeout(() => { giftT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(GIFT_FILE, JSON.stringify({ g: gifts, d: giftDone })); } catch (e) {} }, 1000); }
+function giftSeed() {
+  for (const g of GIFT_SEED) {
+    const key = g[0].toLowerCase() + '|' + g[1] + '|' + g[2]; if (giftDone[key]) continue;
+    const o = ownersByName(g[0])[0]; if (!o) continue;
+    giftDone[key] = 1; (gifts[o] = gifts[o] || []).push({ id: g[1], n: Math.min(999, +g[2] | 0), k: key }); saveGifts();
+    console.log('gift queued: ' + key + ' -> ' + o);
+    for (const c of world.clients.values()) if (c.owner === o) setTimeout(() => giftSend(c), 1500);
+  }
+}
+function giftSend(c) { const q = gifts[c.owner]; if (q && q.length && !c.closed) c.send(JSON.stringify({ t: 'RGF', g: q.map((x) => ({ id: x.id, n: x.n })) })); }
+function worldGiftTook(c, m) {   // the player's game says how many fitted
+  const q = gifts[c.owner]; if (!q) return;
+  const it = q.find((x) => x.id === String(m.id)); if (!it) return;
+  it.n -= Math.max(0, Math.min(it.n, Math.floor(+m.n || 0)));
+  if (it.n <= 0) q.splice(q.indexOf(it), 1);
+  if (!q.length) delete gifts[c.owner];
+  saveGifts();
+}
+setInterval(() => { for (const c of world.clients.values()) if (c.owner && gifts[c.owner] && c.dead !== true) giftSend(c); }, 20000);   // room in the backpack now?
 function worldRename(c, m) {
   const no = (why) => c.send(JSON.stringify({ t: 'RNM', ok: 0, why }));
   if (!c.owner || c.owner[0] !== 'k') return no(c.owner && c.owner[0] === 'u' ? 'acct' : 'nokey');
@@ -399,7 +454,7 @@ function worldRename(c, m) {
   for (const k in gnames) if (k !== c.owner && String(gnames[k]).toLowerCase() === low) return no('taken');
   c.nmT = now; c.name = n; gnames[c.owner] = n; saveNames(); statOf(c); saveStats();
   worldAll(JSON.stringify({ t: 'RNM', ok: 1, id: c.id, name: n }));
-  teamSeed(); if (teamOf(c.owner)) teamSendAll(teamOf(c.owner));
+  teamSeed(); giftSeed(); if (teamOf(c.owner)) teamSendAll(teamOf(c.owner));
 }
 const RAID_LIVE_MS = 15000;
 function raidNote(c, a, gone) {   // somebody else's explosive hit a part: tell its people now, or when they next come
@@ -558,7 +613,7 @@ const WB_KEY = crypto.createHash('sha256').update('world-backup|' + BK_KEY).dige
 const wbKnown = new Set(), wbCarKnown = new Set();
 function wbNote() { for (const a of builds.values()) wbKnown.add(a[7]); for (const id of cars.keys()) wbCarKnown.add(id); }
 function wbMake() {
-  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tsd: seedDone, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
+  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
   const h = crypto.createHash('sha1').update(body).digest('hex');
   if (h === wbMake.h) return null;
   const zz = zlib.deflateRawSync(body); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
@@ -612,7 +667,13 @@ function wbRestore(c, str) {
       let k = 0;
       for (const t of w.tm.slice(0, 2000)) { if (!Array.isArray(t)) continue; const list = t.filter((o) => typeof o === 'string' && /^[uk]:/.test(o) && !teamOf(o)).slice(0, TEAM_MAX); if (list.length >= 2) { teams.push(list); k++; } }
       if (w.tsd && typeof w.tsd === 'object') for (const q in w.tsd) seedDone[q] = 1;
+      if (k && w.tv && typeof w.tv === 'object') for (const q in w.tv) if (teamOf(q)) vice[q] = 1;
       if (k) saveTeams();
+    }
+    if (w.gfd && typeof w.gfd === 'object') {   // gifts: never give one twice, finish one that was half given
+      for (const q in w.gfd) giftDone[q] = 1;
+      if (w.gf && typeof w.gf === 'object') for (const o in w.gf) if (!gifts[o] && Array.isArray(w.gf[o])) gifts[o] = w.gf[o].filter((g) => g && RWI_OK.test(String(g.id)) && g.n > 0).map((g) => ({ id: String(g.id), n: Math.min(999, Math.floor(g.n)), k: String(g.k || '') }));
+      saveGifts();
     }
     if (w.st && typeof w.st === 'object') { for (const o of Object.keys(w.st).slice(0, 5000)) statMerge(o, w.st[o]); saveStats(); }   // the leaderboard comes back too
     if (nc) saveCars();
@@ -1079,6 +1140,7 @@ function onMessage(c, text) {
     worldChat(c, m); return;
   }
   if (c.world && m.t === 'Rtm') { worldTeam(c, m); return; }
+  if (c.world && m.t === 'Rgf') { worldGiftTook(c, m); return; }
   if (c.world && m.t === 'Re') { worldDeath(c, m); return; }
   if (c.world && m.t === 'Rh') { worldDamage(c, m); return; }
   if (c.world && m.t === 'Ra') { worldAuth(c, m); return; }
@@ -1133,7 +1195,8 @@ function onClose(c) {
   const room = c.room; if (!room) return;
   room.clients.delete(c.id);
   for (const o of room.clients.values()) o.send(J({ op: 'peer-left', id: c.id }));
-  if (c.world) { if (c.owner) { offAt.set(c.owner, Date.now()); const t1 = teamOf(c.owner); if (t1) setTimeout(() => teamSendAll(t1), 200); } carFree(c.id); chatPush({ t: 'RJ', n: c.name, j: 0 }); if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
+  if (c.world) { if (c.owner) { offAt.set(c.owner, Date.now()); const t1 = teamOf(c.owner); if (t1) setTimeout(() => teamSendAll(t1), 200); }
+    setTimeout(teamBoard, 300); carFree(c.id); chatPush({ t: 'RJ', n: c.name, j: 0 }); if (c.id === world.auth) { world.auth = 0; electAuthority(); } return; }
   if (c.id === 1) {                    // the host left: the room is over
     for (const o of room.clients.values()) o.close();
     rooms.delete(room.code);
