@@ -6019,7 +6019,7 @@ Object.assign(EN, {
         break;
       case 's':
         if (!p || !isFinite(m.x) || !isFinite(m.z)) return;
-        p.rt.x = +m.x; p.rt.y = +m.y || 0; p.rt.z = +m.z; p.rt.yaw = +m.yaw || 0;
+        p.rt.x = +m.x; p.rt.y = +m.y || 0; p.rt.z = +m.z; p.rt.yaw = +m.yaw || 0; p.rt.pi = +m.pi || 0; p.rt.hk = typeof m.hk === 'string' ? m.hk.slice(0, 16) : 'gun';
         p.hp = Math.max(0, +m.hp || 0); p.mx = Math.max(1, +m.mx || 100); p.ar = Math.max(0, +m.ar || 0);
         p.lastS = gtime;
         if (!p.seen) { p.seen = true; p.snap = true; }
@@ -6159,7 +6159,7 @@ Object.assign(EN, {
     var host = !coopG(), net = DU.opened && DU.connected, i, p;
     if (net) {
       DU.snd -= dt;
-      if (DU.snd <= 0) { DU.snd = 0.05; dSend({ t: 's', x: dR2(P.x), y: dR2(P.y), z: dR2(P.z), yaw: Math.round(P.yaw * 1000) / 1000, hp: Math.round(P.hp), mx: P.maxHp, ar: Math.round(P.armor) }, true); }
+      if (DU.snd <= 0) { DU.snd = 0.05; dSend({ t: 's', x: dR2(P.x), y: dR2(P.y), z: dR2(P.z), yaw: Math.round(P.yaw * 1000) / 1000, pi: Math.round(P.pitch * 100) / 100, hk: rwHkSend(), hp: Math.round(P.hp), mx: P.maxHp, ar: Math.round(P.armor) }, true); }
     }
     var k = Math.min(1, dt * 16);
     for (i = 0; i < CO.list.length; i++) {      // smooth the remote players
@@ -6171,6 +6171,7 @@ Object.assign(EN, {
       else { R.position.x += dx * k; R.position.y += dy * k; R.position.z += dz * k; }
       var ta = p.rt.yaw + Math.PI, da = Math.atan2(Math.sin(ta - R.rotation.y), Math.cos(ta - R.rotation.y));
       R.rotation.y += da * k;
+      if (R.userData.anim) R.userData.anim(dt, down, p.rt);
       R.visible = p.seen && (!RW.on || gtime - (p.lastS || 0) < 2.5);   // a downed teammate stays visible, lying on the ground, so you can run over and see them
       R.rotation.x = down ? -Math.PI / 2 : 0;
       var lb = R.userData.lbl; if (lb) { if (down) lb.position.set(0, 0, 0.9); else lb.position.set(0, 2.25, 0); }
@@ -12173,7 +12174,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 70;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 72;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -13840,6 +13841,219 @@ Object.assign(EN, {
       }
     }
     WSY = {};
+  }
+  /* ================= UPDATE 71: BETTER PLAYER MODELS =================
+     Other players used to be a stack of boxes. Now: a survivor with a head and face, hair, neck, a shirt in the player's
+     colour, a belt, cargo trousers, boots, a backpack, jointed arms and legs that walk and run, a body that leans with
+     where they aim, and what they hold (a rifle, a tool, or nothing). The hit boxes (what bullets hit) are unchanged and invisible. */
+  var HUM = { geo: null, mats: {} };
+  function humGeo() {
+    if (HUM.geo) return HUM.geo;
+    var G = {};
+    G.cyl = function (rt, rb, h, seg) { var k = rt + '_' + rb + '_' + h + '_' + (seg || 10); if (!G[k]) { G[k] = new THREE.CylinderGeometry(rt, rb, h, seg || 10); G[k].translate(0, -h / 2, 0); } return G[k]; };   // hangs down from its top
+    G.cylc = function (rt, rb, h, seg) { var k = 'c' + rt + '_' + rb + '_' + h + '_' + (seg || 10); if (!G[k]) G[k] = new THREE.CylinderGeometry(rt, rb, h, seg || 10); return G[k]; };
+    G.sph = function (r, w, h) { var k = 's' + r + '_' + (w || 12); if (!G[k]) G[k] = new THREE.SphereGeometry(r, w || 12, h || 10); return G[k]; };
+    G.box = function (w, h, d) { var k = 'b' + w + '_' + h + '_' + d; if (!G[k]) G[k] = new THREE.BoxGeometry(w, h, d); return G[k]; };
+    G.hair = new THREE.SphereGeometry(0.124, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    HUM.geo = G; return G;
+  }
+  function humMats(col) {
+    if (HUM.mats[col]) return HUM.mats[col];
+    var S = function (c, r, m) { return new THREE.MeshStandardMaterial({ color: c, roughness: r === undefined ? 0.8 : r, metalness: m || 0 }); };
+    var shirt = new THREE.Color(col); var hsl = {}; shirt.getHSL(hsl); shirt.setHSL(hsl.h, Math.min(0.55, hsl.s * 0.75), Math.min(0.48, Math.max(0.24, hsl.l * 0.8)));
+    var M = {
+      skin: S(0xc98f6b, 0.65), shirt: new THREE.MeshStandardMaterial({ color: shirt, roughness: 0.85 }), shirtD: new THREE.MeshStandardMaterial({ color: shirt.clone().multiplyScalar(0.72), roughness: 0.9 }),
+      pants: S(0x45412f, 0.9), boots: S(0x2b2219, 0.75), belt: S(0x241c14, 0.6, 0.1), buckle: S(0xa89a6a, 0.35, 0.7), hair: S(0x2e2118, 0.95),
+      pack: S(0x5a4a33, 0.9), strap: S(0x3a2f22, 0.8), eye: new THREE.MeshBasicMaterial({ color: 0x1a1410 }), brow: S(0x2a1d14, 0.9),
+      gun: S(0x26272a, 0.45, 0.6), wood: S(0x6b4a2c, 0.7), metal: S(0x8a8f94, 0.4, 0.7), glove: S(0x2f2a24, 0.85),
+      hit: new THREE.MeshBasicMaterial({ visible: false })
+    };
+    HUM.mats[col] = M; return M;
+  }
+  var HUMW = {};   // viewmodel material -> the same material for the world (depth-tested, fogged)
+  function humWorldMat(m) {
+    if (Array.isArray(m)) return m.map(humWorldMat);
+    if (!m) return m;
+    if (HUMW[m.uuid]) return HUMW[m.uuid];
+    var w = m.clone(); w.depthTest = true; w.depthWrite = true; if ('fog' in w) w.fog = true;
+    return (HUMW[m.uuid] = w);
+  }
+  function humCopy(src, meshesOnly) {   // a world copy of a first-person model: meshes only (no first-person hands, no muzzle flash)
+    var g = new THREE.Group();
+    (function walk(o, par) {
+      o.children.forEach(function (c) {
+        if (c.isMesh) {
+          if (!c.visible || c.material === flashMat) return;
+          var m = new THREE.Mesh(c.geometry, humWorldMat(c.material)); m.position.copy(c.position); m.quaternion.copy(c.quaternion); m.scale.copy(c.scale); par.add(m);
+        } else if (!meshesOnly && c.isGroup && c.visible) { var sub = new THREE.Group(); sub.position.copy(c.position); sub.quaternion.copy(c.quaternion); sub.scale.copy(c.scale); par.add(sub); walk(c, sub); }
+      });
+    })(src, g);
+    return g;
+  }
+  function humFit(g, len) {   // scale so the longest side is len metres, centred on the grip
+    var b = new THREE.Box3().setFromObject(g), sz = new THREE.Vector3(); b.getSize(sz);
+    var L = Math.max(sz.x, sz.y, sz.z) || 1, k = len / L; g.scale.multiplyScalar(k);
+    return g;
+  }
+  function humHeld(id) {   // what another player holds, as a model: { g, two: both hands on it (a gun) }
+    var d = (typeof RWI !== 'undefined' && RWI[id]) || null, gi = d && d.gun !== undefined ? d.gun : (/^gun:(\d+)$/.test(id) ? +id.slice(4) : -1);
+    try {
+      if (gi >= 0 && gunObjs[gi]) {
+        var G = gunObjs[gi], src = humCopy(G.g, true), wrap = new THREE.Group();
+        src.rotation.y = Math.PI; wrap.add(src);
+        var cls = (WDEF[gi].cls || WDEF[gi].type || '') + ' ' + WDEF[gi].id;
+        var len = /pistol|revolver|deagle|handgun/i.test(cls) ? 0.3 : /smg|uzi|mp5|thompson/i.test(cls) ? 0.62 : /rocket|rpg|launcher/i.test(cls) ? 1.05 : /bow/i.test(cls) ? 0.95 : 0.88;
+        humFit(wrap, len);
+        var b = new THREE.Box3().setFromObject(wrap), c = new THREE.Vector3(); b.getCenter(c); src.position.sub(c.divideScalar(wrap.scale.x));
+        return { g: wrap, two: len > 0.35 };
+      }
+      if (d && d.tool && VM.tools[d.tool]) {
+        var t = humCopy(VM.tools[d.tool], false), tw = new THREE.Group(); tw.add(t);
+        humFit(tw, d.tool === 'rock' ? 0.16 : d.tool === 'plan' ? 0.3 : d.tool === 'spear' ? 1.5 : 0.62);
+        return { g: tw, two: false, tool: d.tool };
+      }
+      if (d) { var it = humCopy(vmhModel(id), false), iw = new THREE.Group(); iw.add(it); humFit(iw, d.dep ? 0.32 : 0.26); return { g: iw, two: false, item: true }; }
+    } catch (e) {}
+    return null;
+  }
+  function duMakeRemote(col) {
+    var G = humGeo(), M = humMats(col), g = new THREE.Group();
+    function mesh(geo, m, x, y, z, par) { var o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); (par || g).add(o); return o; }
+    function piv(x, y, z, par) { var o = new THREE.Group(); o.position.set(x, y, z); (par || g).add(o); return o; }
+    var body = piv(0, 0, 0);            // bobs while walking
+    // ---- legs: hip -> knee -> boot
+    var legs = [];
+    [-1, 1].forEach(function (s) {
+      var hip = piv(s * 0.105, 0.76, 0, body);
+      mesh(G.cyl(0.085, 0.068, 0.39), M.pants, 0, 0, 0, hip);
+      mesh(G.box(0.07, 0.09, 0.05), M.pants, s * 0.07, -0.2, 0.0, hip);     // cargo pocket
+      var knee = piv(0, -0.38, 0, hip);
+      mesh(G.sph(0.066, 10, 8), M.pants, 0, 0, 0, knee);
+      mesh(G.cyl(0.064, 0.052, 0.33), M.pants, 0, 0, 0, knee);
+      var boot = mesh(G.box(0.12, 0.1, 0.25), M.boots, 0, -0.34, 0.035, knee);
+      mesh(G.box(0.125, 0.03, 0.26), M.belt, 0, -0.39, 0.035, knee);      // sole
+      legs.push({ hip: hip, knee: knee, boot: boot });
+    });
+    // ---- upper body: leans with the aim
+    var waist = piv(0, 0.86, 0, body);
+    var pel = mesh(G.cylc(0.16, 0.15, 0.2, 12), M.pants, 0, -0.02, 0, waist); pel.scale.set(1.12, 1, 0.78);
+    var belt = mesh(G.cylc(0.17, 0.17, 0.05, 14), M.belt, 0, 0.08, 0, waist); belt.scale.set(1.08, 1, 0.8);
+    mesh(G.box(0.06, 0.04, 0.02), M.buckle, 0, 0.08, 0.135, waist);
+    var tor = mesh(G.cylc(0.205, 0.165, 0.46, 14), M.shirt, 0, 0.33, 0, waist); tor.scale.set(1, 1, 0.68);
+    var chest = mesh(G.sph(0.2, 14, 10), M.shirt, 0, 0.5, 0.005, waist); chest.scale.set(1.04, 0.42, 0.7);
+    mesh(G.box(0.36, 0.035, 0.29), M.shirtD, 0, 0.13, 0, waist);           // shirt hem
+    mesh(G.box(0.08, 0.07, 0.02), M.shirtD, -0.08, 0.42, 0.135, waist);     // chest pockets
+    mesh(G.box(0.08, 0.07, 0.02), M.shirtD, 0.08, 0.42, 0.135, waist);
+    // backpack and straps
+    mesh(G.box(0.3, 0.36, 0.13), M.pack, 0, 0.34, -0.19, waist);
+    mesh(G.box(0.26, 0.12, 0.05), M.strap, 0, 0.22, -0.27, waist);
+    mesh(G.box(0.05, 0.42, 0.02), M.strap, -0.1, 0.36, 0.13, waist);
+    mesh(G.box(0.05, 0.42, 0.02), M.strap, 0.1, 0.36, 0.13, waist);
+    // neck and head
+    var neckP = piv(0, 0.6, 0, waist);
+    mesh(G.cylc(0.055, 0.062, 0.1, 10), M.skin, 0, 0.04, 0, neckP);
+    var head = piv(0, 0.16, 0.01, neckP);
+    var skull = mesh(G.sph(0.115, 14, 12), M.skin, 0, 0, 0, head); skull.scale.set(0.92, 1.08, 1);
+    var jaw = mesh(G.sph(0.09, 12, 8), M.skin, 0, -0.055, 0.02, head); jaw.scale.set(0.95, 0.8, 0.95);
+    var hair = mesh(G.hair, M.hair, 0, 0.012, -0.006, head); hair.scale.set(0.95, 1.05, 1.05); hair.rotation.x = -0.18;
+    mesh(G.box(0.02, 0.03, 0.02), M.eye, -0.04, 0.01, 0.104, head); mesh(G.box(0.02, 0.03, 0.02), M.eye, 0.04, 0.01, 0.104, head);
+    mesh(G.box(0.045, 0.012, 0.02), M.brow, -0.04, 0.04, 0.104, head); mesh(G.box(0.045, 0.012, 0.02), M.brow, 0.04, 0.04, 0.104, head);
+    mesh(G.box(0.024, 0.045, 0.03), M.skin, 0, -0.012, 0.118, head);      // nose
+    mesh(G.box(0.05, 0.01, 0.01), M.brow, 0, -0.06, 0.105, head);          // mouth
+    mesh(G.sph(0.024, 8, 6), M.skin, -0.108, 0, 0, head); mesh(G.sph(0.024, 8, 6), M.skin, 0.108, 0, 0, head);   // ears
+    // ---- arms: shoulder -> elbow -> hand
+    var arms = [];
+    [-1, 1].forEach(function (s) {
+      var sh = piv(s * 0.225, 0.52, 0, waist);
+      mesh(G.sph(0.075, 10, 8), M.shirt, 0, 0, 0, sh);
+      mesh(G.cyl(0.062, 0.052, 0.27), M.shirt, 0, 0, 0, sh);
+      var el = piv(0, -0.27, 0, sh);
+      mesh(G.sph(0.052, 8, 6), M.shirt, 0, 0, 0, el);
+      mesh(G.cyl(0.05, 0.04, 0.24), M.skin, 0, 0, 0, el);
+      mesh(G.cylc(0.053, 0.053, 0.05, 8), M.shirtD, 0, -0.03, 0, el);       // rolled sleeve
+      var hand = mesh(G.sph(0.046, 8, 6), M.glove, 0, -0.27, 0.01, el); hand.scale.set(0.85, 1.15, 0.95);
+      arms.push({ sh: sh, el: el, hand: hand });
+    });
+    // ---- what they hold
+    var rifle = piv(0.03, 0.4, 0.22, waist);
+    mesh(G.box(0.06, 0.09, 0.42), M.gun, 0, 0, 0.05, rifle);
+    mesh(G.cylc(0.016, 0.016, 0.3, 8), M.metal, 0, 0.015, 0.4, rifle).rotation.x = Math.PI / 2;
+    mesh(G.box(0.05, 0.14, 0.06), M.gun, 0, -0.1, 0.1, rifle).rotation.x = 0.25;   // magazine
+    mesh(G.box(0.055, 0.1, 0.2), M.wood, 0, -0.03, -0.2, rifle);                  // stock
+    mesh(G.box(0.045, 0.06, 0.1), M.wood, 0, -0.035, 0.24, rifle);                // fore grip
+    mesh(G.box(0.03, 0.04, 0.12), M.gun, 0, 0.065, 0.04, rifle);                  // sight rail
+    var rifleParts = rifle.children.slice();
+    var heldGun = piv(0, 0, 0, rifle), heldHand = piv(0, -0.29, 0.03, arms[1].el);
+    var tool = piv(0, 0, 0, arms[1].el);
+    tool.position.set(0, -0.27, 0.02);
+    mesh(G.cylc(0.018, 0.02, 0.5, 8), M.wood, 0, 0, 0.12, tool).rotation.x = Math.PI / 2 - 0.4;
+    mesh(G.box(0.05, 0.12, 0.08), M.metal, 0, 0.1, 0.33, tool);
+    // ---- invisible hit boxes: exactly the old ones, so shooting works as before
+    function hb(w, h, d, x, y, z) { var o = mesh(G.box(w, h, d), M.hit, x, y, z); return o; }
+    var hT = hb(0.7, 0.75, 0.42, 0, 1.05, 0), hH = hb(0.4, 0.42, 0.4, 0, 1.64, 0), hA = hb(0.28, 0.7, 0.32, -0.17, 0.35, 0), hB = hb(0.28, 0.7, 0.32, 0.17, 0.35, 0);
+    hT.userData = { remote: true, head: false }; hA.userData = { remote: true, head: false }; hB.userData = { remote: true, head: false };
+    hH.userData = { remote: true, head: true };
+    g.userData.hit = [hT, hH, hA, hB];
+    var lb = duLabel(); DU.lbl = lb; g.userData.lbl = lb; g.add(lb); DU.lblHp = -1;
+    // ---- animation
+    var A = { ph: 0, v: 0, lx: null, lz: null, pi: 0, hk: 'gun', cur: null, held: null };
+    g.userData.anim = function (dt, down, rt) {
+      dt = Math.min(0.1, Math.max(0.001, dt));
+      var x = g.position.x, z = g.position.z;
+      if (A.lx !== null) { var sp = Math.hypot(x - A.lx, z - A.lz) / dt; A.v += (Math.min(9, sp) - A.v) * Math.min(1, dt * 8); }
+      A.lx = x; A.lz = z;
+      var v = down ? 0 : A.v, amp = Math.min(1, v / 4.2), run = Math.max(0, Math.min(1, (v - 4.5) / 2.5));
+      A.ph += dt * (3 + v * 1.55);
+      var s = Math.sin(A.ph), c = Math.cos(A.ph), sw = s * amp * (0.55 + run * 0.25);
+      legs[0].hip.rotation.x = -sw; legs[1].hip.rotation.x = sw;
+      legs[0].knee.rotation.x = Math.max(0, c) * amp * (0.8 + run * 0.5) + 0.05; legs[1].knee.rotation.x = Math.max(0, -c) * amp * (0.8 + run * 0.5) + 0.05;
+      body.position.y = Math.abs(c) * 0.035 * amp - 0.012 * amp;
+      waist.rotation.z = s * 0.04 * amp;
+      // aim: lean the upper body a little, the head the rest
+      var want = rt && isFinite(rt.pi) ? Math.max(-1.2, Math.min(1.2, rt.pi)) : 0;
+      A.pi += (want - A.pi) * Math.min(1, dt * 10);
+      waist.rotation.x = -A.pi * 0.35 + run * 0.18;
+      head.rotation.x = -A.pi * 0.45;
+      var hk = (rt && rt.hk) || 'gun';
+      if (hk !== A.cur) {   // they took something else in their hand: build its model
+        A.cur = hk; A.held = null;
+        while (heldGun.children.length) heldGun.remove(heldGun.children[0]);
+        while (heldHand.children.length) heldHand.remove(heldHand.children[0]);
+        if (hk !== 'hands' && hk !== 'gun' && hk !== 'tool') {
+          var H = humHeld(hk);
+          if (H) {
+            A.held = H;
+            if (H.two) heldGun.add(H.g);
+            else { heldHand.add(H.g); if (H.tool && H.tool !== 'rock' && H.tool !== 'plan') H.g.rotation.set(Math.PI / 2 + 0.25, 0, 0); else H.g.rotation.set(0.2, 0, 0); }
+          }
+        }
+        rifleParts.forEach(function (m) { m.visible = !A.held || false; });
+      }
+      var gunNow = hk === 'gun' || (A.held && A.held.two), handNow = !gunNow && hk !== 'hands';
+      rifle.visible = gunNow; tool.visible = handNow && !A.held;
+      rifleParts.forEach(function (m) { m.visible = !A.held; });
+      if (gunNow) hk = 'gun'; else if (handNow) hk = 'tool';
+      if (hk === 'gun') {   // both hands on the rifle
+        arms[1].sh.rotation.set(-1.15, 0, -0.12); arms[1].el.rotation.set(-0.95, 0, 0);
+        arms[0].sh.rotation.set(-1.25, 0, 0.55); arms[0].el.rotation.set(-0.55, 0, 0);
+        rifle.rotation.x = 0;
+      } else if (hk === 'hands') {   // arms swing
+        arms[0].sh.rotation.set(sw * 0.9, 0, -0.08); arms[1].sh.rotation.set(-sw * 0.9, 0, 0.08);
+        arms[0].el.rotation.set(-0.15 - Math.max(0, -s) * 0.4 * amp, 0, 0); arms[1].el.rotation.set(-0.15 - Math.max(0, s) * 0.4 * amp, 0, 0);
+      } else {   // a tool in the right hand, the left arm swings
+        arms[1].sh.rotation.set(-0.55, 0, 0.05); arms[1].el.rotation.set(-0.9, 0, 0);
+        arms[0].sh.rotation.set(sw * 0.8, 0, -0.08); arms[0].el.rotation.set(-0.2, 0, 0);
+      }
+    };
+    g.userData.anim(0.016, false, null);
+    return g;
+  }
+  function rwHkSend() {   // what is in my hand, for the other players: the item itself
+    try {
+      if (holster) return 'hands';
+      if (!RW.on) return 'gun:' + cur;
+      var s = rwHeldSlot(); return s && RWI[s.id] ? s.id : 'hands';
+    } catch (e) { return 'gun'; }
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
