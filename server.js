@@ -80,7 +80,7 @@ function worldJoin(c, m) {
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub), ev: eventsFor() }));
   setTimeout(() => { if (!c.closed) raidsOnJoin(c); }, 3000);
-  teamSeed(); giftSeed(); setTimeout(() => { if (!c.closed) giftSend(c); }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); teamHist(c.owner); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
+  teamSeed(); leadSeed(); giftSeed(); setTimeout(() => { if (!c.closed) giftSend(c); }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); teamHist(c.owner); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
   setTimeout(() => bkSend(c, true), 3000);
   setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
@@ -355,6 +355,7 @@ function teamJoin(a, b) {   // b joins a's team (or the two start one)
   if (t.indexOf(b) < 0) t.push(b);
   teamLog(t, 's', '', 'join', ownerName(b)); teamHistAll(t);
   saveTeams(); teamAccess(t, true); teamSendAll(t, 'joined', ownerName(b));
+  leadSeed();
 }
 const metaOf = (t) => teamMeta[t.id] || (teamMeta[t.id] = { chat: [], goal: '', plan: '', gby: '', gt: 0 });
 const TEAM_CHAT_MAX = 300;
@@ -403,6 +404,21 @@ function teamLeave(o, quiet, kicked) {
   else teamSendAll(t, 'left', ownerName(o));
   if (wasLead && t.length >= 2) teamSendAll(t, 'newlead', ownerName(t[0]));
   teamBoard();
+}
+// Captains set by name (update 68): TEAM_LEAD="ryan" makes Ryan the captain of whatever team he is in, once (after that the team decides).
+const TEAM_LEAD = (process.env.TEAM_LEAD === undefined ? 'ryan' : process.env.TEAM_LEAD).split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean);
+function leadSeed() {
+  for (const n of TEAM_LEAD) {
+    const key = 'lead:' + n; if (seedDone[key]) continue;
+    const o = ownersByName(n).find((q) => teamOf(q)); if (!o) continue;
+    const t = teamOf(o); seedDone[key] = 1;
+    if (t[0] !== o) {
+      const old = t[0]; t.splice(t.indexOf(o), 1); t.unshift(o); delete vice[o]; vice[old] = 1;
+      teamLog(t, 's', '', 'newlead', ownerName(o)); teamSendAll(t, 'newlead', ownerName(o));
+      console.log('captain set: ' + n);
+    }
+    saveTeams();
+  }
 }
 function teamSeed() {
   for (const g of TEAM_SEED) {
@@ -492,7 +508,7 @@ function worldRename(c, m) {
   for (const k in gnames) if (k !== c.owner && String(gnames[k]).toLowerCase() === low) return no('taken');
   c.nmT = now; c.name = n; gnames[c.owner] = n; saveNames(); statOf(c); saveStats();
   worldAll(JSON.stringify({ t: 'RNM', ok: 1, id: c.id, name: n }));
-  teamSeed(); giftSeed(); if (teamOf(c.owner)) teamSendAll(teamOf(c.owner));
+  teamSeed(); leadSeed(); giftSeed(); if (teamOf(c.owner)) teamSendAll(teamOf(c.owner));
 }
 const RAID_LIVE_MS = 15000;
 function raidNote(c, a, gone) {   // somebody else's explosive hit a part: tell its people now, or when they next come
