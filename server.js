@@ -80,7 +80,7 @@ function worldJoin(c, m) {
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub), ev: eventsFor() }));
   setTimeout(() => { if (!c.closed) raidsOnJoin(c); }, 3000);
-  teamSeed(); giftSeed(); setTimeout(() => { if (!c.closed) giftSend(c); }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
+  teamSeed(); giftSeed(); setTimeout(() => { if (!c.closed) giftSend(c); }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); teamHist(c.owner); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
   setTimeout(() => bkSend(c, true), 3000);
   setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
@@ -298,8 +298,10 @@ const TEAM_FILE = path.join(DATA_DIR, 'teams.json'), TEAM_MAX = 8;
 const TEAM_SEED = (process.env.TEAM_SEED === undefined ? 'ryan+eonn' : process.env.TEAM_SEED).split(';').map((g) => g.split('+').map((n) => n.trim().toLowerCase()).filter(Boolean)).filter((g) => g.length >= 2);
 let teams = [], seedDone = {}, teamT = null, vice = {};   // team[0] is the captain (队长); vice[owner] marks a vice-captain (副队长)
 const invites = new Map();   // owner invited -> { from: owner, n: name, t }
-try { const o = JSON.parse(fs.readFileSync(TEAM_FILE, 'utf8')); teams = Array.isArray(o.t) ? o.t : []; seedDone = o.s || {}; vice = o.v || {}; } catch (e) {}
-function saveTeams() { if (teamT) return; teamT = setTimeout(() => { teamT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(TEAM_FILE, JSON.stringify({ t: teams, s: seedDone, v: vice })); } catch (e) {} }, 1500); }
+let teamMeta = {};   // team id -> { chat: [...], goal, plan, gby, gt } (update 66: team channel)
+const newTid = () => 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+try { const o = JSON.parse(fs.readFileSync(TEAM_FILE, 'utf8')); teams = Array.isArray(o.t) ? o.t : []; seedDone = o.s || {}; vice = o.v || {}; teamMeta = o.m || {}; teams.forEach((t, i) => { t.id = (o.ids && o.ids[i]) || newTid(); }); } catch (e) {}
+function saveTeams() { if (teamT) return; teamT = setTimeout(() => { teamT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(TEAM_FILE, JSON.stringify({ t: teams, ids: teams.map((t) => t.id), s: seedDone, v: vice, m: teamMeta })); } catch (e) {} }, 1500); }
 const teamOf = (o) => teams.find((t) => t.indexOf(o) >= 0) || null;
 const sameTeam = (a, b) => !!a && !!b && (a === b || (teamOf(a) || []).indexOf(b) >= 0);
 function ownerName(o) {
@@ -332,7 +334,7 @@ function teamAccess(t, add, who) {   // tool cupboards and code-locked doors bui
 }
 function teamSend(o, say, arg) {
   const t = teamOf(o), inv = invites.get(o), on = new Map(); for (const c of world.clients.values()) if (c.owner) on.set(c.owner, c.id);
-  const msg = JSON.stringify({ t: 'RTM', m: (t || []).map((q, i) => ({ o: q, n: ownerName(q), id: on.get(q) || 0, r: roleOf(q, t) })), inv: inv && Date.now() < inv.exp ? { n: inv.n } : null, say: say || '', a: arg || '' });
+  const msg = JSON.stringify({ t: 'RTM', tid: t ? t.id : '', m: (t || []).map((q, i) => ({ o: q, n: ownerName(q), id: on.get(q) || 0, r: roleOf(q, t) })), inv: inv && Date.now() < inv.exp ? { n: inv.n } : null, say: say || '', a: arg || '' });
   for (const c of world.clients.values()) if (c.owner === o) c.send(msg);
 }
 function teamSendAll(t, say, arg) { for (const o of t || []) teamSend(o, say, arg); teamBoard(); }
@@ -349,17 +351,52 @@ function teamBoard() {   // every player sees every team (top left of the screen
 function teamJoin(a, b) {   // b joins a's team (or the two start one)
   let t = teamOf(a);
   const tb = teamOf(b); if (tb && tb !== t) teamLeave(b, true);
-  if (!t) { t = [a]; teams.push(t); }
+  if (!t) { t = [a]; t.id = newTid(); teams.push(t); }
   if (t.indexOf(b) < 0) t.push(b);
+  teamLog(t, 's', '', 'join', ownerName(b)); teamHistAll(t);
   saveTeams(); teamAccess(t, true); teamSendAll(t, 'joined', ownerName(b));
+}
+const metaOf = (t) => teamMeta[t.id] || (teamMeta[t.id] = { chat: [], goal: '', plan: '', gby: '', gt: 0 });
+const TEAM_CHAT_MAX = 300;
+function teamLog(t, k, by, m, a) {   // one entry in the team channel: k = 'c' chat, 'n' notice, 's' system, 'g' goal/plan changed
+  if (!t || !t.id) return null;
+  const e = { k, n: by, m: String(m).slice(0, 400), a: a ? String(a).slice(0, 40) : '', t: Date.now() };
+  const M = metaOf(t); M.chat.push(e); if (M.chat.length > TEAM_CHAT_MAX) M.chat.splice(0, M.chat.length - TEAM_CHAT_MAX);
+  saveTeams();
+  const msg = JSON.stringify({ t: 'RTC', tid: t.id, e });
+  for (const c of world.clients.values()) if (c.owner && t.indexOf(c.owner) >= 0) c.send(msg);
+  return e;
+}
+function teamHist(o) {   // the whole channel (history, goal and plan) for one player, on join and whenever asked
+  const t = teamOf(o); const M = t ? metaOf(t) : null;
+  const msg = JSON.stringify({ t: 'RTH', tid: t ? t.id : '', chat: M ? M.chat : [], goal: M ? M.goal : '', plan: M ? M.plan : '', gby: M ? M.gby : '', gt: M ? M.gt : 0 });
+  for (const c of world.clients.values()) if (c.owner === o) c.send(msg);
+}
+function teamHistAll(t) { for (const o of t || []) teamHist(o); }
+const cleanTxt = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').trim().slice(0, n);
+function worldTeamChat(c, txt, kind) {
+  const t = teamOf(c.owner); if (!t) return teamSend(c.owner, 'noteam');
+  const m = cleanTxt(txt, kind === 'n' ? 300 : 200).replace(/\s+/g, ' '); if (!m) return;
+  const now = Date.now(); c.tch = (c.tch || []).filter((q) => now - q < 8000);
+  if (c.tch.length >= 6) return teamSend(c.owner, 'slow'); c.tch.push(now);
+  if (kind === 'n' && !roleOf(c.owner, t)) return teamSend(c.owner, 'notlead');
+  teamLog(t, kind, c.name || ownerName(c.owner), m);
+}
+function worldTeamGoal(c, m) {   // the captain or a vice-captain sets the goal and the plan
+  const t = teamOf(c.owner); if (!t) return teamSend(c.owner, 'noteam');
+  if (!roleOf(c.owner, t)) return teamSend(c.owner, 'notlead');
+  const now = Date.now(); if (now - (c.tgT || 0) < 1500) return; c.tgT = now;
+  const M = metaOf(t); M.goal = cleanTxt(m.goal, 120).replace(/\s+/g, ' '); M.plan = cleanTxt(m.plan, 1200).replace(/\n{3,}/g, '\n\n'); M.gby = c.name || ownerName(c.owner); M.gt = now;
+  saveTeams(); teamLog(t, 'g', M.gby, M.goal); teamHistAll(t);
 }
 function teamLeave(o, quiet, kicked) {
   const t = teamOf(o); if (!t) return;
   teamAccess(t, false, o);
   const wasLead = t[0] === o;
   t.splice(t.indexOf(o), 1); delete vice[o];
+  teamLog(t, 's', '', kicked ? 'kick' : 'left', ownerName(o));
   if (wasLead && t.length) { const v = t.find((q) => vice[q]); if (v) { t.splice(t.indexOf(v), 1); t.unshift(v); delete vice[v]; } }   // a vice-captain takes over, else the longest member
-  if (t.length < 2) teams.splice(teams.indexOf(t), 1);
+  if (t.length < 2) { teams.splice(teams.indexOf(t), 1); delete teamMeta[t.id]; }   // a team of one is no team: its channel goes with it
   saveTeams();
   if (kicked) { teamSend(o, 'kicked_me'); teamSendAll(t, 'kicked', ownerName(o)); }
   else if (!quiet) { teamSend(o, 'left_me'); teamSendAll(t, 'left', ownerName(o)); }
@@ -380,6 +417,7 @@ function worldTeam(c, m) {
   if (!c.owner || c.owner[0] === 'c') return teamSend(c.owner, 'nokey');
   const a = String(m.a || ''), now = Date.now();
   if (a === 'get') return teamSend(c.owner);
+  if (a === 'hist') return teamHist(c.owner);
   const myT = teamOf(c.owner), myR = roleOf(c.owner, myT);
   if (a === 'inv') {
     if (now - (c.tmT || 0) < 2000) return; c.tmT = now;
@@ -414,8 +452,8 @@ function worldTeam(c, m) {
     teamLeave(tgt, false, true); return;
   }
   if (myR !== 'L') return teamSend(c.owner, 'notlead');
-  if (a === 'vice') { if (m.on) vice[tgt] = 1; else delete vice[tgt]; saveTeams(); teamSendAll(myT, m.on ? 'vice_on' : 'vice_off', ownerName(tgt)); return; }
-  if (a === 'lead') { myT.splice(myT.indexOf(tgt), 1); myT.unshift(tgt); delete vice[tgt]; vice[c.owner] = 1; saveTeams(); teamSendAll(myT, 'newlead', ownerName(tgt)); return; }
+  if (a === 'vice') { if (m.on) vice[tgt] = 1; else delete vice[tgt]; saveTeams(); teamLog(myT, 's', '', m.on ? 'vice_on' : 'vice_off', ownerName(tgt)); teamSendAll(myT, m.on ? 'vice_on' : 'vice_off', ownerName(tgt)); return; }
+  if (a === 'lead') { myT.splice(myT.indexOf(tgt), 1); myT.unshift(tgt); delete vice[tgt]; vice[c.owner] = 1; saveTeams(); teamLog(myT, 's', '', 'newlead', ownerName(tgt)); teamSendAll(myT, 'newlead', ownerName(tgt)); return; }
 }
 // ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
 const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
@@ -613,7 +651,7 @@ const WB_KEY = crypto.createHash('sha256').update('world-backup|' + BK_KEY).dige
 const wbKnown = new Set(), wbCarKnown = new Set();
 function wbNote() { for (const a of builds.values()) wbKnown.add(a[7]); for (const id of cars.keys()) wbCarKnown.add(id); }
 function wbMake() {
-  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
+  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tid: teams.map((t) => t.id), tmeta: teamMeta, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
   const h = crypto.createHash('sha1').update(body).digest('hex');
   if (h === wbMake.h) return null;
   const zz = zlib.deflateRawSync(body); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
@@ -665,7 +703,12 @@ function wbRestore(c, str) {
     }
     if (Array.isArray(w.tm)) {   // teams come back (anybody already in a team stays where they are)
       let k = 0;
-      for (const t of w.tm.slice(0, 2000)) { if (!Array.isArray(t)) continue; const list = t.filter((o) => typeof o === 'string' && /^[uk]:/.test(o) && !teamOf(o)).slice(0, TEAM_MAX); if (list.length >= 2) { teams.push(list); k++; } }
+      w.tm.slice(0, 2000).forEach((t, i) => {
+        if (!Array.isArray(t)) return; const list = t.filter((o) => typeof o === 'string' && /^[uk]:/.test(o) && !teamOf(o)).slice(0, TEAM_MAX); if (list.length < 2) return;
+        list.id = (Array.isArray(w.tid) && /^t[a-z0-9]{4,20}$/.test(String(w.tid[i])) && String(w.tid[i])) || newTid(); teams.push(list); k++;
+        const M = w.tmeta && w.tmeta[list.id];   // its channel comes back too
+        if (M && typeof M === 'object' && !teamMeta[list.id]) teamMeta[list.id] = { chat: (Array.isArray(M.chat) ? M.chat : []).slice(-TEAM_CHAT_MAX).filter((e) => e && typeof e === 'object').map((e) => ({ k: /^[cnsg]$/.test(e.k) ? e.k : 'c', n: String(e.n || '').slice(0, 24), m: String(e.m || '').slice(0, 400), a: String(e.a || '').slice(0, 40), t: +e.t || 0 })), goal: String(M.goal || '').slice(0, 120), plan: String(M.plan || '').slice(0, 1200), gby: String(M.gby || '').slice(0, 24), gt: +M.gt || 0 };
+      });
       if (w.tsd && typeof w.tsd === 'object') for (const q in w.tsd) seedDone[q] = 1;
       if (k && w.tv && typeof w.tv === 'object') for (const q in w.tv) if (teamOf(q)) vice[q] = 1;
       if (k) saveTeams();
@@ -1136,11 +1179,15 @@ function onMessage(c, text) {
     const tx = String(m.m || '').trim(), mm = tx.match(/^\/(team|invite|组队|邀请)(?:\s+(.+))?$/i);
     if (mm) { worldTeam(c, mm[2] ? { a: 'inv', n: mm[2] } : { a: 'get' }); return; }
     if (/^\/(accept|同意|接受)$/i.test(tx)) { worldTeam(c, { a: 'acc' }); return; }
+    { const tc = tx.match(/^\/(t|队|队伍)\s+([\s\S]+)$/i); if (tc) { worldTeamChat(c, tc[2], 'c'); return; } }
+    { const tn = tx.match(/^\/(notice|通知)\s+([\s\S]+)$/i); if (tn) { worldTeamChat(c, tn[2], 'n'); return; } }
     if (/^\/(leave|退队|退出队伍)$/i.test(tx)) { worldTeam(c, { a: 'leave' }); return; }
     worldChat(c, m); return;
   }
   if (c.world && m.t === 'Rtm') { worldTeam(c, m); return; }
   if (c.world && m.t === 'Rgf') { worldGiftTook(c, m); return; }
+  if (c.world && m.t === 'Rtc') { worldTeamChat(c, m.m, m.n ? 'n' : 'c'); return; }
+  if (c.world && m.t === 'Rtg') { worldTeamGoal(c, m); return; }
   if (c.world && m.t === 'Re') { worldDeath(c, m); return; }
   if (c.world && m.t === 'Rh') { worldDamage(c, m); return; }
   if (c.world && m.t === 'Ra') { worldAuth(c, m); return; }
