@@ -5763,7 +5763,7 @@ Object.assign(EN, {
     RW.entering = true; DU.role = 'guest'; DU.coopWanted = true; coop = false; duel = false;
     rwCard(zt('正在进入荒野世界……', 'Entering the wild…'), zt('免费服务器睡眠后第一次连接要等约 1 分钟，请稍等。', 'A sleeping free server needs about a minute on the first connection.'), '<button class="ghost" id="rwToLobby" type="button">' + zt('取消，进入大厅', 'Cancel, go to the lobby') + '</button>');
     $('rwToLobby').addEventListener('click', function () { RW.noAuto = true; RW.entering = false; duCloseConn(); DU.coopWanted = false; showLobby(); });
-    dConnect(srv, accMsg({ op: 'world', gk: GK, bk: rwBkLoad(), wbk: (function () { try { return localStorage.getItem('rr-wild-wbk') || undefined; } catch (e) { return undefined; } })() }), function (msg) { DU.coopWanted = false; rwFail(msg); });
+    dConnect(srv, accMsg({ op: 'world', gk: GK, bk: rwBkLoad(), wbk: (function () { try { return localStorage.getItem('rr-wild-wbk') || undefined; } catch (e) { return undefined; } })(), wbt: (function () { try { return +localStorage.getItem('rr-wild-wbk-t') || 0; } catch (e) { return 0; } })() }), function (msg) { DU.coopWanted = false; rwFail(msg); });
   }
   function rwPauseMenu() {
     releaseInput();
@@ -12174,7 +12174,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 72;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 73;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -13860,9 +13860,9 @@ Object.assign(EN, {
   function humMats(col) {
     if (HUM.mats[col]) return HUM.mats[col];
     var S = function (c, r, m) { return new THREE.MeshStandardMaterial({ color: c, roughness: r === undefined ? 0.8 : r, metalness: m || 0 }); };
-    var shirt = new THREE.Color(col); var hsl = {}; shirt.getHSL(hsl); shirt.setHSL(hsl.h, Math.min(0.55, hsl.s * 0.75), Math.min(0.48, Math.max(0.24, hsl.l * 0.8)));
+    var shirt = new THREE.Color(col); if (shirt.getHSL && shirt.setHSL) { var hsl = {}; shirt.getHSL(hsl); shirt.setHSL(hsl.h, Math.min(0.55, hsl.s * 0.75), Math.min(0.48, Math.max(0.24, hsl.l * 0.8))); }
     var M = {
-      skin: S(0xc98f6b, 0.65), shirt: new THREE.MeshStandardMaterial({ color: shirt, roughness: 0.85 }), shirtD: new THREE.MeshStandardMaterial({ color: shirt.clone().multiplyScalar(0.72), roughness: 0.9 }),
+      skin: S(0xc98f6b, 0.65), shirt: new THREE.MeshStandardMaterial({ color: shirt, roughness: 0.85 }), shirtD: new THREE.MeshStandardMaterial({ color: shirt.clone && shirt.multiplyScalar ? shirt.clone().multiplyScalar(0.72) : shirt, roughness: 0.9 }),
       pants: S(0x45412f, 0.9), boots: S(0x2b2219, 0.75), belt: S(0x241c14, 0.6, 0.1), buckle: S(0xa89a6a, 0.35, 0.7), hair: S(0x2e2118, 0.95),
       pack: S(0x5a4a33, 0.9), strap: S(0x3a2f22, 0.8), eye: new THREE.MeshBasicMaterial({ color: 0x1a1410 }), brow: S(0x2a1d14, 0.9),
       gun: S(0x26272a, 0.45, 0.6), wood: S(0x6b4a2c, 0.7), metal: S(0x8a8f94, 0.4, 0.7), glove: S(0x2f2a24, 0.85),

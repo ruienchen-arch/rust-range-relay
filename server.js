@@ -70,7 +70,7 @@ function worldJoin(c, m) {
   const user = readToken(m.token), gk = typeof m.gk === 'string' && /^[a-f0-9]{16,64}$/.test(m.gk) ? m.gk : '';
   c.owner = user ? 'u:' + user : gk ? 'k:' + crypto.createHash('sha256').update(gk).digest('hex').slice(0, 16) : 'c:' + c.id;   // who owns what this player builds
   if (m.bk) bkRestore(c, m.bk);   // the server lost its disk (restart): the player's own browser brings their base and backpack back
-  if (typeof m.wbk === 'string') wbRestore(c, m.wbk);   // ... and the copy of the whole island brings everybody else's back
+  if (typeof m.wbk === 'string') wbRestore(c, m.wbk, m.wbt);   // ... and the copy of the whole island brings everybody else's back
   c.name = user ? db.users[user].name : (gnames[c.owner] || guestName(gk || ('id' + c.id + Date.now())));   // players who are not logged in get a random name (the same one every time in this browser), or the one they picked
   statOf(c); saveStats();   // on the leaderboard from the first time you come, even with 0 kills
   c.last = Date.now();
@@ -626,11 +626,12 @@ const bkSig = (seed, o, b, s) => crypto.createHmac('sha256', BK_KEY).update(seed
 function bkMake(c) {
   const b = []; for (const a of builds.values()) if (a[7] === c.owner) b.push(a);
   const s = players[c.owner] || null, seed = worldSeed();
-  return { v: 1, seed, o: c.owner, b, s, sig: bkSig(seed, c.owner, b, s) };
+  const t = Date.now();   // update 73: when this copy was made, so the newest copy wins
+  return { v: 2, seed, o: c.owner, b, s, t, sig: bkSig(seed + '|' + t, c.owner, b, s) };
 }
 function bkSend(c, force) {
   if (!c.owner || c.owner[0] === 'c' || c.closed) return;
-  const bk = bkMake(c), h = bk.sig;
+  const bk = bkMake(c), h = bkSig(bk.seed, bk.o, bk.b, bk.s);   // only resend when the content changed
   if (!force && h === c.bkH) return;
   c.bkH = h; c.send(JSON.stringify({ op: 'world-backup', bk }));
 }
@@ -643,14 +644,38 @@ function cleanU(u) {   // a gun's own upgrades (update 70): { l: level, p: [trai
 const cleanSlot = (it) => { if (!(Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1)) return null; const u = cleanU(it[2]); return u ? [it[0], 1, u] : [it[0], int(it[1], 1, 100000)]; };
 function bkRestore(c, bk) {
   try {
-    if (!c.owner || c.owner[0] === 'c' || !bk || typeof bk !== 'object' || bk.v !== 1 || bk.seed !== worldSeed() || typeof bk.o !== 'string' || !Array.isArray(bk.b)) return;
-    if (bkSig(bk.seed, bk.o, bk.b, bk.s === undefined ? null : bk.s) !== bk.sig) { console.log('backup refused: bad signature'); return; }
+    if (!c.owner || c.owner[0] === 'c' || !bk || typeof bk !== 'object' || (bk.v !== 1 && bk.v !== 2) || bk.seed !== worldSeed() || typeof bk.o !== 'string' || !Array.isArray(bk.b)) return;
+    const bt = bk.v === 2 ? +bk.t || 0 : 0;
+    if (bkSig(bk.v === 2 ? bk.seed + '|' + bt : bk.seed, bk.o, bk.b, bk.s === undefined ? null : bk.s) !== bk.sig) { console.log('backup refused: bad signature'); return; }
     const was = bk.o, me = c.owner, map = (o) => (o === was ? me : o);
-    for (const a of builds.values()) if (a[7] === was || a[7] === me) return;   // the server still has this player's base
+    let has = false; for (const a of builds.values()) if (a[7] === was || a[7] === me) { has = true; break; }
+    if (has) {   // the server has this player's base - but if it only came from somebody else's OLDER copy of the island (and nothing happened to it since), this player's own newer copy wins
+      const rec = restoredFrom.get(me);
+      if (rec && was === me && ownerSig(me) === rec.sig && (bt ? bt > rec.t : rec.src === 'wb')) { const n = replaceOwner(me, bk.b, map, bt || Date.now(), 'bk'); c.restored = n; console.log('newer own backup replaced ' + me + ' (' + n + ' parts)'); }
+      return;
+    }
     if (!players[me] && bk.s) { const s = cleanSave(bk.s); if (s) { players[me] = s; savePlayers(); } }
     const n = restoreParts(me, bk.b, map);
+    if (n) restoredFrom.set(me, { t: bt, sig: ownerSig(me), src: 'bk' });
     c.restored = n;
   } catch (e) { console.error('backup restore failed:', e.message); }
+}
+// ---- newest copy wins (update 73) ----
+// After the disk was wiped, the first browser back puts the island back from its copy - which may be hours old. Later
+// browsers may carry newer copies. A base that only came from a copy (and that nobody has touched since) is swapped for a
+// newer copy of it. Anything that happened live on the server (building, raiding) is never undone.
+const restoredFrom = new Map();   // owner -> { t: how old the copy was, sig: what the base looked like right after, src }
+function ownerSig(o) {
+  const L = []; for (const a of builds.values()) if (a[7] === o) L.push([a[1], a[2], a[3], a[4], a[5], a[6], a[9], a[10] && a[10].s ? JSON.stringify(a[10].s) : a[10] && a[10].c ? a[10].c : ''].join(','));   // who is on a cupboard / lock list does not count (teams change it)
+  return crypto.createHash('sha1').update(L.sort().join('|')).digest('hex');
+}
+function replaceOwner(o, list, map, t, src) {
+  const gone = []; for (const a of [...builds.values()]) if (a[7] === o) { builds.delete(a[0]); gone.push(a[0]); }
+  gone.forEach((id) => worldAll(JSON.stringify({ t: 'Rx', id })));
+  for (const cl of world.clients.values()) if (cl.open && gone.indexOf(cl.open) >= 0) cl.open = 0;
+  const n = restoreParts(o, list, map);
+  restoredFrom.set(o, { t, sig: ownerSig(o), src });
+  saveBuilds(); return n;
 }
 function restoreParts(me, list, map) {   // put a player's backed-up parts back (validated like anything a player builds)
     let n = 0;
@@ -686,7 +711,7 @@ function wbMake() {
   const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tid: teams.map((t) => t.id), tmeta: teamMeta, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, gfw: nameBind, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
   const h = crypto.createHash('sha1').update(body).digest('hex');
   if (h === wbMake.h) return null;
-  const zz = zlib.deflateRawSync(body); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
+  const zz = zlib.deflateRawSync(body.slice(0, -1) + ',"t":' + Date.now() + '}'); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
   const iv = crypto.randomBytes(12), ci = crypto.createCipheriv('aes-256-gcm', WB_KEY, iv), enc = Buffer.concat([ci.update(zz), ci.final()]);
   wbMake.h = h;
   return Buffer.concat([iv, ci.getAuthTag(), enc]).toString('base64');
@@ -707,17 +732,22 @@ function wbSendAll(force) {
 }
 wbNote();   // whatever survived on disk is known: never overwritten by old copies
 setInterval(() => wbSendAll(false), 30000).unref();
-function wbRestore(c, str) {
+function wbRestore(c, str, ct) {
   try {
     const w = wbOpen(str); if (!w || w.v !== 2 || w.seed !== worldSeed()) return;
+    const wt = +w.t || Math.min(Date.now(), +ct || 0);   // how old this copy is (older copies made before update 73: the time the browser got it)
     const byOwner = new Map();
     for (const r of Array.isArray(w.b) ? w.b : []) { if (!Array.isArray(r) || typeof r[7] !== 'string' || r[7][0] === 'c') continue; if (!byOwner.has(r[7])) byOwner.set(r[7], []); byOwner.get(r[7]).push(r); }
     let n = 0, who = 0;
     for (const [o, list] of byOwner) {
-      if (wbKnown.has(o)) continue;
+      if (wbKnown.has(o)) {   // already here: only a base that came from an older copy, untouched since, is swapped for this newer one
+        const rec = restoredFrom.get(o);
+        if (rec && wt > rec.t && ownerSig(o) === rec.sig) { const k = replaceOwner(o, list, (x) => x, wt, 'wb'); if (k) { n += k; who++; console.log('newer island copy replaced ' + o + ' (' + k + ' parts)'); } }
+        continue;
+      }
       let has = false; for (const a of builds.values()) if (a[7] === o) { has = true; break; }
       wbKnown.add(o); if (has) continue;
-      const k = restoreParts(o, list, (x) => x); if (k) { n += k; who++; }
+      const k = restoreParts(o, list, (x) => x); if (k) { n += k; who++; restoredFrom.set(o, { t: wt, sig: ownerSig(o), src: 'wb' }); }
     }
     const ps = 0;   // backpacks are not in it: each player's own copy brings theirs back
     let nc = 0;
@@ -845,7 +875,7 @@ function worldBuild(c, m) {
 function dropPart(a, by) {   // a part is gone: doors in a doorway go with it, a destroyed container spills for the raider
   const gone = [a[0]]; builds.delete(a[0]);
   if (Object.values(HOST).indexOf(a[1]) >= 0) for (const b of builds.values()) if (HOST[b[1]] === a[1] && Math.abs(b[2] - a[2]) < 0.25 && Math.abs(b[4] - a[4]) < 0.25 && Math.abs(b[3] - a[3]) < 0.25) { builds.delete(b[0]); gone.push(b[0]); }   // doors and bars go with their wall
-  if (by && CONT[a[1]]) { const it = a[10].s.filter(Boolean); if (it.length) dropMake(a[2], a[3], a[4], it.map((q) => [q[0], q[1]]), { ttl: DROP_TTL }); }   // a destroyed box spills on the ground for everybody
+  if (by && CONT[a[1]]) { const it = a[10].s.filter(Boolean); if (it.length) dropMake(a[2], a[3], a[4], it.map((q) => q.slice()), { ttl: DROP_TTL }); }   // a destroyed box spills on the ground for everybody
   saveBuilds();
   gone.forEach((id) => worldAll(JSON.stringify({ t: 'Rx', id })));
   for (const o of world.clients.values()) if (o.open && gone.indexOf(o.open) >= 0) o.open = 0;
