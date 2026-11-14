@@ -7840,7 +7840,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync();
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -12174,7 +12174,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 75;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 77;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -14055,6 +14055,91 @@ Object.assign(EN, {
       if (!RW.on) return 'gun:' + cur;
       var s = rwHeldSlot(); return s && RWI[s.id] ? s.id : 'hands';
     } catch (e) { return 'gun'; }
+  }
+  /* ================= UPDATE 77: ENGINE SOUNDS =================
+     Cars, helicopters and the motor boat (RHIB) make engine noise while somebody is at the wheel: made live with the
+     Web Audio API (no sound files). The pitch follows the speed (a car changes gear), the helicopter's rotor goes
+     "whop-whop" faster when it climbs or speeds up. You hear everybody's vehicles, quieter with distance and from the
+     side they are on; your own is a little softer from inside. */
+  var VSND = { v: {}, noise: null, t: 0 };
+  var VSND_FAR = { '': 75, h: 170, r: 95 };
+  function vsNoise(c) {
+    if (VSND.noise) return VSND.noise;
+    var n = c.sampleRate * 2, b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0), last = 0;
+    for (var i = 0; i < n; i++) { var w = Math.random() * 2 - 1; last = last * 0.6 + w * 0.4; d[i] = last; }   // slightly dark noise
+    return (VSND.noise = b);
+  }
+  function vsMake(c, car) {
+    var V = { ty: car.ty, nodes: [], out: c.createGain(), pan: c.createStereoPanner ? c.createStereoPanner() : null, sp: 0, lx: car.x, ly: car.y, lz: car.z };
+    V.out.gain.value = 0;
+    if (V.pan) { V.out.connect(V.pan); V.pan.connect(SFX.bus); } else V.out.connect(SFX.bus);
+    function osc(type, f) { var o = c.createOscillator(); o.type = type; o.frequency.value = f; o.start(); V.nodes.push(o); return o; }
+    function noise() { var s = c.createBufferSource(); s.buffer = vsNoise(c); s.loop = true; s.start(0, Math.random() * 1.5); V.nodes.push(s); return s; }
+    function gain(v) { var g = c.createGain(); g.gain.value = v; return g; }
+    function filt(type, f, q) { var f2 = c.createBiquadFilter(); f2.type = type; f2.frequency.value = f; f2.Q.value = q || 0.7; return f2; }
+    if (car.ty === 'h') {
+      // rotor: dark noise chopped by the blades + a deep thump, turbine whine on top
+      var n = noise(), bp = filt('bandpass', 420, 0.6), chop = gain(0.5), lfo = osc('sine', 12), dep = gain(0.48);
+      lfo.connect(dep); dep.connect(chop.gain); n.connect(bp); bp.connect(chop); chop.connect(V.out);
+      var th = osc('sine', 52), thg = gain(0.0), thd = gain(0.55); lfo.connect(thd); thd.connect(thg.gain); th.connect(thg); thg.connect(V.out);
+      var wh = osc('sine', 1850), whg = gain(0.018); wh.connect(whg); whg.connect(V.out);
+      V.lfo = lfo; V.bp = bp; V.wh = wh; V.thg = thg;
+    } else {
+      // piston engine: two detuned saws and a square under a low-pass that opens with the revs, plus road / water noise
+      var o1 = osc('sawtooth', 40), o2 = osc('sawtooth', 40.7), o3 = osc('square', 20), lp = filt('lowpass', 420, 1.6), mix = gain(0.22), sub = gain(0.12);
+      o1.connect(mix); o2.connect(mix); o3.connect(sub); mix.connect(lp); sub.connect(lp); lp.connect(V.out);
+      var rn = noise(), rf = filt(car.ty === 'r' ? 'highpass' : 'bandpass', car.ty === 'r' ? 900 : 180, 0.8), rg = gain(0);
+      rn.connect(rf); rf.connect(rg); rg.connect(V.out);
+      V.o = [o1, o2, o3]; V.lp = lp; V.rg = rg;
+    }
+    return V;
+  }
+  function vsKill(V, c) {
+    V.out.gain.setTargetAtTime(0, c.currentTime, 0.15);
+    setTimeout(function () { V.nodes.forEach(function (n) { try { n.stop(); } catch (e) {} }); try { V.out.disconnect(); if (V.pan) V.pan.disconnect(); } catch (e) {} }, 900);
+  }
+  function rwVehSndTick(dt) {
+    VSND.t -= dt; if (VSND.t > 0) return; VSND.t = 0.05;
+    var c = (typeof ac !== 'undefined' && ac) ? ac : null;
+    if (!c || !SFX.bus || c.state !== 'running' || !RW.on) { if (c) for (var id0 in VSND.v) { vsKill(VSND.v[id0], c); delete VSND.v[id0]; } return; }
+    var muted = state !== 'playing', now = c.currentTime, cx = camera.position.x, cz = camera.position.z, cy = camera.position.y;
+    var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+    var want = [];
+    for (var id in CAR.list) {
+      var car = CAR.list[id]; if (car.ty === 'b' || !car.seats || !car.seats[0]) continue;   // engine on only with a driver (the rowboat has no engine)
+      var d = Math.hypot(car.x - cx, car.y - cy, car.z - cz), far = VSND_FAR[car.ty] || 75;
+      if (d < far) want.push([d, car]);
+    }
+    want.sort(function (a, b) { return a[0] - b[0]; }); want = want.slice(0, 6);
+    var keep = {};
+    want.forEach(function (w) {
+      var car = w[1], d = w[0], V = VSND.v[car.id];
+      if (!V || V.ty !== car.ty) { if (V) vsKill(V, c); V = VSND.v[car.id] = vsMake(c, car); }
+      keep[car.id] = 1;
+      var mine = CAR.mine === car;
+      // speed: our own car knows it, others from how far they moved
+      var mv = Math.hypot(car.x - V.lx, car.y - V.ly, car.z - V.lz) / 0.05; V.lx = car.x; V.ly = car.y; V.lz = car.z;
+      var spd = Math.min(60, mv), climb = car.vy || 0;
+      V.sp += (spd - V.sp) * 0.25;
+      var far = VSND_FAR[car.ty] || 75, k = Math.max(0, 1 - d / far), vol = (car.ty === 'h' ? 0.55 : 0.42) * k * k * (mine ? 0.75 : 1);
+      if (muted) vol = 0;
+      V.out.gain.setTargetAtTime(vol, now, 0.08);
+      if (V.pan) { var dx = car.x - cx, dz = car.z - cz, L = Math.hypot(dx, dz) || 1, side = (dx / L) * (-fz) - (dz / L) * (-fx); V.pan.pan.setTargetAtTime(mine ? 0 : Math.max(-0.85, Math.min(0.85, side * 0.85)), now, 0.08); }
+      if (car.ty === 'h') {
+        var load = Math.min(1, V.sp / 30 + Math.max(0, climb) / 8);
+        V.lfo.frequency.setTargetAtTime(11.5 + load * 5, now, 0.2);
+        V.bp.frequency.setTargetAtTime(380 + load * 260, now, 0.2);
+        V.wh.frequency.setTargetAtTime(1750 + load * 450, now, 0.3);
+      } else {
+        var top = car.ty === 'r' ? 22 : 26, s = Math.min(top, V.sp), gears = 4, gw = top / gears, gear = Math.min(gears - 1, Math.floor(s / gw)), inG = (s - gear * gw) / gw;
+        var rpm = 0.18 + inG * 0.72 + gear * 0.05;   // idle .. redline inside each gear
+        var f = (car.ty === 'r' ? 46 : 32) + rpm * (car.ty === 'r' ? 95 : 70);
+        V.o[0].frequency.setTargetAtTime(f, now, 0.06); V.o[1].frequency.setTargetAtTime(f * 1.012, now, 0.06); V.o[2].frequency.setTargetAtTime(f * 0.5, now, 0.06);
+        V.lp.frequency.setTargetAtTime(260 + rpm * 1300, now, 0.08);
+        V.rg.gain.setTargetAtTime(Math.min(0.5, V.sp / 40) * (car.ty === 'r' ? 0.5 : 0.35), now, 0.1);
+      }
+    });
+    for (var id2 in VSND.v) if (!keep[id2]) { vsKill(VSND.v[id2], c); delete VSND.v[id2]; }
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
