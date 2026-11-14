@@ -162,7 +162,7 @@ const HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // i
 const CONT = { bx: 18, lb: 30, fu: 4, cf: 4 };                               // containers and their slots
 const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm']);
 const HP = { at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
-const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 1500;
+const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 5000;   // update 82: 5000 parts per player (was 1500)
 const TC_RANGE = 25;
 const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|rowboat|rhib|arrow|spear|machete|apis|arif|ashot|arkt|parts|atur|gtrap|clay|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
 const builds = new Map();
@@ -853,18 +853,20 @@ function coveredBy(owner, x, z) {   // true when a tool cupboard that lists owne
 }
 function worldBuild(c, m) {
   const k = String(m.k || ''), x = +m.x, y = +m.y, z = +m.z, r = (m.r | 0) & 3;
-  const no = () => c.send(JSON.stringify({ t: 'Rr', k: BUILD_KINDS.has(k) ? k : '' }));
+  // update 81: say WHY a part could not be built (it used to always say "occupied")
+  const no = (why, extra) => c.send(JSON.stringify(Object.assign({ t: 'Rr', k: BUILD_KINDS.has(k) ? k : '', why: why || '' }, extra || {})));
   const now = Date.now();
   c.bh = (c.bh || []).filter((t) => now - t < 10000);
-  if (c.bh.length >= 40) return no();                              // at most 40 parts per 10 s
-  if (!BUILD_KINDS.has(k) || ![x, y, z].every(Number.isFinite) || Math.abs(x) > WORLD_SIZE || Math.abs(z) > WORLD_SIZE || y < -40 || y > 400) return no();
-  if (builds.size >= MAX_BUILDS || !authedAt(c.owner, x, z)) return no();
+  if (c.bh.length >= 40) return no('fast');                        // at most 40 parts per 10 s
+  if (!BUILD_KINDS.has(k) || ![x, y, z].every(Number.isFinite) || Math.abs(x) > WORLD_SIZE || Math.abs(z) > WORLD_SIZE || y < -40 || y > 400) return no('bad');
+  if (builds.size >= MAX_BUILDS) return no('full');
+  for (const a of builds.values()) if (a[1] === 'tc' && Math.hypot(a[2] - x, a[4] - z) < TC_RANGE && a[10].a.indexOf(c.owner) < 0) return no('tc', { by: ownerName(a[7]), at: [a[2], a[4]], p: pub(a) });   // somebody else's tool cupboard (sent along, in case this browser does not show it)
   let mine = 0;
   for (const a of builds.values()) {
     if (a[7] === c.owner) mine++;
-    if (Math.abs(a[2] - x) < 0.25 && Math.abs(a[4] - z) < 0.25 && Math.abs(a[3] - y) < 0.25 && (a[1] === k || (isWallish(k) && isWallish(a[1])) || (HOST[k] && HOST[a[1]] === HOST[k]) || (isFloorish(k) && isFloorish(a[1])))) return no();
+    if (Math.abs(a[2] - x) < 0.25 && Math.abs(a[4] - z) < 0.25 && Math.abs(a[3] - y) < 0.25 && (a[1] === k || (isWallish(k) && isWallish(a[1])) || (HOST[k] && HOST[a[1]] === HOST[k]) || (isFloorish(k) && isFloorish(a[1])))) return no('here', { by: ownerName(a[7]), p: pub(a) });   // a part already there - sent along so it shows up if this browser missed it
   }
-  if (mine >= MAX_PER_OWNER) return no();
+  if (mine >= MAX_PER_OWNER) return no('mine', { n: MAX_PER_OWNER });
   c.bh.push(now);
   const R = (v) => Math.round(v * 100) / 100;
   const a = fixRec([++buildSeq, k, R(x), R(y), R(z), axisOnly(k) ? r & 1 : r, 0, c.owner, 0]);
