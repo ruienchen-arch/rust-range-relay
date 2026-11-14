@@ -12174,7 +12174,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 73;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 75;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12705,6 +12705,7 @@ Object.assign(EN, {
      - Explosives cost a lot more (satchel, timed explosive, rockets all need gun parts).
      - Auto turret: shoots anyone not authorised on a tool cupboard there, owner online or not.
        Shotgun trap: a blast at whoever walks in front of it. Claymore: blows up when a stranger walks in front. */
+  var RW_TUR_H = 1.5;   // height of the gun head above what it stands on: the middle of a window opening (1.0 - 2.0 m), so the barrels poke out
   var RW_TUR_RANGE = 32;   // auto turret reach (metres, straight line) - the rocket launcher reaches exactly as far
   var RW_TUR_LOCK = 0.08;   // seconds a turret needs to lock on before it fires (was 0.6)
   var AMMO_OF = { pistol: 'apis', revolver: 'apis', smg: 'apis', rifle: 'arif', lmg: 'arif', sniper: 'arif', shotgun: 'ashot', rpg: 'arkt' };
@@ -12718,7 +12719,7 @@ Object.assign(EN, {
     gtrap: { n: ['霰弹陷阱', 'Shotgun Trap'], st: 3, dep: 'gt', d: ['朝着放置时你站的方向，6 米内有陌生人就轰一枪。', 'Fires a shotgun blast at any stranger within 6 m in front of it (it faces where you stood).'] },
     clay: { n: ['定向地雷', 'Claymore'], st: 5, dep: 'cm', d: ['陌生人走到它前面 4 米内就爆炸，用一次就没了。', 'Explodes when a stranger walks within 4 m in front of it. Single use.'] }
   });
-  RW_DEPSZ.at = [0.9, 1.45, 0.9, 1]; RW_DEPSZ.gt = [0.7, 0.8, 0.6, 1]; RW_DEPSZ.cm = [0.45, 0.4, 0.25, 0];
+  RW_DEPSZ.at = [0.9, 1.75, 0.9, 1]; RW_DEPSZ.gt = [0.7, 0.8, 0.6, 1]; RW_DEPSZ.cm = [0.45, 0.4, 0.25, 0];
   Object.assign(RWD, { at: 'atur', gt: 'gtrap', cm: 'clay' });
   RWB.at = { c: {}, n: RWI.atur.n }; RWB.gt = { c: {}, n: RWI.gtrap.n }; RWB.cm = { c: {}, n: RWI.clay.n };
   Object.assign(RW_HP, { at: 700, gt: 300, cm: 80 });
@@ -12794,15 +12795,15 @@ Object.assign(EN, {
     var fr = new THREE.Group(); fr.rotation.y = p.r * Math.PI; inner.add(fr);   // so that local +z faces where you stood
     var dark = new THREE.MeshStandardMaterial({ color: 0x2c2f32, roughness: 0.55, metalness: 0.6 }), grey = new THREE.MeshStandardMaterial({ color: 0x5a6066, roughness: 0.5, metalness: 0.55 });
     function b(w, h, d, m, x, y, z, par) { var o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); (par || fr).add(o); return o; }
-    b(0.8, 0.12, 0.8, dark, 0, 0.06, 0); b(0.22, 0.75, 0.22, grey, 0, 0.5, 0); b(0.4, 0.12, 0.4, dark, 0, 0.9, 0);
+    b(0.8, 0.12, 0.8, dark, 0, 0.06, 0); b(0.22, RW_TUR_H - 0.35, 0.22, grey, 0, 0.12 + (RW_TUR_H - 0.35) / 2, 0); b(0.4, 0.12, 0.4, dark, 0, RW_TUR_H - 0.2, 0);   // update 75: a taller post so the guns sit in a window
     [[1, 1], [-1, 1], [1, -1], [-1, -1]].forEach(function (q) { var l = b(0.06, 0.5, 0.06, dark, q[0] * 0.28, 0.25, q[1] * 0.28); l.rotation.z = -q[0] * 0.35; l.rotation.x = q[1] * 0.35; });
-    var head = new THREE.Group(); head.position.set(0, 1.1, 0); fr.add(head);
+    var head = new THREE.Group(); head.position.set(0, RW_TUR_H, 0); fr.add(head);
     var tilt = new THREE.Group(); head.add(tilt);
     b(0.5, 0.32, 0.6, grey, 0, 0, 0, tilt); b(0.36, 0.08, 0.5, dark, 0, 0.2, -0.02, tilt);
-    var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.75, 10), dark); bar.rotation.x = Math.PI / 2; bar.position.set(0.08, -0.02, 0.6); tilt.add(bar);
-    var bar2 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.75, 10), dark); bar2.rotation.x = Math.PI / 2; bar2.position.set(-0.08, -0.02, 0.6); tilt.add(bar2);
+    var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 1.0, 10), dark); bar.rotation.x = Math.PI / 2; bar.position.set(0.08, -0.02, 0.72); tilt.add(bar);
+    var bar2 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 1.0, 10), dark); bar2.rotation.x = Math.PI / 2; bar2.position.set(-0.08, -0.02, 0.72); tilt.add(bar2);
     var eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: 0x40ff60 })); eye.position.set(0, 0.06, 0.31); tilt.add(eye);
-    var fl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.9 })); fl.position.set(0, -0.02, 1.0); fl.visible = false; tilt.add(fl);
+    var fl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.9 })); fl.position.set(0, -0.02, 1.27); fl.visible = false; tilt.add(fl);
     p.tur = { head: head, tilt: tilt, eye: eye, flash: fl, fr: fr };
   }
   function rwGunTrapMesh(p, B, M, inner) {
@@ -12871,7 +12872,7 @@ Object.assign(EN, {
       if (u.flash && u.flashT !== undefined) { u.flashT -= dt; if (u.flashT <= 0) u.flash.visible = false; }
       var hostile = alive && !rwSafeFrom(p);
       if (p.k === 'at') {
-        var hx = p.x, hy = p.y + 1.1, hz = p.z, d3 = Math.hypot(dx, chest - hy, dz), see = hostile && d3 < RW_TUR_RANGE && rwLosTur(hx, hy, hz, P.x, chest, P.z, 'p'), tgt = null;
+        var hx = p.x, hy = p.y + RW_TUR_H, hz = p.z, d3 = Math.hypot(dx, chest - hy, dz), see = hostile && d3 < RW_TUR_RANGE && rwLosTur(hx, hy, hz, P.x, chest, P.z, 'p'), tgt = null;
         if (see) { tgt = [P.x, chest, P.z]; u.lock += dt; }
         var npc = null;
         if (!see && RW.auth === CO.id) { u.npcT = (u.npcT || 0) - dt; if (u.npcT <= 0) { u.npcT = 0.3; u.npc = rwTurNpc(hx, hy, hz); } npc = u.npc && !u.npc.dead ? u.npc : null; }
