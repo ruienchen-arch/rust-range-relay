@@ -3763,7 +3763,7 @@ Object.assign(EN, {
       if (W.reload <= 0) {
         W.reload = 0;
         var take = Math.min(d.mag - s.ammo, s.res);
-        s.ammo += take; s.res -= take;
+        s.ammo += take; s.res -= take; if (RW.on && take > 0) rwAmmoUsed(cur, take);
       }
     }
     var want = !FZ && (firing || touchFire || firePress); firePress = false;
@@ -12216,7 +12216,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 88;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 90;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12806,22 +12806,20 @@ Object.assign(EN, {
   })();
 
   // ---- real ammo: a gun's spare rounds are the bullets in your backpack ----
-  var AM = { set: [] };
+  var AM = { set: [], used: {} };
+  function rwAmmoUsed(gi, n) { var t = rwAmmoOf(gi); AM.used[t] = (AM.used[t] || 0) + n; }
   function rwAmmoOf(i) { var d = WDEF[i]; return d ? (AMMO_OF[d.cls] || 'apis') : 'apis'; }
   function rwAmmoTick() {
     if (!RW.on) return;
     var pl = rwCount('parts'); if (pl > 0) { rwTake('parts', pl, true); rwGive('frags', pl * 100); rwInvChanged(); }   // gun parts are gone: old ones become fragments
     var leg = rwCount('ammo');   // old ammo boxes from before become bullets once
     if (leg > 0) { rwTake('ammo', leg, true); rwGive('apis', leg * 6); rwGive('arif', leg * 6); rwInvChanged(); }
-    var changed = false;
-    for (var i = 0; i < WDEF.length; i++) {
-      if (!ws[i]) continue;
-      var t = rwAmmoOf(i);
-      if (AM.set[i] !== undefined && ws[i].res < AM.set[i]) {   // a reload took some
-        var used = Math.min(AM.set[i] - ws[i].res, rwCount(t));
-        if (used > 0) { rwTake(t, used, true); changed = true; }
-      }
-    }
+    // update 90: only what a reload really put into the magazine comes out of the backpack. Before, ANY drop in a gun's
+    // reserve number was taken as "a reload used it" - and loading your save (which caps the reserve at the gun's
+    // maximum, e.g. 96 for a pistol) or coming back from a duel made hundreds of bullets vanish.
+    var changed = false, i;
+    for (var t in AM.used) { var used = Math.min(AM.used[t], rwCount(t)); if (used > 0) { rwTake(t, used, true); changed = true; } }
+    AM.used = {};
     if (changed) rwInvChanged();
     var cnt = {};
     for (i = 0; i < WDEF.length; i++) { if (!ws[i]) continue; var tt = rwAmmoOf(i); if (cnt[tt] === undefined) cnt[tt] = rwCount(tt); ws[i].res = cnt[tt]; AM.set[i] = ws[i].res; }
