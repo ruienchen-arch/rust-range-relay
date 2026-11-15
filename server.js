@@ -644,7 +644,8 @@ setInterval(() => { for (const o of world.clients.values()) bkSend(o); }, 15000)
 function cleanU(u) {   // a gun's own upgrades (update 70): { l: level, p: [trait ids] } - nothing for a plain level-1 gun
   if (!u || typeof u !== 'object') return null;
   const l = int(u.l, 1, 20), p = Array.isArray(u.p) ? u.p.filter((id) => typeof id === 'string' && /^[a-z0-9_]{1,20}$/i.test(id)).slice(0, 3) : [];
-  return l > 1 || p.length ? { l, p } : null;
+  const s = int(u.s, 0, 6);   // update 93: the scope fitted to the gun
+  return l > 1 || p.length || s ? (s ? { l, p, s } : { l, p }) : null;
 }
 const cleanSlot = (it) => { if (!(Array.isArray(it) && typeof it[0] === 'string' && ITEM_RE.test(it[0]) && +it[1] >= 1)) return null; const u = cleanU(it[2]); return u ? [it[0], 1, u] : [it[0], int(it[1], 1, 100000)]; };
 function bkRestore(c, bk) {
