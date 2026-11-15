@@ -12216,7 +12216,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 85;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 87;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -14172,18 +14172,49 @@ Object.assign(EN, {
       var wh = osc('sine', 1850), whg = gain(0.018); wh.connect(whg); whg.connect(V.out);
       V.lfo = lfo; V.bp = bp; V.wh = wh; V.thg = thg;
     } else {
-      // piston engine: two detuned saws and a square under a low-pass that opens with the revs, plus road / water noise
-      var o1 = osc('sawtooth', 40), o2 = osc('sawtooth', 40.7), o3 = osc('square', 20), lp = filt('lowpass', 420, 1.6), mix = gain(0.22), sub = gain(0.12);
-      o1.connect(mix); o2.connect(mix); o3.connect(sub); mix.connect(lp); sub.connect(lp); lp.connect(V.out);
-      var rn = noise(), rf = filt(car.ty === 'r' ? 'highpass' : 'bandpass', car.ty === 'r' ? 900 : 180, 0.8), rg = gain(0);
+      // update 87: a piston engine built the way a real one sounds - a train of firing pulses (rich, falling harmonics) that
+      // "chugs" at the firing rate, a lumpy half-order beat at idle, exhaust rasp, a little grit, and a muffler (low-pass)
+      var nH = 24, re = new Float32Array(nH), im = new Float32Array(nH);
+      for (var hN = 1; hN < nH; hN++) { var amp = 1 / Math.pow(hN, 1.15) * (hN % 2 ? 1 : 0.7); var ph = (hN * 2.399) % 6.283; re[hN] = amp * Math.cos(ph); im[hN] = amp * Math.sin(ph); }
+      var wave = c.createPeriodicWave(re, im);
+      var o1 = osc('sine', 27); o1.setPeriodicWave(wave);
+      var o2 = osc('sine', 13.5); o2.setPeriodicWave(wave);          // half order: the uneven, lumpy beat
+      var o3 = osc('sine', 54); o3.setPeriodicWave(wave);
+      var g1 = gain(0.42), g2 = gain(0.16), g3 = gain(0.08);
+      var am = gain(0.6), lfo = osc('sine', 27), dep = gain(0.38);       // the chug: loudness pulses at the firing rate
+      lfo.connect(dep); dep.connect(am.gain);
+      o1.connect(g1); o2.connect(g2); o3.connect(g3); g1.connect(am); g2.connect(am); g3.connect(am);
+      var ws = c.createWaveShaper(), cv = new Float32Array(1024); for (var q = 0; q < 1024; q++) { var xq = q / 512 - 1; cv[q] = Math.tanh(xq * 2.2) / Math.tanh(2.2); } ws.curve = cv;
+      var lp = filt('lowpass', 500, 0.9), lp2 = filt('lowpass', 1800, 0.5);
+      am.connect(ws); ws.connect(lp); lp.connect(lp2); lp2.connect(V.out);
+      var ex = noise(), exf = filt('bandpass', 260, 1.2), exg = gain(0.0), exam = gain(1);   // exhaust rasp, pulsing with the engine
+      dep.connect(exam.gain); ex.connect(exf); exf.connect(exg); exg.connect(exam); exam.connect(lp2);
+      var rn = noise(), rf = filt(car.ty === 'r' ? 'highpass' : 'bandpass', car.ty === 'r' ? 900 : 160, 0.7), rg = gain(0);   // road / water
       rn.connect(rf); rf.connect(rg); rg.connect(V.out);
-      V.o = [o1, o2, o3]; V.lp = lp; V.rg = rg;
+      V.o = [o1, o2, o3]; V.lfo = lfo; V.lp = lp; V.exf = exf; V.exg = exg; V.rg = rg; V.am = am; V.rpm = 800; V.lastSp = 0;
     }
     return V;
   }
   function vsKill(V, c) {
     V.out.gain.setTargetAtTime(0, c.currentTime, 0.15);
     setTimeout(function () { V.nodes.forEach(function (n) { try { n.stop(); } catch (e) {} }); try { V.out.disconnect(); if (V.pan) V.pan.disconnect(); } catch (e) {} }, 900);
+  }
+  function vsCar(V, ty, now) {   // engine revs and tone from the (smoothed) speed V.sp; one call every 0.05 s
+    var car = { ty: ty };
+    // revs: idle 800, up through 4 gears to about 5000, dropping back at each shift; load = accelerating
+    var top = car.ty === 'r' ? 22 : 26, sv = Math.min(top, V.sp), gears = 4, gw = top / gears, gear = Math.min(gears - 1, Math.floor(sv / gw)), inG = (sv - gear * gw) / gw;
+    var want = sv < 0.6 ? 800 : 1500 + inG * 3300 + gear * 250;
+    var acc = (V.sp - V.lastSp) / 0.05; V.lastSp = V.sp; var load = Math.max(0, Math.min(1, acc / 4 + (sv > 0.6 ? 0.25 : 0)));
+    V.load = (V.load || 0) + (load - (V.load || 0)) * 0.15;
+    V.rpm += (want - V.rpm) * (want > V.rpm ? 0.18 : 0.3);   // revs climb, and drop quickly at a shift
+    var fire = V.rpm / 30 * (car.ty === 'r' ? 1.6 : 1);    // 4-stroke, 4 cylinders: firings per second (the boat motor revs higher)
+    V.o[0].frequency.setTargetAtTime(fire, now, 0.05); V.o[1].frequency.setTargetAtTime(fire * 0.5, now, 0.05); V.o[2].frequency.setTargetAtTime(fire * 2, now, 0.05);
+    V.lfo.frequency.setTargetAtTime(fire, now, 0.05);
+    var r01 = (V.rpm - 800) / 4200;
+    V.lp.frequency.setTargetAtTime(380 + r01 * 1500 + V.load * 700, now, 0.08);
+    V.exf.frequency.setTargetAtTime(fire * 6, now, 0.08); V.exg.gain.setTargetAtTime(0.05 + V.load * 0.22, now, 0.1);
+    V.am.gain.setTargetAtTime(0.5 + V.load * 0.35, now, 0.1);
+    V.rg.gain.setTargetAtTime(Math.min(0.5, V.sp / 40) * (car.ty === 'r' ? 0.5 : 0.3), now, 0.1);
   }
   function rwVehSndTick(dt) {
     VSND.t -= dt; if (VSND.t > 0) return; VSND.t = 0.05;
@@ -14218,12 +14249,7 @@ Object.assign(EN, {
         V.bp.frequency.setTargetAtTime(380 + load * 260, now, 0.2);
         V.wh.frequency.setTargetAtTime(1750 + load * 450, now, 0.3);
       } else {
-        var top = car.ty === 'r' ? 22 : 26, s = Math.min(top, V.sp), gears = 4, gw = top / gears, gear = Math.min(gears - 1, Math.floor(s / gw)), inG = (s - gear * gw) / gw;
-        var rpm = 0.18 + inG * 0.72 + gear * 0.05;   // idle .. redline inside each gear
-        var f = (car.ty === 'r' ? 46 : 32) + rpm * (car.ty === 'r' ? 95 : 70);
-        V.o[0].frequency.setTargetAtTime(f, now, 0.06); V.o[1].frequency.setTargetAtTime(f * 1.012, now, 0.06); V.o[2].frequency.setTargetAtTime(f * 0.5, now, 0.06);
-        V.lp.frequency.setTargetAtTime(260 + rpm * 1300, now, 0.08);
-        V.rg.gain.setTargetAtTime(Math.min(0.5, V.sp / 40) * (car.ty === 'r' ? 0.5 : 0.35), now, 0.1);
+        vsCar(V, car.ty, now);
       }
     });
     for (var id2 in VSND.v) if (!keep[id2]) { vsKill(VSND.v[id2], c); delete VSND.v[id2]; }
@@ -14333,7 +14359,9 @@ Object.assign(EN, {
   }, true);
   // update 85: the bow is held the way YOU see it - not from the side. It hangs low and canted while idle; when you draw it
   // comes up in front of you, the arrow pointing where you aim, and the string (with your right hand) comes back towards your face.
-  var BOWV = { rest: [0.07, -0.21, -0.55, 0.14, -0.3, 0.5], aim: [-0.035, -0.07, -0.6, 0.02, 0.0, 0.17], s: 0.56, pull: 0.46 };
+  var BOWV = {   // update 86: like a first-person bow - left arm holds the bow on the left, the string comes back to your face on the right
+    rest: [-0.12, -0.17, -0.48, 0.35, 0.45, -0.5], aim: [-0.09, -0.04, -0.5, 0.22, 0.35, -0.15], s: 0.56, pull: 0.46,
+    lhO: [0.0, -0.035, 0.02], lhR0: [0.2, 0.4, 0.5], lhR1: [0.1, 0.35, 0.3], hrO: [0.02, -0.04, 0.03], hrR0: [0.4, -0.3, 0.3], hrR1: [0.5, -0.4, 0.4], hs: 0.85 };
   function bowRig(G) {   // the bow and both hands hang from the camera itself, so their place on screen is exact
     if (G.rigged || !G.B) return;
     G.rigged = true;
@@ -14362,9 +14390,12 @@ Object.assign(EN, {
     // hands: left on the grip, right on the string
     G.B.updateMatrix();
     var gp = (BV2 || (BV2 = new THREE.Vector3())).set(0, -0.02, 0.01).applyMatrix4(G.B.matrix);
-    G.lh.position.set(gp.x + 0.012, gp.y - 0.05, gp.z + 0.03); G.lh.rotation.set(0.1 - 0.15 * a, 0.1, -0.5 + 0.25 * a);
+    var V = BOWV, M3 = function (r0, r1) { return [r0[0] + (r1[0] - r0[0]) * a, r0[1] + (r1[1] - r0[1]) * a, r0[2] + (r1[2] - r0[2]) * a]; };
+    var lr = M3(V.lhR0, V.lhR1), hrr = M3(V.hrR0, V.hrR1);
+    G.lh.position.set(gp.x + V.lhO[0], gp.y + V.lhO[1], gp.z + V.lhO[2]); G.lh.rotation.set(lr[0], lr[1], lr[2]); G.lh.scale.setScalar(V.hs);
     var np = b.clone().applyMatrix4(G.B.matrix);
-    G.hr.position.set(np.x + 0.02, np.y - 0.045, np.z + 0.035); G.hr.rotation.set(0.35 + 0.2 * a, -0.15 * a, 0.35 + 0.3 * k);
+    G.hr.position.set(np.x + V.hrO[0], np.y + V.hrO[1], np.z + V.hrO[2]); G.hr.rotation.set(hrr[0], hrr[1], hrr[2]); G.hr.scale.setScalar(V.hs);
+    G.B.scale.setScalar(V.s);
     // where the reload hand goes (it lives in the old pistol's space)
     camera.updateMatrixWorld(); G.g.updateMatrixWorld(true);
     var toG = function (v) { var w = camera.localToWorld(v.clone()); G.g.worldToLocal(w); return [w.x, w.y, w.z]; };
