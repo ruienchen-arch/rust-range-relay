@@ -9356,6 +9356,7 @@ Object.assign(EN, {
   function sfx(name, o) {
     var c = sfxCtx(); if (!c) return;
     o = o || {};
+    if (name === 'shot' && (o.g === 'bow' || o.g === 'xbow')) { sfxBowTwang(c, o); return; }   // update 85: a bow twangs
     var R = SFX_DEF[name];
     if (R === 0) return;   // silent on purpose
     var keys;
@@ -12215,7 +12216,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 84;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 85;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -13021,7 +13022,14 @@ Object.assign(EN, {
       var sh = new THREE.Mesh(new THREE.BoxGeometry(d.id === 'bow' ? 0.024 : 0.01, d.id === 'bow' ? 0.024 : 0.01, d.id === 'bow' ? 0.62 : 0.42), wood); sh.position.set(0, d.id === 'bow' ? 0 : 0.035, d.id === 'bow' ? 0.02 : -0.04); sh.renderOrder = 11; arrow.add(sh);
       var tip = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 4), steel); tip.rotation.x = -Math.PI / 2; tip.position.set(0, sh.position.y, sh.position.z - (d.id === 'bow' ? 0.33 : 0.23)); tip.renderOrder = 11; arrow.add(tip);
       G.arrow = arrow;
-      if (d.id === 'bow') { var fl2 = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.05, 0.1), gmat(0xd84a2a, 0, 0.8)); fl2.position.set(0, 0, 0.27); fl2.renderOrder = 11; arrow.add(fl2); var fl3 = fl2.clone(); fl3.rotation.z = Math.PI / 2; arrow.add(fl3); }
+      if (d.id === 'bow') {   // update 85: a full-length arrow whose back end sits on the string (it comes back with it when you draw)
+        sh.geometry = new THREE.BoxGeometry(0.022, 0.022, 0.95); sh.position.set(0, 0, 0.32 - 0.475);
+        tip.geometry = new THREE.ConeGeometry(0.022, 0.08, 4); tip.position.set(0, 0, 0.32 - 0.95 - 0.035);
+      }
+      // the pistol it was made from: no iron sights, scope, muzzle flash or ejected cases (those were the two black dots)
+      if (Array.isArray(G.irons)) { G.irons.forEach(function (m) { m.visible = false; if (m.parent) m.parent.remove(m); }); G.irons = []; }   // the pistol's iron sights: the game showed them every frame - the two black dots
+      ['sc', 'scDot', 'flash', 'shell'].forEach(function (nm) { if (G[nm]) { G[nm].visible = false; if (G[nm].parent) G[nm].parent.remove(G[nm]); var dm = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial()); dm.visible = false; G[nm] = dm; } });
+      if (d.id === 'bow') { var fl2 = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.05, 0.1), gmat(0xd84a2a, 0, 0.8)); fl2.position.set(0, 0, 0.32 - 0.07); fl2.renderOrder = 11; arrow.add(fl2); var fl3 = fl2.clone(); fl3.rotation.z = Math.PI / 2; arrow.add(fl3); }
       // update 78: reloading takes an arrow from the quiver (bow) or cocks the string and lays in a bolt (crossbow) - no magazine
       if (G.hand) {
         var ha = new THREE.Group(), hs = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.008, 0.5), wood); hs.position.z = -0.12; hs.renderOrder = 23; ha.add(hs);
@@ -13979,7 +13987,7 @@ Object.assign(EN, {
     var d = (typeof RWI !== 'undefined' && RWI[id]) || null, gi = d && d.gun !== undefined ? d.gun : (/^gun:(\d+)$/.test(id) ? +id.slice(4) : -1);
     try {
       if (gi >= 0 && gunObjs[gi]) {
-        var G = gunObjs[gi], src = humCopy(G.g, true), wrap = new THREE.Group();
+        var G = gunObjs[gi], src = G.B ? humCopy(G.B, false) : humCopy(G.g, true), wrap = new THREE.Group();   // a bow lives outside the pistol it was made from
         src.rotation.y = Math.PI; wrap.add(src);
         var cls = (WDEF[gi].cls || WDEF[gi].type || '') + ' ' + WDEF[gi].id;
         var len = /pistol|revolver|deagle|handgun/i.test(cls) ? 0.3 : /smg|uzi|mp5|thompson/i.test(cls) ? 0.62 : /rocket|rpg|launcher/i.test(cls) ? 1.05 : /bow/i.test(cls) ? 0.95 : 0.88;
@@ -14245,7 +14253,7 @@ Object.assign(EN, {
     if (want && s.ammo <= 0 && s.res <= 0 && !latched) { latched = true; W.cd = 0.3; sfx('empty'); banner(zt('没有箭了：用木头和石头做（Tab）', 'No arrows: make some from wood and stone (Tab)'), 1500); }
     // the drawn bow: the arrow comes back with the string, a light shake once fully drawn
     var k2 = BOWD.on ? bowCharge() : 0;
-    bowPose(G, k2);
+    bowPose(G, k2, dt);
     if (BOWD.on && BOWD.t > BOW_FULL + 1.5) { P.pitch += (Math.random() - 0.5) * 0.004; P.yaw += (Math.random() - 0.5) * 0.004; }
     bowBar(k2, BOWD.on);
   }
@@ -14271,7 +14279,8 @@ Object.assign(EN, {
     BOWD.list.push({ g: g, v: dir.multiplyScalar(spd), dm: 0.3 + 0.9 * k, t: 0, stuck: 0, d: d, st: st, gi: cur });
   }
   function bowTick(dt) {
-    var d = WDEF[cur];
+    var d = WDEF[cur], BI = WDEF.findIndex ? WDEF.findIndex(function (w) { return w.id === 'bow'; }) : -1, GB = BI >= 0 ? gunObjs[BI] : null;
+    if (GB && GB.rigged && !(RW.on && cur === BI && heldKind() === 'gun')) { GB.B.visible = false; GB.hr.visible = false; GB.lh.visible = false; }
     if (!(RW.on && d && d.id === 'bow' && heldKind() === 'gun')) { if (BOWD.on || BOWD.t) { BOWD.on = false; BOWD.t = 0; } if (BOWD.bar) bowBar(0, false); }
     for (var i = BOWD.list.length - 1; i >= 0; i--) {
       var A = BOWD.list[i], g = A.g;
@@ -14322,16 +14331,45 @@ Object.assign(EN, {
     if (!RW.on || !BOWD.on) return;
     if (e.code === KB.reload) { if (bowCancel()) { e.preventDefault(); e.stopPropagation(); } }
   }, true);
-  function bowPose(G, k) {   // drawing: the string and the arrow come back towards you, the right hand with them
+  // update 85: the bow is held the way YOU see it - not from the side. It hangs low and canted while idle; when you draw it
+  // comes up in front of you, the arrow pointing where you aim, and the string (with your right hand) comes back towards your face.
+  var BOWV = { rest: [0.07, -0.21, -0.55, 0.14, -0.3, 0.5], aim: [-0.035, -0.07, -0.6, 0.02, 0.0, 0.17], s: 0.56, pull: 0.46 };
+  function bowRig(G) {   // the bow and both hands hang from the camera itself, so their place on screen is exact
+    if (G.rigged || !G.B) return;
+    G.rigged = true;
+    [G.B, G.lh, G.hr].forEach(function (o) { if (o && o.parent) o.parent.remove(o); camera.add(o); });
+    G.B.scale.set(BOWV.s, BOWV.s, BOWV.s); G.lh.scale.setScalar(0.85); G.hr.scale.setScalar(0.85);
+    G.aimS = 0;
+  }
+  var BV1 = null, BV2 = null;
+  function bowPose(G, k, dt) {
     if (!G || !G.strings) return;
+    bowRig(G);
+    var vis = !!G.g.visible; G.B.visible = vis; G.hr.visible = vis; if (!vis) { G.lh.visible = false; return; }
     if (G.rp >= 0) k = 0;
-    var pull = 0.3 * k, nz = G.nock0[2] + pull, b = new THREE.Vector3(G.nock0[0], G.nock0[1], nz);
+    var wantA = BOWD.on ? Math.min(1, BOWD.t / 0.18) : 0;
+    G.aimS += (wantA - G.aimS) * Math.min(1, (dt || 0.016) * (wantA > G.aimS ? 14 : 8));
+    var a = G.aimS, R = BOWV.rest, A2 = BOWV.aim, L = function (i) { return R[i] + (A2[i] - R[i]) * a; };
+    var bob = (typeof W !== 'undefined' && P.onGround !== false) ? Math.sin(gtime * 7) * 0.006 * Math.min(1, Math.hypot(P.vx || 0, P.vz || 0) / 4) * (1 - a * 0.7) : 0;
+    G.B.position.set(L(0), L(1) + bob, L(2)); G.B.rotation.set(L(3), L(4), L(5));
+    // the string and the arrow come back
+    var pull = BOWV.pull * k, nz = G.nock0[2] + pull, b = BV1 || (BV1 = new THREE.Vector3()); b.set(G.nock0[0], G.nock0[1], nz);
     G.strings.forEach(function (q) {
-      var L = q.a.distanceTo(b); q.m.position.copy(q.a).add(b).multiplyScalar(0.5); q.m.scale.y = L / q.L;
+      var Ls = q.a.distanceTo(b); q.m.position.copy(q.a).add(b).multiplyScalar(0.5); q.m.scale.y = Ls / q.L;
       if (q.m.quaternion.setFromUnitVectors) q.m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(q.a).normalize());
     });
     if (G.arrow) G.arrow.position.z = pull;
-    if (G.hr && G.hr0) G.hr.position.z = G.hr0.z + pull * 0.6;
+    // hands: left on the grip, right on the string
+    G.B.updateMatrix();
+    var gp = (BV2 || (BV2 = new THREE.Vector3())).set(0, -0.02, 0.01).applyMatrix4(G.B.matrix);
+    G.lh.position.set(gp.x + 0.012, gp.y - 0.05, gp.z + 0.03); G.lh.rotation.set(0.1 - 0.15 * a, 0.1, -0.5 + 0.25 * a);
+    var np = b.clone().applyMatrix4(G.B.matrix);
+    G.hr.position.set(np.x + 0.02, np.y - 0.045, np.z + 0.035); G.hr.rotation.set(0.35 + 0.2 * a, -0.15 * a, 0.35 + 0.3 * k);
+    // where the reload hand goes (it lives in the old pistol's space)
+    camera.updateMatrixWorld(); G.g.updateMatrixWorld(true);
+    var toG = function (v) { var w = camera.localToWorld(v.clone()); G.g.worldToLocal(w); return [w.x, w.y, w.z]; };
+    G.nockP = toG(new THREE.Vector3(np.x, np.y, np.z));
+    G.quivP = toG(new THREE.Vector3(0.3, 0.02, 0.12));
   }
   function bowHud(d, s) {   // the ammo box shows arrows, not a magazine
     setText('hAmmo', String(s.ammo + s.res));
@@ -14353,6 +14391,23 @@ Object.assign(EN, {
     else if (m.why === 'full') msg = zt('整个岛的建筑已经满了', 'The island is full of buildings');
     else msg = zt('这里不能建造', 'Could not build there');
     banner(msg, 2600);
+  }
+
+  // the sound of a bow (and a crossbow) - a string, not a gunshot
+  function sfxBowTwang(c, o) {
+    try {
+      var t = c.currentTime, X = o.g === 'xbow', v = Math.min(1.4, (o.v || 0.1) * 6);
+      var out = c.createGain(); out.gain.value = 0.9 * v; out.connect(SFX.bus);
+      var tr = c.createOscillator(); tr.type = 'triangle'; tr.frequency.setValueAtTime(X ? 120 : 175, t); tr.frequency.exponentialRampToValueAtTime(X ? 55 : 82, t + 0.2);
+      var tg = c.createGain(); tg.gain.setValueAtTime(0.0001, t); tg.gain.exponentialRampToValueAtTime(0.45, t + 0.006); tg.gain.exponentialRampToValueAtTime(0.0001, t + (X ? 0.18 : 0.32));
+      tr.connect(tg); tg.connect(out); tr.start(t); tr.stop(t + 0.4);
+      var ns = c.createBufferSource(); ns.buffer = vsNoise(c); var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(X ? 900 : 1500, t); bp.frequency.exponentialRampToValueAtTime(500, t + 0.15); bp.Q.value = 0.9;
+      var ng = c.createGain(); ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(X ? 0.5 : 0.32, t + 0.005); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      ns.connect(bp); bp.connect(ng); ng.connect(out); ns.start(t, Math.random()); ns.stop(t + 0.2);
+      var th = c.createOscillator(); th.type = 'sine'; th.frequency.setValueAtTime(X ? 70 : 95, t); th.frequency.exponentialRampToValueAtTime(40, t + 0.08);
+      var thg = c.createGain(); thg.gain.setValueAtTime(X ? 0.55 : 0.3, t); thg.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+      th.connect(thg); thg.connect(out); th.start(t); th.stop(t + 0.12);
+    } catch (e) {}
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
