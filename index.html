@@ -11235,8 +11235,10 @@ Object.assign(EN, {
         p[1] -= 26 * p[3] * dt; if (p[1] < -8) { p[1] += 30; p[0] = (Math.random() - 0.5) * 60; p[2] = (Math.random() - 0.5) * 60; }
         if (i >= n) { a[k++] = 0; a[k++] = -999; a[k++] = 0; a[k++] = 0; a[k++] = -999; a[k++] = 0; continue; }
         var x = cxp + p[0], y = cyp + p[1] - 6, z = czp + p[2];
-        if (wxCovered(x, y, z)) { a[k++] = 0; a[k++] = -999; a[k++] = 0; a[k++] = 0; a[k++] = -999; a[k++] = 0; continue; }   // under a roof, a floor or inside a building: no rain
-        a[k++] = x; a[k++] = y; a[k++] = z; a[k++] = x + 0.12; a[k++] = y - 0.9; a[k++] = z;
+        var ct = Math.max(wxCoverTop(x, z), wxCoverTop(x + 0.12, z));
+        if (y < ct + 0.02) { a[k++] = 0; a[k++] = -999; a[k++] = 0; a[k++] = 0; a[k++] = -999; a[k++] = 0; continue; }   // under a roof, a floor or inside a building: no rain
+        var yb = Math.max(y - 0.9, ct + 0.02), fr = (y - yb) / 0.9;   // update 84: a streak just above a roof stops ON the roof (it used to poke through the ceiling)
+        a[k++] = x; a[k++] = y; a[k++] = z; a[k++] = x + 0.12 * fr; a[k++] = yb; a[k++] = z;
       }
       WX.rainGeo.attributes.position.needsUpdate = true;
       WX.rain.material.opacity = 0.45 * Math.min(1, rv * 1.5);
@@ -11264,6 +11266,12 @@ Object.assign(EN, {
       if (Math.abs(p.x - cx) > N || Math.abs(p.z - cz) > N || !p.pk) return;
       p.pk.forEach(function (b) { if (b.maxX - b.minX > 0.6 && b.maxZ - b.minZ > 0.6) fill(b.minX, b.maxX, b.minZ, b.maxZ, b.maxY); });   // floors, roofs, foundations (not the thin walls)
     });
+  }
+  function wxCoverTop(x, z) {   // how high the cover is over this spot (-1e9: open sky)
+    if (!WX.cov) return -1e9;
+    var a = Math.floor(x - WX.covX), b = Math.floor(z - WX.covZ);
+    if (a < 0 || b < 0 || a >= WXC_N || b >= WXC_N) return -1e9;
+    return WX.cov[b * WXC_N + a];
   }
   function wxCovered(x, y, z) {
     if (!WX.cov) return false;
@@ -12207,7 +12215,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 82;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 84;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -13407,7 +13415,7 @@ Object.assign(EN, {
     bandage: { use: 2.5, hp: 15, over: 6, n: ['包扎', 'Bandaging'] },
     meat: { use: 2, hp: 5, over: 5, n: ['吃生肉', 'Eating raw meat'] },
     cooked: { use: 2.5, hp: 25, over: 12, n: ['吃熟肉', 'Eating cooked meat'] },
-    medkit: { use: 5, hp: 60, over: 20, n: ['打药', 'Using the medkit'] }
+    medkit: { use: 5, full: 1, n: ['打药', 'Using the medkit'] }   // update 83: once the 5 s are up, straight to full health
   };
   var USE = { id: '', i: -1, t: 0, dur: 0 }, HOT = { list: [] };
   function rwHealPending() { var s = 0; HOT.list.forEach(function (h) { s += h.left; }); return s; }
@@ -13445,7 +13453,8 @@ Object.assign(EN, {
         if (USE.t <= 0) {   // done: the item is used up and the health starts coming back
           var H = HEAL[USE.id];
           s.n--; if (s.n <= 0) RW.inv[USE.i] = null; rwInvChanged();
-          HOT.list.push({ left: H.hp, rate: H.hp / H.over });
+          if (H.full) { HOT.list.length = 0; P.hp = P.maxHp; banner(zt('生命回满了', 'Back to full health'), 900); }
+          else HOT.list.push({ left: H.hp, rate: H.hp / H.over });
           sfx('heal'); USE.t = 0; USE.id = '';
         }
       }
@@ -13465,6 +13474,16 @@ Object.assign(EN, {
       el.querySelector('b').style.width = '100%';
     } else el.className = '';
   }
+  // the item texts say how they heal now (update 83)
+  (function () {
+    var T = {
+      bandage: ['包扎 2.5 秒，然后 6 秒内慢慢回 15 点生命。', 'Takes 2.5 s to put on, then gives back 15 health over 6 s.'],
+      meat: ['吃 2 秒，然后 5 秒内慢慢回 5 点生命。', 'Takes 2 s to eat, then gives back 5 health over 5 s.'],
+      cooked: ['吃 2.5 秒，然后 12 秒内慢慢回 25 点生命。', 'Takes 2.5 s to eat, then gives back 25 health over 12 s.'],
+      medkit: ['打药 5 秒，打完生命直接回满。打的时候走得慢，切换物品会取消。', 'Takes 5 s to use, then your health is full at once. You move slower while using it; switching items cancels it.']
+    };
+    for (var k in T) if (RWI[k]) RWI[k].d = T[k];
+  })();
   /* ================= UPDATE 61: TEAMS =================
      Invite a player by name (pause menu > Team, the O key, or /team Name in the chat); they accept with Y or /accept.
      Teammates' auto turrets, gun traps, claymores, landmines, spikes and bear traps leave you alone, every tool
