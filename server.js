@@ -475,7 +475,10 @@ function worldTeam(c, m) {
 // ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
 const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
 // GIFT_SEED="name:item:count[:batch];..." - each line is given once. A new batch name gives the same thing again.
-const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:atur:50:b2;ryan:atur:50:b3;ryan:hswall:100:b3;ryan:hswall:20:b4' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+// GIFT_STOP="atur" - items that are no longer given: anything of these still waiting to be handed out is dropped
+const GIFT_STOP = (process.env.GIFT_STOP === undefined ? 'atur' : process.env.GIFT_STOP).split(/[;,+]/).map((x) => x.trim()).filter(Boolean);
+const giftOk = (id) => !GIFT_STOP.includes(String(id));
 // RICH_NAMES="ryan" - these players have endless coins
 const RICH_NAMES = (process.env.RICH_NAMES === undefined ? 'ryan' : process.env.RICH_NAMES).split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean);
 let gifts = {}, giftDone = {}, giftT = null, nameBind = {};   // nameBind: name -> the ONE player (key) it was given to, fixed the first time, so somebody who later calls himself the same gets nothing
@@ -490,7 +493,9 @@ const isRich = (o) => !!o && RICH_NAMES.some((n) => nameBind[n] === o);
 function richSend(c) { if (!c.closed) c.send(JSON.stringify({ t: 'RRICH', on: isRich(c.owner) ? 1 : 0 })); }
 function giftSeed() {
   for (const n of RICH_NAMES) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
+  for (const o in gifts) { const q = gifts[o].filter((x) => giftOk(x.id)); if (q.length !== gifts[o].length) { console.log('gift stopped for ' + o); saveGifts(); } if (q.length) gifts[o] = q; else delete gifts[o]; }
   for (const g of GIFT_SEED) {
+    if (!giftOk(g[1])) continue;
     const key = g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : ''); if (giftDone[key]) continue;
     const o = boundOwner(g[0]); if (!o) continue;
     giftDone[key] = 1; (gifts[o] = gifts[o] || []).push({ id: g[1], n: Math.min(999, +g[2] | 0), k: key }); saveGifts();
@@ -498,7 +503,7 @@ function giftSeed() {
     for (const c of world.clients.values()) if (c.owner === o) setTimeout(() => giftSend(c), 1500);
   }
 }
-function giftSend(c) { const q = gifts[c.owner]; if (q && q.length && !c.closed) c.send(JSON.stringify({ t: 'RGF', g: q.map((x) => ({ id: x.id, n: x.n })) })); }
+function giftSend(c) { if (gifts[c.owner]) { gifts[c.owner] = gifts[c.owner].filter((x) => giftOk(x.id)); if (!gifts[c.owner].length) delete gifts[c.owner]; } const q = gifts[c.owner]; if (q && q.length && !c.closed) c.send(JSON.stringify({ t: 'RGF', g: q.map((x) => ({ id: x.id, n: x.n })) })); }
 function worldGiftTook(c, m) {   // the player's game says how many fitted
   const q = gifts[c.owner]; if (!q) return;
   const it = q.find((x) => x.id === String(m.id)); if (!it) return;
@@ -778,7 +783,7 @@ function wbRestore(c, str, ct) {
     if (w.gfd && typeof w.gfd === 'object') {   // gifts: never give one twice, finish one that was half given
       for (const q in w.gfd) giftDone[q] = 1;
       if (w.gfw && typeof w.gfw === 'object') for (const q in w.gfw) if (!nameBind[q] && /^[uk]:/.test(String(w.gfw[q]))) nameBind[q] = String(w.gfw[q]);
-      if (w.gf && typeof w.gf === 'object') for (const o in w.gf) if (!gifts[o] && Array.isArray(w.gf[o])) gifts[o] = w.gf[o].filter((g) => g && RWI_OK.test(String(g.id)) && g.n > 0).map((g) => ({ id: String(g.id), n: Math.min(999, Math.floor(g.n)), k: String(g.k || '') }));
+      if (w.gf && typeof w.gf === 'object') for (const o in w.gf) if (!gifts[o] && Array.isArray(w.gf[o])) gifts[o] = w.gf[o].filter((g) => g && RWI_OK.test(String(g.id)) && g.n > 0 && giftOk(g.id)).map((g) => ({ id: String(g.id), n: Math.min(999, Math.floor(g.n)), k: String(g.k || '') }));
       saveGifts();
     }
     if (w.st && typeof w.st === 'object') { for (const o of Object.keys(w.st).slice(0, 5000)) statMerge(o, w.st[o]); saveStats(); }   // the leaderboard comes back too
@@ -826,6 +831,14 @@ function worldPick(c, m) {   // first come, first served
   world.drops.delete(d.id);
   c.send(JSON.stringify({ t: 'RP', id: d.id, it: d.it, at: [d.x, d.y, d.z], bag: d.bag ? 1 : 0, bn: d.bn, bo: d.bo }));
   worldAll(JSON.stringify({ t: 'RX', id: d.id }));
+}
+function worldTakeOne(c, m) {   // take one stack out of a bag (opened like a box)
+  const d = world.drops.get(m.id | 0); if (!d) { c.send(JSON.stringify({ t: 'RX', id: m.id | 0 })); return; }
+  if (c.hasPos && Math.hypot(c.x - d.x, c.z - d.z) > 8) return;
+  const i = m.i | 0, q = d.it[i]; if (!q || q[0] !== String(m.it)) { c.send(JSON.stringify({ t: 'RU', id: d.id, it: d.it })); return; }   // it changed: show what is in it now
+  d.it.splice(i, 1);
+  c.send(JSON.stringify({ t: 'RP', id: d.id, it: [q], at: [d.x, d.y, d.z] }));
+  if (!d.it.length) dropGone(d.id); else worldAll(JSON.stringify({ t: 'RU', id: d.id, it: d.it }));
 }
 setInterval(() => { const now = Date.now(); for (const d of [...world.drops.values()]) if (d.until <= now) dropGone(d.id); }, 5000).unref();
 
@@ -1238,6 +1251,7 @@ function onMessage(c, text) {
   if (c.world && c.wiped) return;   // the season just ended: ignore the old island's last messages
   if (c.world && m.t === 'Gd') { worldDrop(c, m); return; }
   if (c.world && m.t === 'Gp') { worldPick(c, m); return; }
+  if (c.world && m.t === 'Gt') { worldTakeOne(c, m); return; }
   if (c.world && m.t === 'Rg') { worldGather(c, m); return; }
   if (c.world && m.t === 'Rb') { worldBuild(c, m); return; }
   if (c.world && m.t === 'Rx') { worldRemove(c, m); return; }

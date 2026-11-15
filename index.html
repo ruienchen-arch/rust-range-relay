@@ -6739,6 +6739,7 @@ Object.assign(EN, {
       d.t -= dt; if (d.t <= 0) { rwDropRemove(d); continue; }
       var far = Math.abs(d.x - P.x) > 70 || Math.abs(d.z - P.z) > 70;
       d.g.visible = !far; if (far) continue;
+      rwDropFall(d, dt);
       d.spr.position.y = 1.0 + Math.sin(gtime * 2.4 + d.x) * 0.05;
       d.spr.material.opacity = d.t < 20 ? d.t / 20 : 1;
       if (d.pop > 0) { d.pop = Math.max(0, d.pop - dt * 4); var s = 1 + 0.3 * Math.sin(d.pop * Math.PI); d.g.scale.set(s, s, s); }
@@ -7063,13 +7064,13 @@ Object.assign(EN, {
       if (c) { rwCraft(c); return; }
       if (a === 'use') rwUseSlot(i); else if (a === 'hold') rwHoldSlot(i); else if (a === 'split') rwSplit(i);
       else if (a === 'drop') rwDropSlot(i); else if (a === 'drop1') rwDropSlot(i, true); else if (a === 'close') rwUiClose();
-      else if (a === 'put') rwContPut(i); else if (a === 'light') rwContLight();
+      else if (a === 'put') rwContPut(i); else if (a === 'light') rwContLight(); else if (a === 'takeall') rwBagTakeAll();
     });
   }
   function rwInvEnter() {   // Enter / Use / Fire inside the inventory
     if (RW.cont && RW.cfoc >= 0) { rwContTake(RW.cfoc); return; }
     var es = RW.inv[RW.isel]; if (!es) return;
-    if (RW.cont && RW.cont.s) { rwContPut(RW.isel); return; }
+    if (RW.cont && RW.cont.s && !RW.cont.bag) { rwContPut(RW.isel); return; }
     if (RWI[es.id].use || RW_RES_TOOL[es.id]) rwUseSlot(RW.isel); else rwHoldSlot(RW.isel);
   }
   function rwInvNav(c) {   // arrow keys move the selection: 4 backpack rows + the belt row (and into an open box / furnace on the right)
@@ -7151,7 +7152,7 @@ Object.assign(EN, {
       if (s.n > 1) dh += '<button class="rwbtn alt" data-a="split" type="button">' + zt('拆分', 'Split') + '</button>';
       if (s.n > 1) dh += '<button class="rwbtn alt" data-a="drop1" type="button">' + zt('丢 1 个', 'Drop 1') + '</button>';
       dh += '<button class="rwbtn alt" data-a="drop" type="button">' + zt('丢在地上', 'Drop') + '</button></div>';
-      if (RW.cont && RW.cont.s) dh += '<div class="rwacts"><button class="rwbtn" data-a="put" type="button">' + (rwIsFurn(RW.cont.k) ? zt('放进去', 'Put in') : zt('放进箱子', 'Put in box')) + (isTouch ? '' : ' [Enter]') + '</button></div>';
+      if (RW.cont && RW.cont.s && !RW.cont.bag) dh += '<div class="rwacts"><button class="rwbtn" data-a="put" type="button">' + (rwIsFurn(RW.cont.k) ? zt('放进去', 'Put in') : zt('放进箱子', 'Put in box')) + (isTouch ? '' : ' [Enter]') + '</button></div>';
     }
     $('rwiDet').innerHTML = dh;
     // crafting, or the box / furnace you have open
@@ -7633,7 +7634,7 @@ Object.assign(EN, {
     if (!d) { el.style.display = 'none'; return; }
     el.querySelector('img').src = rwIconUrl(d.bag ? 'bag' : d.it[0].id);
     el.querySelector('b').textContent = d.bag ? '' : d.it.length > 1 ? d.it.length + zt('件', '') : '×' + d.it[0].n;
-    el.querySelector('span').textContent = zt('捡起', 'Pick up') + (isTouch ? '' : ' [' + keyLabel(KB.use) + ']');
+    el.querySelector('span').textContent = (d.bag && d.sid ? zt('打开背包', 'Open bag') : zt('捡起', 'Pick up')) + (isTouch ? '' : ' [' + keyLabel(KB.use) + ']');
     el.style.display = 'flex';
   }
 
@@ -7851,7 +7852,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick();
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -8113,19 +8114,21 @@ Object.assign(EN, {
     rwInvOpen();
     sfx('lid');
   }
-  function rwContClose() { if (RW.cont) { dSend({ t: 'Bc' }); RW.cont = null; RW.cfoc = -1; } }
+  function rwContClose() { if (RW.cont && RW.cont.bag) { RW.cont = null; RW.cfoc = -1; return; } if (RW.cont) { dSend({ t: 'Bc' }); RW.cont = null; RW.cfoc = -1; } }
   function rwContPut(i) {
     var s = RW.inv[i]; if (!s || !RW.cont || !RW.cont.s) return;
+    if (RW.cont.bag) { banner(zt('背包只能拿东西，不能往里放', 'You can only take things out of a bag'), 1400); return; }
     if (RW.cont.k === 'fu' && s.id !== 'wood' && s.id !== 'metal' && s.id !== 'meat') { banner(zt('熔炉只能放木材、金属矿、生肉', 'The furnace takes wood, metal ore and raw meat'), 1400); return; }
     if (RW.cont.k === 'cf' && s.id !== 'wood' && s.id !== 'meat') { banner(zt('篝火只能放木材和生肉', 'The campfire takes wood and raw meat'), 1400); return; }
     dSend({ t: 'Bp', id: RW.cont.id, it: s.id, n: s.n, u: s.u || null });
     RW.inv[i] = null; rwInvChanged();
     sfx('stash');
   }
-  function rwContTake(j) { if (RW.cont && RW.cont.s && RW.cont.s[j]) { dSend({ t: 'Bt', id: RW.cont.id, s: j }); sfx('stash'); } }
-  function rwContLight() { if (RW.cont && rwIsFurn(RW.cont.k)) dSend({ t: 'Bl', id: RW.cont.id }); }
+  function rwContTake(j) { if (RW.cont && RW.cont.bag) { rwBagTake(j); return; } if (RW.cont && RW.cont.s && RW.cont.s[j]) { dSend({ t: 'Bt', id: RW.cont.id, s: j }); sfx('stash'); } }
+  function rwContLight() { if (RW.cont && RW.cont.bag) { rwBagTakeAll(); return; } if (RW.cont && rwIsFurn(RW.cont.k)) dSend({ t: 'Bl', id: RW.cont.id }); }
   function rwContHtml() {
     var C = RW.cont, h = '', i;
+    if (C.bag) return rwBagHtml();
     var title = zt(RWB[C.k].n[0], RWB[C.k].n[1].toUpperCase());
     h += '<h3>' + title + '</h3>';
     if (!C.s) return h + '<p>' + zt('正在打开……', 'Opening…') + '</p>';
@@ -9936,12 +9939,12 @@ Object.assign(EN, {
   function rwDropBySid(id) { for (var i = 0; i < RW.drops.length; i++) if (RW.drops[i].sid === id) return RW.drops[i]; return null; }
   function rwDropNet(a) {   // [id, x, y, z, items, bag, bagName, secondsLeft, bagOwner]
     if (!a || rwDropBySid(a[0] | 0)) return;
-    var d = rwDropLocal((a[4] || []).map(function (q) { return { id: String(q[0]), n: q[1] | 0 }; }), +a[1], +a[3], null, +a[7] || 600, +a[2], !!a[5]);
+    var d = rwDropLocal((a[4] || []).map(function (q) { return { id: String(q[0]), n: q[1] | 0, u: q[2] }; }), +a[1], +a[3], null, +a[7] || 600, +a[2], !!a[5]);
     if (!d) return;
     d.sid = a[0] | 0; d.bn = String(a[6] || ''); d.bo = String(a[8] || ''); if (a[9]) rwAirDecorate(d); rwDropLabel(d);
   }
-  function rwDropGone(id) { var d = rwDropBySid(id | 0); if (d) rwDropRemove(d); }
-  function rwDropUpd(m) { var d = rwDropBySid(m.id | 0); if (!d || !Array.isArray(m.it)) return; d.it = m.it.map(function (q) { return { id: String(q[0]), n: q[1] | 0 }; }); d.pop = 1; rwDropLabel(d); }
+  function rwDropGone(id) { var d = rwDropBySid(id | 0); if (d) rwDropRemove(d); rwBagGone(id | 0); }
+  function rwDropUpd(m) { var d = rwDropBySid(m.id | 0); if (!d || !Array.isArray(m.it)) return; d.it = m.it.map(function (q) { return { id: String(q[0]), n: q[1] | 0, u: q[2] }; }); d.pop = 1; rwDropLabel(d); rwBagSync(d); }
   function rwDropGot(m) {   // the server gave us a drop
     var got = 0, left = [];
     (m.it || []).forEach(function (q) { var id = String(q[0]), n = q[1] | 0; if (!RWI[id]) return; var l = rwGive(id, n); if (n - l > 0) { rwNote(id, n - l); got++; } if (l > 0) left.push({ id: id, n: l }); });
@@ -12216,7 +12219,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 90;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 91;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -13916,7 +13919,7 @@ Object.assign(EN, {
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot - upgrades included
     var items = [];
     RW.inv.forEach(function (s) { if (s) items.push({ id: s.id, n: s.n, u: s.u }); });
-    if (items.length) rwDropAdd(items, P.x, P.z, null, 900, P.y, true);
+    if (items.length) rwDropAdd(items, P.x, P.z, null, 900, rwDropFloor(P.x, P.z, P.y + 0.3), true);
     rwInvClear(); rwSyncOwned(); rwHotRender(true);
   }
   function rwDropGot(m) {   // the server gave us a drop
@@ -13928,6 +13931,7 @@ Object.assign(EN, {
     rwInvChanged();
   }
   function rwDropPick(d) {
+    if (d.bag && d.sid) { rwBagOpen(d); return; }
     if (d.sid) {   // ask the server: whoever asks first gets it
       if (d.pend && gtime - d.pend < 1.5) return;
       d.pend = gtime; dSend({ t: 'Gp', id: d.sid }); return;
@@ -14557,6 +14561,74 @@ Object.assign(EN, {
       }
       p.x = c.x + lx * cs + lz * sn; p.z = c.z - lx * sn + lz * cs;
     }
+  }
+
+  /* ---- update 91: bags fall to the ground, and open like a box ---- */
+  function rwDropFloor(x, z, y) {   // what a dropped thing comes to rest on: a floor, the ground, or the water's surface
+    var g = groundAt(x, z, y);
+    if (RW.on && g < RW_SEA) g = RW_SEA - 0.1;   // floats
+    return g;
+  }
+  function rwDropFall(d, dt) {
+    if (d.air) return;
+    d.chk = (d.chk || 0) - dt;
+    if (d.vy === undefined) d.vy = 0;
+    if (d.chk > 0 && !d.falling) return;
+    d.chk = 1;   // look again now and then: the floor under it may have been destroyed
+    var g = rwDropFloor(d.x, d.z, d.y + 0.3);
+    if (d.y > g + 0.03) {
+      d.falling = true; d.vy += 20 * dt; d.y = Math.max(g, d.y - d.vy * dt); d.g.position.y = d.y;
+      if (d.y <= g + 0.001) { d.falling = false; d.vy = 0; }
+    } else { d.falling = false; d.vy = 0; if (d.y < g - 0.6) { d.y = g; d.g.position.y = g; } }
+  }
+  var BAGV = { open: 0 };
+  function rwBagSlots(d) { return d.it.map(function (q) { return [q.id, q.n, q.u]; }); }
+  function rwBagOpen(d) {
+    if (state !== 'playing' || RW.dead) return;
+    RW.cont = { id: -1, k: 'bag', bag: d.sid, s: rwBagSlots(d), lit: 0, bn: rwDropBagName(d), mine: rwDropMine(d) }; RW.cfoc = -1;
+    rwInvOpen();
+    sfx('pickup');
+  }
+  function rwBagHtml() {
+    var C = RW.cont, h = '<h3>' + duEsc(C.bn) + '</h3>';
+    if (!C.s.length) return h + '<p>' + zt('空的', 'Empty') + '</p>';
+    h += '<div class="rwgrid" id="rwiCont">';
+    for (var j = 0; j < C.s.length; j++) { var q = C.s[j]; h += '<div class="rwslot' + (RW.cfoc === j ? ' sel' : '') + '" data-cs="' + j + '"><img src="' + rwIconUrl(q[0]) + '" alt=""><b>' + q[1] + '</b></div>'; }
+    h += '</div>';
+    h += '<div class="rwacts"><button class="rwbtn" data-a="takeall" type="button">' + zt('全部拿取', 'Take all') + (isTouch ? '' : ' [' + keyLabel(KB.reload) + ']') + '</button></div>';
+    h += '<p>' + (isTouch ? zt('点一个格子拿出那一样东西。', 'Tap a slot to take that item.') : zt('点一个格子拿出那一样东西；也可以用方向键走到这边选格子按 Enter。', 'Click a slot to take that item, or arrow over here and press Enter.')) + '</p>';
+    return h;
+  }
+  function rwBagDrop() { return RW.cont && RW.cont.bag ? rwDropBySid(RW.cont.bag) : null; }
+  function rwBagTake(j) {
+    var d = rwBagDrop(), q = RW.cont.s[j]; if (!d || !q) return;
+    if (rwRoomFor(q[0]) <= 0) { banner(zt('背包满了', 'Inventory full'), 1200); sfx('deny'); return; }
+    dSend({ t: 'Gt', id: d.sid, i: j, it: q[0] }); sfx('stash');
+  }
+  function rwBagTakeAll() {
+    var d = rwBagDrop(); if (!d) return;
+    if (d.pend && gtime - d.pend < 1.5) return;
+    d.pend = gtime; dSend({ t: 'Gp', id: d.sid });   // the whole bag: what does not fit is dropped again beside you
+  }
+  function rwRoomFor(id) {   // how many of id would still fit in the backpack
+    var st = (RWI[id] && RWI[id].st) || 1, n = 0;
+    for (var i = 0; i < RW_SLOTS; i++) { var s = RW.inv[i]; if (!s) n += st; else if (s.id === id && !s.u) n += Math.max(0, st - s.n); }
+    return n;
+  }
+  function rwBagSync(d) {
+    if (!RW.cont || RW.cont.bag !== d.sid) return;
+    RW.cont.s = rwBagSlots(d); if (RW.cfoc >= RW.cont.s.length) RW.cfoc = RW.cont.s.length - 1;
+    if (RW.ui === 'inv') rwInvRender();
+  }
+  function rwBagGone(id) {
+    if (!RW.cont || RW.cont.bag !== id) return;
+    RW.cont = null; RW.cfoc = -1;
+    if (RW.ui === 'inv') rwInvRender();
+  }
+  function rwBagTick() {   // walked away from the bag: it closes
+    if (!RW.cont || !RW.cont.bag) return;
+    var d = rwBagDrop(); if (!d) { rwBagGone(RW.cont.bag); return; }
+    if (Math.hypot(d.x - P.x, d.z - P.z) > 5) rwBagGone(d.sid);
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
