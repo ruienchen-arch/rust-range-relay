@@ -8862,10 +8862,10 @@ Object.assign(EN, {
       var pan = new THREE.Mesh(rwTexBox(2.6, 2.6, 0.1), RW.bmat[2]); pan.position.y = -1.3; g.add(pan);
       for (var i = 1; i < 8; i++) { var rb = new THREE.Mesh(gBox(2.6, 0.05, 0.13), M.metal); rb.position.set(0, -i * 0.325, 0); g.add(rb); }
     } else if (p.k === 'xg') {
-      [-1.3, 1.3].forEach(function (x) { var po = new THREE.Mesh(rwTexBox(0.4, 6.5, 0.7), M.wood); po.position.set(x, 2.25, 0); inner.add(po); });
-      var li = new THREE.Mesh(rwTexBox(2.2, 1.2, 0.5), M.wood); li.position.set(0, 4.9, 0); inner.add(li);
-      var l1 = leaf(-1.1, 1.1, 4.3, RW.dmat, 1, 0.25), l2 = leaf(1.1, 1.1, 4.3, RW.dmat, -1, 0.25);
-      [l1, l2].forEach(function (lv, j) { [0.9, 3.2].forEach(function (y) { var br = new THREE.Mesh(gBox(1.06, 0.18, 0.3), M.trim); br.position.set((j ? -1 : 1) * 0.55, y, 0); lv.add(br); }); });
+      [-1.42, 1.42].forEach(function (x) { var po = new THREE.Mesh(rwTexBox(0.16, 6.5, 0.7), M.wood); po.position.set(x, 2.25, 0); inner.add(po); });
+      var li = new THREE.Mesh(rwTexBox(2.68, 1.2, 0.5), M.wood); li.position.set(0, 4.9, 0); inner.add(li);
+      var l1 = leaf(-1.34, 1.34, 4.3, RW.dmat, 1, 0.25), l2 = leaf(1.34, 1.34, 4.3, RW.dmat, -1, 0.25);
+      [l1, l2].forEach(function (lv, j) { [0.9, 3.2].forEach(function (y) { var br = new THREE.Mesh(gBox(1.3, 0.18, 0.3), M.trim); br.position.set((j ? -1 : 1) * 0.67, y, 0); lv.add(br); }); });
     }
     p.ang = p.op ? 1 : 0; rwDoorAnim(p, p.ang);
     return root;
@@ -8880,7 +8880,7 @@ Object.assign(EN, {
     bt: [0.9, 0.16, 0.6, 0], ln: [0.3, 0.55, 0.3, 0], ch: [0.6, 1.0, 0.6, 1], tb: [1.6, 0.8, 0.9, 1], rg: [2.0, 0.03, 1.4, 0] };
   function rwDepParts2(k, r) {
     if (k === 'xw' || k === 'xs') return rwPartsAlong([[0, 2.25, 0, 3, 6.5, 0.6]], r, 1);
-    if (k === 'xg') return rwPartsAlong([[-1.3, 2.25, 0, 0.4, 6.5, 0.7], [1.3, 2.25, 0, 0.4, 6.5, 0.7], [0, 4.9, 0, 2.2, 1.2, 0.5], [0, 2.15, 0, 2.2, 4.3, 0.25, 1, 0, 1]], r, 1);
+    if (k === 'xg') return rwPartsAlong([[-1.42, 2.25, 0, 0.16, 6.5, 0.7], [1.42, 2.25, 0, 0.16, 6.5, 0.7], [0, 4.9, 0, 2.68, 1.2, 0.5], [0, 2.15, 0, 2.68, 4.3, 0.25, 1, 0, 1]], r, 1);   // update 103: 2.68 m wide - a car fits
     var D = RW_DEPSZ[k]; if (!D) return null;
     var s = (r & 1) === 1; return [[0, D[1] / 2, 0, s ? D[2] : D[0], D[1], s ? D[0] : D[2], D[3]]];
   }
@@ -11585,6 +11585,16 @@ Object.assign(EN, {
     s.n--; if (s.n <= 0) RW.inv[i] = null; rwInvChanged(); sfx('upgrade');
     return true;
   }
+  function carResolve(q, c) {   // update 103: the car as its real shape - 3 circles 2 m wide along its 5 m length - so it fits through a gate
+    var fx = -Math.sin(c.yaw), fz = -Math.cos(c.yaw);
+    for (var pass = 0; pass < 2; pass++) {
+      [1.55, 0, -1.55].forEach(function (k) {
+        var pt = { x: q.x + fx * k, z: q.z + fz * k }, ox = pt.x, oz = pt.z;
+        resolveCircle(pt, 1.0, c.y + 0.3);
+        q.x += pt.x - ox; q.z += pt.z - oz;
+      });
+    }
+  }
   function carDrive(c, dt) {   // the driver's car: arcade physics on the terrain, collisions, then tell the server
     var fw = (keys[KB.forward] ? 1 : 0) - (keys[KB.back] ? 1 : 0) - (stick ? stick.y : 0), st = (keys[KB.left] ? 1 : 0) - (keys[KB.right] ? 1 : 0) + (stick ? -stick.x : 0);
     var brake = keys[KB.jump], boost = keys[KB.sprint] && fw > 0, top = boost ? 24 : 17;
@@ -11597,7 +11607,7 @@ Object.assign(EN, {
     var turn = st * 1.5 * dt * Math.max(-1, Math.min(1, c.sp / 5)) * (1 - Math.min(0.45, Math.abs(c.sp) / 50));
     c.yaw += turn; P.yaw += turn;
     var nx = c.x - Math.sin(c.yaw) * c.sp * dt, nz = c.z - Math.cos(c.yaw) * c.sp * dt, q = { x: nx, z: nz };
-    resolveCircle(q, 1.45, c.y + 0.3);
+    carResolve(q, c);
     var ng = groundAt(q.x, q.z, c.y + 1.0), lim = RW.half * 1.02;
     var blocked = ng - c.y > 1.0 || rwH(q.x, q.z) < RW_SEA - 0.9 || Math.max(Math.abs(q.x), Math.abs(q.z)) > lim;
     if (blocked) { if (Math.abs(c.sp) > 6) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.3; } c.sp *= -0.2; }
@@ -12268,7 +12278,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 102;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 104;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12927,14 +12937,23 @@ Object.assign(EN, {
     var t = rayWall(ax + dx * s, ay + dy * s, az + dz * s, dx, dy, dz, L - s);
     return t >= L - s - 0.25;
   }
-  function rwLosTur(hx, hy, hz, tx, ty, tz, mode) {   // a turret's view: anything right at the turret (the roof or floor it stands on) does not count
+  // update 104: walls hide you from a turret again. Only the floor right under it is see-through, plus - when it looks DOWN -
+  // the floors, roofs and foundations of its own base (so a roof turret still covers the ground). Walls, doors and high walls
+  // always block; the barrels may poke through a wall but the gun cannot see or shoot through it.
+  var TUR_FLAT = { fd: 1, fl: 1, rf: 1, st: 1, ft: 1, tf: 1, tl: 1 };
+  function rwLosTur(hx, hy, hz, tx, ty, tz, mode) {
     var dx = hx - tx, dy = hy - ty, dz = hz - tz, L = Math.hypot(dx, dy, dz) || 1;
     dx /= L; dy /= L; dz /= L;
-    // looking DOWN at somebody (update 67): the base the turret sits on (floors, roofs, walls within 24 m) does not hide them,
-    // only the ground, rocks, trees and whatever the target built itself do - so a turret up on a roof covers the ground all round
-    if (mode && ty < hy - 1) RAYSKIP = function (pc) { return Math.hypot(pc.x - hx, pc.z - hz) < 24 && (mode === 'n' || pc.o !== RW.me); };
+    var down = mode && ty < hy - 1;
+    RAYSKIP = function (pc) {
+      var hd = Math.hypot(pc.x - hx, pc.z - hz);
+      if (hd < 0.5 && (pc.k === 'at' || pc.k === 'gt')) return true;   // the turret itself
+      if (!TUR_FLAT[pc.k]) return false;   // a wall, door, gate... blocks
+      if (hd < 2.2 && pc.y < hy) return true;   // the floor it stands on
+      return down && hd < 24 && pc.y < hy - 0.3 && (mode === 'n' || pc.o !== RW.me);
+    };
     var t; try { t = rayWall(tx, ty, tz, dx, dy, dz, L); } finally { RAYSKIP = null; }
-    return t >= L - 2.6;
+    return t >= L - 0.25;
   }
   function rwTurNpc(hx, hy, hz) {   // the nearest monster or animal the turret can see (only the player who runs the monsters decides)
     var best = null, bd = RW_TUR_RANGE;
