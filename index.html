@@ -7851,7 +7851,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -12216,7 +12216,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 87;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 88;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12692,6 +12692,7 @@ Object.assign(EN, {
       }
     }
     if (RW.on) rwResolve(p, r, y);
+    if (RW.on && p === P) rwCarBlock(p, r);
     p.x = Math.max(-A + r, Math.min(A - r, p.x));
     p.z = Math.max(-A + r, Math.min(A - r, p.z));
   }
@@ -13122,7 +13123,7 @@ Object.assign(EN, {
   };
   function carSeatsOf(c) { return c.ty === 'h' ? HELI_SEATS : VEH_SEATS[c.ty] || CAR_SEATS; }
   var BOAT_COLS = { b: [0x7a5230, 0x5e6e44, 0x6a3a2a, 0x3e5266], r: [0x3a3e42, 0x2c3a2a, 0x46403a] };
-  var BOAT_V = { b: { max: 7, rev: 3, acc: 2.6, turn: 0.9, len: 4.2, rad: 1.2 }, r: { max: 20, rev: 5, acc: 7, turn: 0.75, len: 6.4, rad: 1.8 } };
+  var BOAT_V = { b: { max: 7, rev: 3, acc: 2.6, turn: 0.9, len: 4.2, rad: 1.2 }, r: { max: 34, rev: 7, acc: 13, turn: 0.95, len: 6.4, rad: 1.8 } };
   Object.assign(RWI, {
     rowboat: { n: ['划艇', 'Rowboat'], st: 1, use: 1, d: ['两人小划艇，慢但便宜。拿在手上按左键（或在背包里点“使用”）放进面前的水里。', 'A small two-seat rowboat: slow but cheap. Hold it and press left click (or Use) to put it in the water in front of you.'] },
     rhib: { n: ['快艇', 'RHIB'], st: 1, use: 1, d: ['四人充气快艇，速度很快。放进面前的水里。', 'A fast four-seat rigid inflatable boat. Put it in the water in front of you.'] }
@@ -13205,6 +13206,63 @@ Object.assign(EN, {
     if (CAR.seat !== 0) return KE() + ' ' + zt('下船', 'Get off');
     return KE() + ' ' + zt('下船', 'Get off') + ' · ' + zt('W/S 油门 · A/D 转向 · ', 'W/S throttle · A/D steer · ') + Math.round(Math.abs(c.sp) * 3.6) + ' km/h';
   }
+  // update 88: boats ride ON the water (the deck and the floor stay dry); a fast RHIB lifts and planes, bow up
+  function boatY(c, V) { var f = Math.min(1, Math.max(0, c.sp) / V.max); return RW_SEA + (c.ty === 'r' ? 0.24 + f * 0.16 : 0.13); }
+  function boatTrim(c, V) { var f = Math.max(0, c.sp) / V.max; return c.ty === 'r' ? (f < 0.35 ? f / 0.35 * 0.09 : 0.09 - (f - 0.35) * 0.06) : f * 0.02; }   // the bow rises, then levels as it planes
+  // spray at the bow, a white rooster tail behind the motor, foam left on the water behind
+  var SPRAY = { list: [], foam: [], free: [], ffree: [], geo: null, fgeo: null, acc: 0, facc: 0 };
+  function sprayAdd(x, y, z, vx, vy, vz, sz, life) {
+    if (!SPRAY.geo) SPRAY.geo = new THREE.SphereGeometry(1, 8, 6);
+    var m = SPRAY.list.length >= 260 ? SPRAY.list.shift() : SPRAY.free.pop();
+    if (!m) { m = { o: new THREE.Mesh(SPRAY.geo, new THREE.MeshBasicMaterial({ color: 0xeef6fa, transparent: true, opacity: 0.85, depthWrite: false })) }; RW.group.add(m.o); }
+    else if (!m.o.parent) RW.group.add(m.o);
+    m.o.position.set(x, y, z); m.vx = vx; m.vy = vy; m.vz = vz; m.t = 0; m.L = life; m.s = sz; m.o.scale.setScalar(sz); m.o.visible = true;
+    SPRAY.list.push(m);
+  }
+  function foamAdd(x, z, yaw, w, life) {
+    if (!SPRAY.fgeo) { SPRAY.fgeo = new THREE.PlaneGeometry(1, 1); SPRAY.fgeo.rotateX(-Math.PI / 2); }
+    var m = SPRAY.foam.length >= 140 ? SPRAY.foam.shift() : SPRAY.ffree.pop();
+    if (!m) { m = { o: new THREE.Mesh(SPRAY.fgeo, new THREE.MeshBasicMaterial({ color: 0xf4fbff, transparent: true, opacity: 0.6, depthWrite: false })) }; RW.group.add(m.o); }
+    else if (!m.o.parent) RW.group.add(m.o);
+    m.o.position.set(x, RW_SEA + 0.03, z); m.o.rotation.y = yaw; m.o.scale.set(w, 1, 1.6); m.t = 0; m.L = life; m.w = w; m.o.visible = true;
+    SPRAY.foam.push(m);
+  }
+  function boatSpray(c, V, dt) {
+    var sp = Math.abs(c.sp); if (sp < 1.2 || !boatWaterOk(c.x, c.z)) return;
+    if (Math.hypot(c.x - camera.position.x, c.z - camera.position.z) > 160) return;
+    var f = Math.min(1, sp / V.max), fx = -Math.sin(c.yaw), fz = -Math.cos(c.yaw), rx = Math.cos(c.yaw), rz = -Math.sin(c.yaw), half = V.len / 2, R2 = c.ty === 'r';
+    SPRAY.acc += dt * (R2 ? 30 + 110 * f : 14 + 30 * f);
+    while (SPRAY.acc >= 1) {
+      SPRAY.acc -= 1;
+      var side = Math.random() < 0.5 ? -1 : 1, roll = Math.random();
+      if (roll < 0.55) {   // thrown out sideways from the bow
+        var bz = half * (0.25 + Math.random() * 0.35), bw = (R2 ? 1.1 : 0.6) + Math.random() * 0.2, out = 1.5 + sp * 0.18 * Math.random();
+        sprayAdd(c.x + fx * bz + rx * side * bw, RW_SEA + 0.1, c.z + fz * bz + rz * side * bw,
+          rx * side * out + fx * sp * 0.25, 1.2 + f * (R2 ? 4.5 : 1.5) * (0.4 + Math.random()), rz * side * out + fz * sp * 0.25, 0.07 + Math.random() * 0.09 + f * 0.08, 0.6 + Math.random() * 0.5);
+      } else if (R2 || roll < 0.8) {   // behind the stern: the motor's rooster tail
+        var sz2 = half + 0.2, up = R2 ? 1.4 + f * 4 * Math.random() : 0.6;
+        sprayAdd(c.x - fx * sz2 + rx * (Math.random() - 0.5) * 0.6, RW_SEA + 0.1, c.z - fz * sz2 + rz * (Math.random() - 0.5) * 0.6,
+          -fx * sp * 0.15 + rx * (Math.random() - 0.5) * 1.5, up, -fz * sp * 0.15 + rz * (Math.random() - 0.5) * 1.5, 0.08 + Math.random() * 0.12 + f * 0.1, 0.7 + Math.random() * 0.6);
+      }
+    }
+    SPRAY.facc += dt * (4 + sp * 0.8);
+    while (SPRAY.facc >= 1) { SPRAY.facc -= 1; foamAdd(c.x - fx * (half + 0.3), c.z - fz * (half + 0.3), c.yaw, (R2 ? 1.6 : 1.0) + f * 0.8, 3 + f * 3); }
+  }
+  function boatSprayTick(dt) {
+    var i, m;
+    for (i = SPRAY.list.length - 1; i >= 0; i--) {
+      m = SPRAY.list[i]; m.t += dt;
+      if (m.t >= m.L || (m.o.position.y < RW_SEA - 0.1 && m.vy < 0)) { m.o.visible = false; SPRAY.list.splice(i, 1); if (m.o.parent) m.o.parent.remove(m.o); SPRAY.free.push(m); continue; }
+      m.vy -= 9.8 * dt; var dr = Math.max(0, 1 - dt * 1.5); m.vx *= dr; m.vz *= dr;
+      m.o.position.x += m.vx * dt; m.o.position.y += m.vy * dt; m.o.position.z += m.vz * dt;
+      var k = m.t / m.L; m.o.scale.setScalar(m.s * (1 + k * 1.8)); m.o.material.opacity = 0.85 * (1 - k);
+    }
+    for (i = SPRAY.foam.length - 1; i >= 0; i--) {
+      m = SPRAY.foam[i]; m.t += dt;
+      if (m.t >= m.L) { m.o.visible = false; SPRAY.foam.splice(i, 1); if (m.o.parent) m.o.parent.remove(m.o); SPRAY.ffree.push(m); continue; }
+      var q = m.t / m.L; m.o.scale.set(m.w * (1 + q * 1.6), 1, 1.6 + q); m.o.material.opacity = 0.55 * (1 - q) * (1 - q);
+    }
+  }
   function boatWaterOk(x, z) { return rwH(x, z) < RW_SEA - 0.35; }
   function boatEntered(c, si) {
     if (si === 0) banner(c.ty === 'b' ? zt('你在划船：W/S 前进后退，A/D 转向，E 下船', 'Rowing: W/S forward/back, A/D turn, E gets off') : zt('你在开快艇：W/S 油门，A/D 转向，E 下船', 'Driving the RHIB: W/S throttle, A/D steer, E gets off'), 2600);
@@ -13246,8 +13304,8 @@ Object.assign(EN, {
       if (!boatWaterOk(nose.x, nose.z) || !boatWaterOk(q.x, q.z)) { if (Math.abs(c.sp) > 4) { sfx('thud', { x: c.x, z: c.z }); VM.shake = 0.3; } c.sp *= -0.15; }   // ran aground
       else { c.x = q.x; c.z = q.z; }
       var lim = RW.half * 1.02; c.x = Math.max(-lim, Math.min(lim, c.x)); c.z = Math.max(-lim, Math.min(lim, c.z));
-      c.y = RW_SEA - 0.05 + wave;
-      c.p += ((Math.sin(gtime * 1.7 + c.x * 0.2) * 0.025 + Math.max(0, c.sp) / V.max * (c.ty === 'r' ? 0.06 : 0.02)) - c.p) * Math.min(1, dt * 3);
+      c.y = boatY(c, V) + wave;
+      c.p += ((Math.sin(gtime * 1.7 + c.x * 0.2) * 0.025 * (1 - Math.min(0.7, Math.abs(c.sp) / V.max)) + boatTrim(c, V)) - c.p) * Math.min(1, dt * 3);
       c.r += ((-tr * Math.min(1, Math.abs(c.sp) / V.max) * 0.08 + Math.sin(gtime * 1.1 + c.z * 0.2) * 0.02) - c.r) * Math.min(1, dt * 3);
       carPlace(c);
       CAR.sendT -= dt;
@@ -13260,12 +13318,13 @@ Object.assign(EN, {
         if (CAR.mine === c) P.yaw += dy * f;
         c.st += ((c.stT || 0) - c.st) * Math.min(1, dt * 6);
       } else { c.sp *= 1 - Math.min(1, dt * 0.8); c.st *= 0.9; }
-      c.y = (boatWaterOk(c.x, c.z) ? RW_SEA - 0.05 : Math.max(RW_SEA - 0.05, groundAt(c.x, c.z, c.y + 1) + 0.25)) + wave;
-      c.p += ((Math.sin(gtime * 1.7 + c.x * 0.2) * 0.025) - c.p) * Math.min(1, dt * 3);
+      c.y = (boatWaterOk(c.x, c.z) ? boatY(c, V) : Math.max(boatY(c, V), groundAt(c.x, c.z, c.y + 1) + 0.25)) + wave;
+      c.p += ((Math.sin(gtime * 1.7 + c.x * 0.2) * 0.025 + boatTrim(c, V)) - c.p) * Math.min(1, dt * 3);
       c.r += ((Math.sin(gtime * 1.1 + c.z * 0.2) * 0.025) - c.r) * Math.min(1, dt * 3);
       carPlace(c);
     }
     if (U.sw) U.sw.rotation.z = -c.st * 2.2;
+    boatSpray(c, V, dt);
     if (U.prop) U.prop.rotation.z += c.sp * dt * 6;
     if (U.oars) { var ph = gtime * 2.6 * Math.min(1, Math.abs(c.sp) / 2), row = Math.abs(c.sp) > 0.3; U.oars.forEach(function (o, k) { var s = k ? 1 : -1; o.rotation.y = row ? Math.sin(ph) * 0.6 : 0; o.rotation.z = s * (row ? -0.25 - Math.cos(ph) * 0.12 : -0.35); }); }
   }
@@ -14202,7 +14261,7 @@ Object.assign(EN, {
   function vsCar(V, ty, now) {   // engine revs and tone from the (smoothed) speed V.sp; one call every 0.05 s
     var car = { ty: ty };
     // revs: idle 800, up through 4 gears to about 5000, dropping back at each shift; load = accelerating
-    var top = car.ty === 'r' ? 22 : 26, sv = Math.min(top, V.sp), gears = 4, gw = top / gears, gear = Math.min(gears - 1, Math.floor(sv / gw)), inG = (sv - gear * gw) / gw;
+    var top = car.ty === 'r' ? 36 : 26, sv = Math.min(top, V.sp), gears = 4, gw = top / gears, gear = Math.min(gears - 1, Math.floor(sv / gw)), inG = (sv - gear * gw) / gw;
     var want = sv < 0.6 ? 800 : 1500 + inG * 3300 + gear * 250;
     var acc = (V.sp - V.lastSp) / 0.05; V.lastSp = V.sp; var load = Math.max(0, Math.min(1, acc / 4 + (sv > 0.6 ? 0.25 : 0)));
     V.load = (V.load || 0) + (load - (V.load || 0)) * 0.15;
@@ -14291,6 +14350,7 @@ Object.assign(EN, {
   }
   function bowShoot(d, s, k) {
     var st = wStats(cur);
+    BOWD.shots = (BOWD.shots || 0) + 1;
     s.ammo--; W.cd = d.cd * st.cd; recoil = d.rec * (0.4 + 0.6 * k); flashT = 0;
     sfx('shot', { g: d.id, v: (d.vol || 0.1) * (0.6 + 0.5 * k) });
     var dir = new THREE.Vector3((Math.random() - 0.5) * d.aimSpread * (1.6 - k), (Math.random() - 0.5) * d.aimSpread * (1.6 - k), -1).applyQuaternion(camera.quaternion).normalize();
@@ -14370,6 +14430,45 @@ Object.assign(EN, {
     G.aimS = 0;
   }
   var BV1 = null, BV2 = null;
+  // update 88: the bow is alive in your hands - it breathes, bobs with your steps, lags behind when you turn,
+  // dips when you land, trembles if you hold a full draw too long, and kicks when the arrow leaves.
+  function bowLife(G, a, k, dt) {
+    var S = G.life || (G.life = { t: 0, px: P.x, pz: P.z, sp: 0, ph: 0, yaw: P.yaw, pit: P.pitch, sx: 0, sy: 0, vx: 0, vy: 0, kick: 0, was: BOWD.shots || 0, land: 0, py: P.y, fall: 0, hold: 0 });
+    dt = Math.min(0.05, Math.max(0.001, dt)); S.t += dt;
+    // how fast you really move (the player has no velocity of its own)
+    var mv = Math.hypot(P.x - S.px, P.z - S.pz) / dt; S.px = P.x; S.pz = P.z; if (mv > 30) mv = 0;
+    S.sp += (Math.min(1.4, mv / 7) - S.sp) * Math.min(1, dt * 8);
+    var onG = P.ground !== false;
+    S.ph += dt * (6 + S.sp * 5) * (onG ? 1 : 0.2);
+    // look sway: the bow lags behind the camera, then springs back
+    var dy = Math.atan2(Math.sin(P.yaw - S.yaw), Math.cos(P.yaw - S.yaw)), dp = P.pitch - S.pit; S.yaw = P.yaw; S.pit = P.pitch;
+    var steady = 1 - a * 0.6;
+    S.vx += (dy * 0.9 * steady - S.sx * 60 * dt - S.vx * 10 * dt); S.vy += (dp * 0.9 * steady - S.sy * 60 * dt - S.vy * 10 * dt);
+    S.sx += S.vx * dt * 10; S.sy += S.vy * dt * 10;
+    S.sx = Math.max(-0.12, Math.min(0.12, S.sx)); S.sy = Math.max(-0.12, Math.min(0.12, S.sy));
+    // jumping and landing
+    var vy = (P.y - S.py) / dt; S.py = P.y; if (Math.abs(vy) > 40) vy = 0;
+    if (!onG) S.fall = Math.max(S.fall, -vy); else if (S.fall > 3) { S.land = Math.min(1, S.fall / 14); S.fall = 0; } else S.fall = 0;
+    S.land *= Math.max(0, 1 - dt * 6);
+    var air = onG ? 0 : Math.max(-1, Math.min(1, vy / 8));
+    // the shot: when the string is let go (not cancelled) the bow jumps
+    if ((BOWD.shots || 0) !== S.was) { S.kick = 1; S.was = BOWD.shots || 0; }
+    S.kick *= Math.max(0, 1 - dt * 7);
+    // holding a full draw is tiring: after a second and a half the arms start to shake
+    S.hold = BOWD.on && k >= 0.99 ? S.hold + dt : 0;
+    var tire = Math.min(1, Math.max(0, S.hold - 1.5) / 3);
+    var walk = S.sp * (1 - a * 0.65), ph = S.ph;
+    var br = Math.sin(S.t * 1.6) * (1 - a * 0.5), br2 = Math.sin(S.t * 0.9 + 1.3);
+    var shake = tire * 0.004 + k * 0.0012;
+    var jx = (Math.sin(S.t * 31) + Math.sin(S.t * 47 + 1)) * shake, jy = (Math.sin(S.t * 37 + 2) + Math.sin(S.t * 23)) * shake;
+    var ox = Math.cos(ph) * 0.014 * walk - S.sx * 0.35 + br2 * 0.002 + jx;
+    var oy = -Math.abs(Math.sin(ph)) * 0.016 * walk + br * 0.004 - S.sy * 0.3 - S.land * 0.05 - air * 0.02 + jy + S.kick * 0.012;
+    var oz = S.kick * -0.035 + walk * 0.01 - S.land * 0.01;
+    var rx = br * 0.01 + Math.sin(ph * 2) * 0.012 * walk + S.sy * 0.8 + S.land * 0.12 + air * 0.05 + S.kick * 0.16 + jy * 3;
+    var ry = S.sx * 0.9 + Math.cos(ph) * 0.02 * walk + jx * 3;
+    var rz = Math.cos(ph) * 0.05 * walk + S.sx * 1.4 + br2 * 0.012 - S.kick * 0.08;
+    return [ox, oy, oz, rx, ry, rz];
+  }
   function bowPose(G, k, dt) {
     if (!G || !G.strings) return;
     bowRig(G);
@@ -14378,8 +14477,8 @@ Object.assign(EN, {
     var wantA = BOWD.on ? Math.min(1, BOWD.t / 0.18) : 0;
     G.aimS += (wantA - G.aimS) * Math.min(1, (dt || 0.016) * (wantA > G.aimS ? 14 : 8));
     var a = G.aimS, R = BOWV.rest, A2 = BOWV.aim, L = function (i) { return R[i] + (A2[i] - R[i]) * a; };
-    var bob = (typeof W !== 'undefined' && P.onGround !== false) ? Math.sin(gtime * 7) * 0.006 * Math.min(1, Math.hypot(P.vx || 0, P.vz || 0) / 4) * (1 - a * 0.7) : 0;
-    G.B.position.set(L(0), L(1) + bob, L(2)); G.B.rotation.set(L(3), L(4), L(5));
+    var o = bowLife(G, a, k, dt || 0.016);
+    G.B.position.set(L(0) + o[0], L(1) + o[1], L(2) + o[2]); G.B.rotation.set(L(3) + o[3], L(4) + o[4], L(5) + o[5]);
     // the string and the arrow come back
     var pull = BOWV.pull * k, nz = G.nock0[2] + pull, b = BV1 || (BV1 = new THREE.Vector3()); b.set(G.nock0[0], G.nock0[1], nz);
     G.strings.forEach(function (q) {
@@ -14439,6 +14538,27 @@ Object.assign(EN, {
       var thg = c.createGain(); thg.gain.setValueAtTime(X ? 0.55 : 0.3, t); thg.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
       th.connect(thg); thg.connect(out); th.start(t); th.stop(t + 0.12);
     } catch (e) {}
+  }
+
+  /* ---- update 88: cars, helicopters and boats are solid - you walk round them, not through them ----
+     Each is a box turned with the vehicle: half width, front (-z) and back (+z) ends, and its top. */
+  var VEH_BOX = { '': [1.12, -2.55, 2.6, 1.42], h: [0.92, -1.75, 2.05, 2.2], r: [1.36, -3.25, 3.35, 0.75], b: [0.78, -2.15, 2.15, 0.45] };
+  function rwCarBlock(p, r) {
+    if (CAR.mine) return;   // riding: your seat places you
+    for (var k in CAR.list) {
+      var c = CAR.list[k], B = VEH_BOX[c.ty] || VEH_BOX[''];
+      var dx = p.x - c.x, dz = p.z - c.z; if (dx * dx + dz * dz > 30) continue;
+      if (p.y > c.y + B[3] - 0.3 || p.y + 1.8 < c.y - 0.6) continue;   // over the top of it, or far under it
+      var cs = Math.cos(c.yaw), sn = Math.sin(c.yaw), lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
+      var cx = Math.max(-B[0], Math.min(B[0], lx)), cz = Math.max(B[1], Math.min(B[2], lz)), ex = lx - cx, ez = lz - cz, d2 = ex * ex + ez * ez;
+      if (d2 >= r * r) continue;
+      if (d2 > 1e-6) { var d = Math.sqrt(d2); lx = cx + ex / d * r; lz = cz + ez / d * r; }
+      else {   // inside the box: out by the nearest side
+        var m = [B[0] - lx, lx + B[0], B[2] - lz, lz - B[1]], mi = 0; for (var j = 1; j < 4; j++) if (m[j] < m[mi]) mi = j;
+        if (mi === 0) lx = B[0] + r; else if (mi === 1) lx = -B[0] - r; else if (mi === 2) lz = B[2] + r; else lz = B[1] - r;
+      }
+      p.x = c.x + lx * cs + lz * sn; p.z = c.z - lx * sn + lz * cs;
+    }
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
