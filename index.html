@@ -3115,7 +3115,7 @@ Object.assign(EN, {
     for (var i = rockets.length - 1; i >= 0; i--) {
       var r = rockets[i], p = r.m.position, v = 42, dist = v * dt, hitT = rayWall(p.x, p.y, p.z, r.dir.x, r.dir.y, r.dir.z, dist + 0.3), boom = false, direct = null;
       r.life -= dt; r.trail -= dt;
-      if (RW.on) { var w0 = r.went === undefined ? 1.0 : r.went; r.went = w0 + dist; if (r.went > RW_TUR_RANGE && !(hitT < dist + 0.3 && w0 + hitT <= RW_TUR_RANGE)) { scene.remove(r.m); rockets.splice(i, 1); burst(p.clone(), 8, partMatG, 2); continue; } }   // measured from the shooter (it starts 1 m out)
+      if (RW.on) { var w0 = r.went === undefined ? 1.0 : r.went; r.went = w0 + dist; if (r.went > RW_RKT_RANGE && !(hitT < dist + 0.3 && w0 + hitT <= RW_RKT_RANGE)) { scene.remove(r.m); rockets.splice(i, 1); burst(p.clone(), 8, partMatG, 2); continue; } }   // measured from the shooter (it starts 1 m out)
       if (hitT < dist + 0.3) { p.x += r.dir.x * Math.max(0, hitT - 0.05); p.y += r.dir.y * Math.max(0, hitT - 0.05); p.z += r.dir.z * Math.max(0, hitT - 0.05); boom = true; }
       else {
         p.x += r.dir.x * dist; p.y += r.dir.y * dist; p.z += r.dir.z * dist;
@@ -3126,6 +3126,7 @@ Object.assign(EN, {
         }
         if (Math.abs(p.x) > A - 0.3 || Math.abs(p.z) > A - 0.3 || p.y < 0.1) boom = true;
       }
+      if (RW.on && rwAAIntercept(p, r)) { scene.remove(r.m); rockets.splice(i, 1); continue; }
       if (r.trail <= 0) { r.trail = 0.03; burst(p.clone(), 1, partMatG, 1.5); }
       if (boom || r.life <= 0) {
         scene.remove(r.m); rockets.splice(i, 1);
@@ -5540,6 +5541,7 @@ Object.assign(EN, {
       case 'RTF': rwTurMsg(m); break;
       case 'RRA': rwRaidLive(m); break;
       case 'RRL': rwRaidList(m); break;
+      case 'RAA': rwAAMsg(m); break;
       case 'ROP': banner(zt('这里的主人都不在线，房子受离线保护，炸不动', 'The owners are offline: this base is protected and takes no damage'), 2200); sfx('deny'); break;
       case 'RR': { var lf = rwGive(String(m.it), m.n | 0, m.u); if (lf > 0) rwDropAdd([{ id: String(m.it), n: lf, u: rwUClean(m.u) }], P.x, P.z, null, 600, P.y); banner(zt('放不下，还给你了', 'No room: returned to you'), 1100); break; }
       case 'RG': { var lg = rwGive(String(m.it), m.n | 0, m.u), tk = (m.n | 0) - lg; if (tk > 0) rwNote(String(m.it), tk); if (lg > 0) { rwDropAdd([{ id: String(m.it), n: lg, u: rwUClean(m.u) }], P.x, P.z, null, 600, P.y); banner(zt('背包满了，放在脚边', 'Inventory full: dropped at your feet'), 1300); } break; }
@@ -7894,7 +7896,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick();
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -8959,6 +8961,8 @@ Object.assign(EN, {
       rwLampLit(p);
     } else if (k === 'sg') {
       rwSignMesh(p, B, M, inner);
+    } else if (k === 'aa') {
+      rwAAMesh(p, B, M, inner);
     } else if (k === 'at') {
       rwTurretMesh(p, B, M, inner);
     } else if (k === 'gt') {
@@ -12262,7 +12266,7 @@ Object.assign(EN, {
     while (RWC.list.children.length > 40) RWC.list.removeChild(RWC.list.firstChild);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 97;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 99;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -12795,6 +12799,7 @@ Object.assign(EN, {
      - Auto turret: shoots anyone not authorised on a tool cupboard there, owner online or not.
        Shotgun trap: a blast at whoever walks in front of it. Claymore: blows up when a stranger walks in front. */
   var RW_TUR_H = 1.5;   // height of the gun head above what it stands on: the middle of a window opening (1.0 - 2.0 m), so the barrels poke out
+  var RW_RKT_RANGE = 150;   // a rocket flies 150 m; bases are protected by anti-air guns (update 99), which shoot rockets down
   var RW_TUR_RANGE = 32;   // auto turret reach (metres, straight line) - the rocket launcher reaches exactly as far
   var RW_TUR_LOCK = 0.08;   // seconds a turret needs to lock on before it fires (was 0.6)
   var AMMO_OF = { pistol: 'apis', revolver: 'apis', smg: 'apis', rifle: 'arif', lmg: 'arif', sniper: 'arif', shotgun: 'ashot', rpg: 'arkt' };
@@ -14773,6 +14778,87 @@ Object.assign(EN, {
     (u.p || []).forEach(function (id) { try { r += ' ' + perkById(id).ic; } catch (e) {} });
     if (u.s && SCOPES[u.s]) r += ' · ' + zt(SCOPES[u.s].name, SC_EN[u.s] || '');
     return r;
+  }
+
+
+  /* ---- update 99: the anti-air gun (防空炮) - shoots down rockets fired at the base ----
+     Very expensive, made at a workbench. Any rocket from someone who is not you or your teammate is shot down once it
+     comes within AA_R metres of the gun; the shooter sees "missile intercepted", the gun's owners hear about it.
+     It needs a moment to swing round and reload between shots, so it can be overwhelmed by several launchers at once,
+     and C4, satchels and grenades still hurt it (they are not missiles). */
+  var AA_R = 45, AA_CD = 1.2;
+  RWI.aad = { n: ['防空炮', 'Anti-Air Gun'], st: 1, dep: 'aa',
+    d: ['放在家里：别人朝这里打的火箭弹，飞进 ' + AA_R + ' 米就会被它打下来（自己和队友的不拦）。打一发要 ' + AA_CD + ' 秒重新瞄准，几个火箭筒同时打可能拦不完。挡不住 C4、炸药包和手雷。造价很贵，要工作台。',
+        'Put it in your base: rockets fired by anyone but you and your team are shot down within ' + AA_R + ' m. It needs ' + AA_CD + ' s between shots, so several launchers at once can get through. It does not stop C4, satchels or grenades. Very expensive; needs a workbench.'] };
+  RW_DEPSZ.aa = [1.3, 2.3, 1.3, 1]; RWD.aa = 'aad'; RWB.aa = { c: {}, n: RWI.aad.n }; RW_HP.aa = 1500;
+  (function () {
+    var t = RW_CRAFT.length; RW_CRAFT.forEach(function (r, j) { if (r[0] === 'atur') t = j + 1; });
+    RW_CRAFT.splice(t, 0, ['aad', { frags: 4000, metal: 1000, cloth: 300, arkt: 4 }]); RW_BENCH.aad = 1;
+  })();
+  RWICON.aad = (function () {
+    var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d');
+    x.shadowColor = 'rgba(0,0,0,.75)'; x.shadowBlur = 3; x.shadowOffsetY = 1;
+    x.fillStyle = '#3a3f36'; x.fillRect(14, 46, 36, 10); x.fillStyle = '#545b4e'; x.fillRect(22, 34, 20, 14);
+    x.save(); x.translate(32, 38); x.rotate(-0.7); x.fillStyle = '#2a2d29'; x.fillRect(-3, -30, 4, 30); x.fillRect(4, -30, 4, 30); x.fillStyle = '#ffcc4a'; x.fillRect(-3, -33, 11, 3); x.restore();
+    x.fillStyle = '#ff5a2a'; x.beginPath(); x.arc(50, 14, 5, 0, 7); x.fill();
+    return c;
+  })();
+  function rwAAMesh(p, B, M, inner) {
+    var fr = new THREE.Group(); fr.rotation.y = p.r * Math.PI; inner.add(fr);
+    var olive = new THREE.MeshStandardMaterial({ color: 0x4f5747, roughness: 0.7, metalness: 0.3 }), dark = new THREE.MeshStandardMaterial({ color: 0x25282a, roughness: 0.5, metalness: 0.6 });
+    function b(w, h, d, m, x, y, z, par) { var o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); (par || fr).add(o); return o; }
+    b(1.2, 0.2, 1.2, dark, 0, 0.1, 0); b(0.9, 0.5, 0.9, olive, 0, 0.45, 0);
+    var head = new THREE.Group(); head.position.set(0, 0.85, 0); fr.add(head);
+    b(0.75, 0.45, 0.7, olive, 0, 0.2, 0, head); b(0.5, 0.15, 0.4, dark, 0, 0.5, -0.1, head);
+    var tilt = new THREE.Group(); tilt.position.set(0, 0.25, 0); head.add(tilt);
+    [-0.2, 0.2].forEach(function (xx) { var c = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.3, 10), dark); c.rotation.x = Math.PI / 2; c.position.set(xx, 0.05, 0.75); tilt.add(c); });
+    var rad = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.04, 16), dark); rad.position.set(0, 0.8, -0.2); rad.rotation.x = 0.5; head.add(rad);
+    tilt.rotation.x = -0.6;   // barrels up at rest
+    var fl = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.9 })); fl.position.set(0, 0.05, 1.45); fl.visible = false; tilt.add(fl);
+    p.aa = { head: head, tilt: tilt, flash: fl, fr: fr, rad: rad, cd: 0, ft: 0 };
+  }
+  function rwAAFriendly(p) { return p.o === RW.me || !!RW.team[p.o]; }
+  function rwAAIntercept(pos, r) {   // called for each of MY rockets every frame: true = it was shot down
+    if (!RW.plist) return false;
+    for (var i = 0; i < RW.plist.length; i++) {
+      var p = RW.plist[i]; if (p.k !== 'aa' || rwAAFriendly(p)) continue;
+      var hx = p.x, hy = p.y + 1.2, hz = p.z, d = Math.hypot(pos.x - hx, pos.y - hy, pos.z - hz);
+      if (d > AA_R) continue;
+      p.aaCd = p.aaCd || 0; if (gtime < p.aaCd) continue;   // still swinging round from the last one
+      p.aaCd = gtime + AA_CD;
+      rwAAShot(p, pos);
+      burst(pos.clone(), 18, partMatG, 6); try { burst(pos.clone(), 10, partMat, 4); } catch (e) {}
+      sfx('explode', { x: pos.x, z: pos.z, v: 0.5 });
+      banner(zt('导弹被拦截了！对方有防空炮', 'Missile intercepted! They have an anti-air gun'), 2000);
+      dSend({ t: 'Raa', id: p.id });
+      return true;
+    }
+    return false;
+  }
+  function rwAAShot(p, pos) {   // the gun swings to the rocket, fires, and a tracer line flies out
+    if (p.aa) {
+      var A = p.aa, wx = pos.x - p.x, wz = pos.z - p.z, yaw = Math.atan2(wx, wz) - (p.r || 0) * Math.PI;
+      A.head.rotation.y = yaw; A.tilt.rotation.x = -Math.atan2(pos.y - (p.y + 1.2), Math.hypot(wx, wz)); A.ft = 0.15; A.flash.visible = true;
+    }
+    var g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p.x, p.y + 1.3, p.z), pos.clone()]);
+    var ln = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.95 }));
+    scene.add(ln); AAFX.push({ o: ln, t: 0.25 }); try { sfx('turret', { x: p.x, z: p.z }); } catch (e) {}
+  }
+  var AAFX = [];
+  function rwAATick(dt) {
+    for (var i = AAFX.length - 1; i >= 0; i--) { var f = AAFX[i]; f.t -= dt; f.o.material.opacity = Math.max(0, f.t * 4); if (f.t <= 0) { scene.remove(f.o); f.o.geometry.dispose(); AAFX.splice(i, 1); } }
+    if (!RW.plist) return;
+    for (var j = 0; j < RW.plist.length; j++) {
+      var p = RW.plist[j]; if (p.k !== 'aa' || !p.aa) continue;
+      var A = p.aa;
+      if (A.ft > 0) { A.ft -= dt; if (A.ft <= 0) A.flash.visible = false; }
+      A.rad.rotation.y += dt * 1.5;   // the radar dish turns
+    }
+  }
+  function rwAAMsg(m) {   // the server: our anti-air gun shot down someone's missile
+    banner(zt('你的防空炮拦截了 ' + (m.n || '有人') + ' 的导弹', 'Your anti-air gun shot down a missile from ' + (m.n || 'someone')), 2400);
+    var p = null; for (var i = 0; i < RW.plist.length; i++) if (RW.plist[i].id === m.id) p = RW.plist[i];
+    if (p && m.at) rwAAShot(p, new THREE.Vector3(m.at[0], m.at[1], m.at[2]));
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable

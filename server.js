@@ -156,15 +156,15 @@ saveDb();   // writes the secret on first start
 // Same disk caveat as accounts.json.
 const BUILD_FILE = path.join(DATA_DIR, 'world.json');
 const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr', 'bx', 'fu', 'tc', 'sb',
-  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm']);
+  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm', 'aa']);
 const DOORS = new Set(['dr', 'sd', 'd2', 'gd', 'xg']);                       // open and close, take a code lock
 const HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // inserts and the wall they sit in
 const CONT = { bx: 18, lb: 30, fu: 4, cf: 4 };                               // containers and their slots
-const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm']);
-const HP = { at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
+const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm', 'aa']);
+const HP = { aa: 1500, at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 5000;   // update 82: 5000 parts per player (was 1500)
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|rowboat|rhib|arrow|spear|machete|apis|arif|ashot|arkt|parts|atur|gtrap|clay|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
+const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|rowboat|rhib|arrow|spear|machete|apis|arif|ashot|arkt|parts|atur|gtrap|clay|aad|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
@@ -211,6 +211,7 @@ function cleanSave(s) {
   if (Array.isArray(s.mk)) o.mk = s.mk.filter((m) => Array.isArray(m) && num(m[0], WORLD_SIZE * 2) !== null && num(m[1], WORLD_SIZE * 2) !== null).slice(0, 6).map((m) => [Math.round(+m[0]), Math.round(+m[1])]);   // map markers
   for (const it of s.inv) o.inv.push(cleanSlot(it) || 0);
   if (s.wm) o.wm = 1;
+  if (s.vit) o.vit = int(s.vit, 0, 3);   // Vitality used (max HP +20 each)
   if (Array.isArray(s.wl) && s.wl.length <= 24) o.wl = s.wl.map((v) => int(v, 1, 20));   // weapon upgrade levels
   if (Array.isArray(s.wp) && s.wp.length <= 24) o.wp = s.wp.map((a) => (Array.isArray(a) ? a.filter((id) => typeof id === 'string' && /^[a-z0-9_]{1,20}$/i.test(id)).slice(0, 3) : []));
   if (s.dead) { o.dead = 1; return o; }
@@ -961,6 +962,12 @@ function shielded(a) {   // the builder and everyone on a tool cupboard covering
   for (const b of builds.values()) if (b[1] === 'tc' && Math.hypot(b[2] - a[2], b[4] - a[4]) < TC_RANGE && b[10].a.some(ownerAround)) return false;
   return true;
 }
+function worldAA(c, m) {   // update 99: an anti-air gun shot down c's rocket - tell the gun's people who are online
+  const a = builds.get(m.id | 0); if (!a || a[1] !== 'aa') return;
+  const now = Date.now(); if (c.aaT && now - c.aaT < 500) return; c.aaT = now;
+  const msg = JSON.stringify({ t: 'RAA', id: a[0], n: c.name || '', at: [a[2], a[3] + 6, a[4]] });
+  for (const o of world.clients.values()) if (o !== c && o.owner && (o.owner === a[7] || sameTeam(a[7], o.owner))) o.send(msg);
+}
 function worldDamage(c, m) {   // explosions: the thrower reports which parts it hit and how hard
   if (!Array.isArray(m.a) || m.a.length > 60) return;
   const now = Date.now();
@@ -972,6 +979,7 @@ function worldDamage(c, m) {   // explosions: the thrower reports which parts it
     if (!Array.isArray(q)) return;
     const a = builds.get(q[0] | 0), d = Math.min(1200, Math.max(0, +q[1] || 0)); if (!a || !d) return;
     if (a[7] !== c.owner && shielded(a)) { safe++; return; }
+
     a[9] -= d;
     raidNote(c, a, a[9] <= 0);
     if (a[9] <= 0) dropPart(a, c);
@@ -1275,6 +1283,7 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Rtg') { worldTeamGoal(c, m); return; }
   if (c.world && m.t === 'Re') { worldDeath(c, m); return; }
   if (c.world && m.t === 'Rh') { worldDamage(c, m); return; }
+  if (c.world && m.t === 'Raa') { worldAA(c, m); return; }
   if (c.world && m.t === 'Ra') { worldAuth(c, m); return; }
   if (c.world && m.t === 'Rz') { worldLockSet(c, m); return; }
   if (c.world && m.t === 'Ry') { worldLockTry(c, m); return; }
