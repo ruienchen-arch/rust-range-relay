@@ -9797,7 +9797,7 @@ Object.assign(EN, {
       h += '<h4>' + zt('地形、天气与游泳', 'Terrain, weather & swimming') + '</h4>' + gdCards([
         [zt('地形', 'Terrain'), zt('北边冷（苔原和雪山），中间温带（草地和森林），南边是沙漠（沙丘和仙人掌）。到处都是山丘，山脉里金属矿更多。在山坡上也能放地基，地基会自动加高支脚。', 'The north is cold (tundra and snowy mountains), the middle temperate (grass and forest), the south desert (dunes and cacti). Hills everywhere; mountains have more ore. Foundations work on hillsides, standing on taller footings.')],
         [zt('天气', 'Weather'), zt('晴、多云、阴天、大雾、下雨、雷雨每几分钟变一次，所有人看到的一样。天气只是好看，不影响玩法。小地图下面会写现在的天气和地形。', 'Clear, partly cloudy, overcast, fog, rain and thunderstorms change every few minutes, the same for everyone. Weather only changes how things look. It shows under the minimap with the biome.')],
-        [zt('汽车', 'Cars'), zt('很多建筑群旁边停着车（加油站、小镇、超市、火车站等），走过去按 E 上车，先坐驾驶座，最多 4 人。W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。也可以在工作台做一辆（金属碎片 500、木材 300、布 40），拿在手上左键放下，每人最多 3 辆。车停在哪里服务器都会记住。', 'Cars stand at many monuments (gas station, town, supermarket, train yard…). Walk up and press E: the driver seat first, up to 4 people. W/S drive and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Build one at a workbench (500 fragments, 300 wood, 40 cloth), hold it and left-click to park it; up to 3 per player. The server remembers where every car is parked.')],
+        [zt('汽车', 'Cars'), zt('很多建筑群旁边停着车（加油站、小镇、超市、火车站等），走过去按 E 上车，先坐驾驶座，最多 4 人。W/S 前进后退，A/D 转向，空格刹车，Shift 加速，E 下车。也可以在工作台做一辆（金属碎片 500、木材 300、布 40），拿在手上左键放下，数量不限。车停在哪里服务器都会记住。', 'Cars stand at many monuments (gas station, town, supermarket, train yard…). Walk up and press E: the driver seat first, up to 4 people. W/S drive and reverse, A/D steer, Space brakes, Shift boosts, E gets out. Build one at a workbench (500 fragments, 300 wood, 40 cloth), hold it and left-click to park it; no limit. The server remembers where every car is parked.')],
         [zt('弓、弩和近战', 'Bows and melee'), zt('猎弓（木头 200、布 50）和箭（木头 25、石头 10，一次 4 支）不用工作台就能做；十字弩上弦慢但伤害高，要工作台。石矛够得远（3.6 米），砍刀挥得快。', 'The bow (200 wood, 50 cloth) and arrows (25 wood + 10 stone for 4) need no workbench; the crossbow is slow to span but hits hard (workbench). The stone spear reaches 3.6 m, the machete swings fast.')],
         [zt('船和钻井平台', 'Boats and the oil rig'), zt('港口、渔村、灯塔外面的水上停着划艇和快艇，也可以在工作台造。游过去按 E 上船，W/S 油门，A/D 转向，水太浅会搁浅。海上有一座钻井平台：从水面的小平台爬楼梯上去，下层有军用箱，上层有精英箱和要破解的上锁箱子，有武装守卫。', 'Rowboats and RHIBs are moored off harbors, fishing villages and lighthouses, or build one at a workbench. Swim up and press E; W/S throttle, A/D steer; shallow water grounds you. Out at sea stands an oil rig: climb the stairs from the landing at the water; military crates below, elite crates and a locked crate above, and armed guards.')],
         [zt('子弹和枪', 'Ammo and guns'), zt('开局没有枪。子弹要在工作台自己做：手枪子弹一次 8 发、步枪子弹一次 8 发、霰弹一次 4 发，背包里有多少备弹就是多少，换弹会扣掉。枪和炸药都很贵，要大量金属碎片；箱子里也很少出枪。', 'Nobody starts with a gun. Bullets are crafted at a workbench (8 pistol, 8 rifle or 4 shells a time); your spare ammo is what you carry and reloading uses it. Guns and explosives cost a lot of metal fragments, and crates rarely hold guns.')],
@@ -11398,7 +11398,7 @@ Object.assign(EN, {
     airfield: [[-40, 2]], village: [[12, 2]], farm: [[2, 16]], mining: [[10, -18]], military: [[-40, 10]], outpost: [[24, -8]], water: [[20, 10]], powerplant: [[22, 6]], bandit: [[-24, 0]] };
   var CAR_COLS = [0x6b2e24, 0x2f4a5e, 0x4a5a3a, 0x7a6a2a, 0x5a5f63, 0x8a4a1a];
 
-  RWI.car = { n: ['汽车', 'Car'], st: 1, use: 1, d: ['四座敞篷车。拿在手上按左键（或在背包里点“使用”）就会放在你面前。每人最多同时拥有 3 辆。', 'An open-top four-seater. Hold it and press left click (or Use in the backpack) to park it in front of you. Up to 3 per player.'] };
+  RWI.car = { n: ['汽车', 'Car'], st: 1, use: 1, d: ['四座敞篷车。拿在手上按左键（或在背包里点“使用”）就会放在你面前。数量不限。', 'An open-top four-seater. Hold it and press left click (or Use in the backpack) to park it in front of you. No limit.'] };
   RW_CRAFT.push(['car', { frags: 500, wood: 300, cloth: 40 }]); RW_BENCH.car = 1;
   (function () {   // the car's backpack icon
     var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d');
@@ -11549,7 +11549,7 @@ Object.assign(EN, {
       var c2 = CAR.list[m.id]; if (!c2 || CAR.mine === c2 && CAR.seat === 0) return;
       c2.tgt = { x: +m.x, y: +m.y, z: +m.z, yaw: +m.yaw, p: +m.p || 0, r: +m.r || 0, tu: +m.tu || 0, tp: +m.tp || 0 }; c2.sp = +m.sp || 0; c2.stT = +m.st || 0;
     } else if (m.t === 'RVf') {
-      banner(m.why === 'max' ? zt('每人最多 3 辆车（直升机也算）', 'You can own up to 3 vehicles (helicopters count)') : zt('坐满了', 'It is full'), 1500); sfx('deny');
+      banner(m.why === 'max' ? zt('载具数量到上限了', 'Vehicle limit reached') : zt('坐满了', 'It is full'), 1500); sfx('deny');
     }
   }
   function carLeftSeat(c) {   // put me down beside the car
@@ -12009,7 +12009,7 @@ Object.assign(EN, {
   var HELI_SEATS = [[-0.36, 0.4, -0.35], [0.36, 0.4, -0.35]];   // pilot on the left, passenger on the right
   var HELI_COLS = [0x2f4a5e, 0x7a1f1f, 0x3e4a32, 0xc8c6bc, 0x9a7a22, 0x26282a];
 
-  RWI.heli = { n: ['直升机', 'Helicopter'], st: 1, use: 1, d: ['双座轻型直升机（飞行员 + 1 名乘客）。拿在手上按左键（或在背包里点“使用”）放在面前的空地上。每人最多同时拥有 3 辆载具（车和直升机一起算）。', 'A two-seat light helicopter (pilot + 1 passenger). Hold it and press left click (or Use in the backpack) to set it down on open ground in front of you. Up to 3 vehicles per player (cars and helicopters together).'] };
+  RWI.heli = { n: ['直升机', 'Helicopter'], st: 1, use: 1, d: ['双座轻型直升机（飞行员 + 1 名乘客）。拿在手上按左键（或在背包里点“使用”）放在面前的空地上。数量不限。', 'A two-seat light helicopter (pilot + 1 passenger). Hold it and press left click (or Use in the backpack) to set it down on open ground in front of you. No limit.'] };
   RW_CRAFT.push(['heli', { frags: 2500, metal: 600, cloth: 150, wood: 400, kcr: 1 }]); RW_BENCH.heli = 1;
   (function () {   // backpack icon
     var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d');
@@ -12294,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 111;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 112;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on

@@ -698,7 +698,8 @@ function worldTankFire(c, m) {   // the driver fires: one shell less, and everyb
 function worldCarMake(c, m) {
   const p = carXYZ(m); if (!p) return;
   if (c.hasPos && Math.hypot(c.x - p[0], c.z - p[2]) > 14) return;
-  if ([...cars.values()].filter((q) => q.by && q.by === c.owner).length >= 3) { c.send(J({ t: 'RVf', id: '', why: 'max' })); return; }
+  const CAR_MAX = +process.env.CAR_MAX || 0;   // update 112: no limit unless CAR_MAX is set
+  if (CAR_MAX > 0 && [...cars.values()].filter((q) => q.by && q.by === c.owner).length >= CAR_MAX) { c.send(J({ t: 'RVf', id: '', why: 'max' })); return; }
   const id = 'p' + (carSeq++), ty = VTY(m.ty);
   const q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: c.owner || '', ty, seats: carSeats(ty) };
   cars.set(id, q); saveCars(); worldAll(J({ t: 'RVc', car: carPub(q) }));
