@@ -665,6 +665,7 @@ function worldCarEnter(c, m) {
     const ty = VTY(m.ty) === 'h' ? '' : VTY(m.ty);   // monument boats arrive here the first time somebody gets in
     q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: '', ty, seats: carSeats(ty) }; cars.set(id, q);
   }
+  if (id[0] === 'm' && /^m\d{1,3}_[89]$/.test(id) && q.ty !== 't' && VTY(m.ty) === 't' && !q.seats.some(Boolean)) { q.ty = 't'; q.seats = carSeats('t'); saveCars(); }   // update 110: a monument tank saved as a car by an older server is a tank again
   if (c.hasPos && Math.hypot(c.x - q.x, c.z - q.z) > 10) return;
   const had = carSeatOf(c.id); if (had && had[0] === q) return;
   carFree(c.id);

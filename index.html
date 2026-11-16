@@ -11510,6 +11510,7 @@ Object.assign(EN, {
     var c = CAR.list[d.id];
     if (!c) {
       var ty = d.ty === 'h' || d.ty === 'b' || d.ty === 'r' || d.ty === 't' ? d.ty : '';
+      if (TANK_IDS[d.id]) ty = 't';
       c = CAR.list[d.id] = { id: d.id, ty: ty, x: +d.x, y: +d.y, z: +d.z, yaw: +d.yaw || 0, p: 0, r: 0, sp: 0, vy: 0, vx: 0, vz: 0, st: 0, stT: 0, col: d.col || CAR_COLS[0], seats: [], tgt: null };
       c.seats = carSeatsOf(c).map(function () { return 0; });
       c.g = ty === 't' ? tankModel(c.col) : ty === 'h' ? heliModel(c.col) : (ty === 'b' || ty === 'r') ? boatModel(ty, c.col) : carModel(c.col); RW.group.add(c.g);
@@ -12293,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 109;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 110;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -15453,10 +15454,11 @@ Object.assign(EN, {
     (U.wheelsL || []).forEach(function (w) { w.rotation.x -= vl * dt / 0.34; });
     (U.wheelsR || []).forEach(function (w) { w.rotation.x -= vr * dt / 0.34; });
   }
+  var TANK_IDS = {};   // update 110: the monument slots that hold a tank (so a tank never comes back as a car)
   function rwMonTanks(have) {
     RW.mons.forEach(function (m, mi) {
       (RW_MONTANKS[m.k] || []).forEach(function (q, j) {
-        var id = 'm' + mi + '_' + (8 + j); if (have[id]) return;
+        var id = 'm' + mi + '_' + (8 + j); TANK_IDS[id] = 1; if (have[id]) return;
         var x = m.x + q[0] * (m.fx || 1), z = m.z + q[1] * (m.fz || 1);
         carAdd({ id: id, ty: 't', x: x, y: groundAt(x, z, rwH(x, z) + 3), z: z, yaw: rwHash(mi, 40 + j, RW.s) * 6.283, col: 0x4d5a3a, am: 0 });
       });
