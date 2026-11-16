@@ -540,7 +540,7 @@ function worldTeam(c, m) {
 // ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
 const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
 // GIFT_SEED="name:item:count[:batch];..." - each line is given once. A new batch name gives the same thing again.
-const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:tank:10:b5;ryan:heli:10:b5' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
 // GIFT_STOP="atur" - items that are no longer given: anything of these still waiting to be handed out is dropped
 const GIFT_STOP = (process.env.GIFT_STOP === undefined ? 'atur' : process.env.GIFT_STOP).split(/[;,+]/).map((x) => x.trim()).filter(Boolean);
 const giftOk = (id) => !GIFT_STOP.includes(String(id));
@@ -568,10 +568,11 @@ function giftSeed() {
     for (const c of world.clients.values()) if (c.owner === o) setTimeout(() => giftSend(c), 1500);
   }
 }
-function giftSend(c) { if (gifts[c.owner]) { gifts[c.owner] = gifts[c.owner].filter((x) => giftOk(x.id)); if (!gifts[c.owner].length) delete gifts[c.owner]; } const q = gifts[c.owner]; if (q && q.length && !c.closed) c.send(JSON.stringify({ t: 'RGF', g: q.map((x) => ({ id: x.id, n: x.n })) })); }
+function giftSend(c) { if (gifts[c.owner]) { gifts[c.owner] = gifts[c.owner].filter((x) => giftOk(x.id)); if (!gifts[c.owner].length) delete gifts[c.owner]; } const q = gifts[c.owner]; const now = Date.now(); if (q && q.length && !c.closed && now - (c.gfT || 0) > 8000) { c.gfT = now; } else return; c.send(JSON.stringify({ t: 'RGF', g: q.map((x) => ({ id: x.id, n: x.n })) })); }
 function worldGiftTook(c, m) {   // the player's game says how many fitted
   const q = gifts[c.owner]; if (!q) return;
   const it = q.find((x) => x.id === String(m.id)); if (!it) return;
+  c.gfT = 0;   // answered: the next send can go right away
   it.n -= Math.max(0, Math.min(it.n, Math.floor(+m.n || 0)));
   if (it.n <= 0) q.splice(q.indexOf(it), 1);
   if (!q.length) delete gifts[c.owner];
