@@ -88,8 +88,8 @@ function worldJoin(c, m) {
   electAuthority();
 }
 // ---- chat and kill feed for the whole world ----
-const chatLog = [];   // the last 30 lines, sent to newcomers
-function chatPush(o) { chatLog.push(o); if (chatLog.length > 30) chatLog.shift(); worldAll(JSON.stringify(o)); }
+const chatLog = [];   // the last 100 lines, sent to newcomers (update 105: the chat scrolls back)
+function chatPush(o) { chatLog.push(o); if (chatLog.length > 100) chatLog.shift(); worldAll(JSON.stringify(o)); }
 const G_ADJ = ['Silent', 'Rusty', 'Wild', 'Lone', 'Swift', 'Grim', 'Lucky', 'Feral', 'Iron', 'Ashen', 'Frozen', 'Sly', 'Brave', 'Hungry', 'Shadow', 'Stone'];
 const G_NOUN = ['Wolf', 'Raven', 'Boar', 'Fox', 'Bear', 'Hawk', 'Stag', 'Viper', 'Badger', 'Owl', 'Lynx', 'Crow', 'Moose', 'Otter', 'Hare', 'Shark'];
 function guestName(seed) { const h = crypto.createHash('sha256').update('guest:' + seed).digest(); return G_ADJ[h[0] % 16] + G_NOUN[h[1] % 16] + (10 + h[2] % 90); }
@@ -336,7 +336,8 @@ function teamAccess(t, add, who) {   // tool cupboards and code-locked doors bui
 }
 function teamSend(o, say, arg) {
   const t = teamOf(o), inv = invites.get(o), on = new Map(); for (const c of world.clients.values()) if (c.owner) on.set(c.owner, c.id);
-  const msg = JSON.stringify({ t: 'RTM', tid: t ? t.id : '', m: (t || []).map((q, i) => ({ o: q, n: ownerName(q), id: on.get(q) || 0, r: roleOf(q, t) })), inv: inv && Date.now() < inv.exp ? { n: inv.n } : null, say: say || '', a: arg || '' });
+  const lead = t && roleOf(o, t), M = t ? metaOf(t) : null;
+  const msg = JSON.stringify({ t: 'RTM', tid: t ? t.id : '', m: (t || []).map((q, i) => ({ o: q, n: ownerName(q), id: on.get(q) || 0, r: roleOf(q, t) })), inv: inv && Date.now() < inv.exp ? { n: inv.n } : null, say: say || '', a: arg || '', p: t ? profOf(t) : null, apps: lead ? M.apps.map((x) => ({ o: x.o, n: x.n, m: x.m, t: x.t, on: on.has(x.o) ? 1 : 0 })) : [], max: TEAM_MAX });
   for (const c of world.clients.values()) if (c.owner === o) c.send(msg);
 }
 function teamSendAll(t, say, arg) { for (const o of t || []) teamSend(o, say, arg); teamBoard(); }
@@ -345,9 +346,10 @@ let boardT = null;
 function teamBoard() {   // every player sees every team (top left of the screen)
   if (boardT) return; boardT = setTimeout(() => {
     boardT = null; const on = new Set(); for (const c of world.clients.values()) if (c.owner) on.add(c.owner);
-    const list = teams.map((t) => t.map((q) => [ownerName(q), on.has(q) ? 1 : 0, roleOf(q, t)]));
-    list.sort((a, b) => b.filter((q) => q[1]).length - a.filter((q) => q[1]).length || b.length - a.length);
-    worldAll(JSON.stringify({ t: 'RTL', l: list.slice(0, 40) }));
+    const rows = teams.map((t) => ({ l: t.map((q) => [ownerName(q), on.has(q) ? 1 : 0, roleOf(q, t)]), p: profOf(t) }));
+    rows.sort((a, b) => b.l.filter((q) => q[1]).length - a.l.filter((q) => q[1]).length || b.l.length - a.l.length);
+    const top = rows.slice(0, 60);
+    worldAll(JSON.stringify({ t: 'RTL', l: top.map((r) => r.l), p: top.map((r) => r.p), max: TEAM_MAX }));
   }, 400);
 }
 function teamJoin(a, b) {   // b joins a's team (or the two start one)
@@ -359,7 +361,14 @@ function teamJoin(a, b) {   // b joins a's team (or the two start one)
   saveTeams(); teamAccess(t, true); teamSendAll(t, 'joined', ownerName(b));
   leadSeed();
 }
-const metaOf = (t) => teamMeta[t.id] || (teamMeta[t.id] = { chat: [], goal: '', plan: '', gby: '', gt: 0 });
+const metaOf = (t) => { const M = teamMeta[t.id] || (teamMeta[t.id] = { chat: [], goal: '', plan: '', gby: '', gt: 0 }); if (!M.md) M.md = 'apply'; if (!M.apps) M.apps = []; return M; };
+// ---- update 105: team profiles (name, icon, a few words for everybody), how to get in (open / apply / closed), applications, recruiting
+const TEAM_ICON_N = 24, ICON_RE = /^(e:([0-9]|1[0-9]|2[0-3])|d:[0-9a-b]{144})$/;
+const profOf = (t) => { const M = metaOf(t); return { id: t.id, nm: M.nm || '', ic: M.ic || '', ds: M.ds || '', md: M.md, cap: ownerName(t[0]) }; };
+const teamById = (id) => teams.find((t) => t.id === id) || null;
+const nameTaken = (nm, t) => teams.some((q) => q !== t && String((teamMeta[q.id] || {}).nm || '').toLowerCase() === nm.toLowerCase());
+function teamLeads(t) { return t.filter((q) => roleOf(q, t)); }
+function dropApps(o) { for (const t of teams) { const M = teamMeta[t.id]; if (M && M.apps && M.apps.some((a) => a.o === o)) { M.apps = M.apps.filter((a) => a.o !== o); teamSendAll(t); } } }
 const TEAM_CHAT_MAX = 300;
 function teamLog(t, k, by, m, a) {   // one entry in the team channel: k = 'c' chat, 'n' notice, 's' system, 'g' goal/plan changed
   if (!t || !t.id) return null;
@@ -399,7 +408,7 @@ function teamLeave(o, quiet, kicked) {
   t.splice(t.indexOf(o), 1); delete vice[o];
   teamLog(t, 's', '', kicked ? 'kick' : 'left', ownerName(o));
   if (wasLead && t.length) { const v = t.find((q) => vice[q]); if (v) { t.splice(t.indexOf(v), 1); t.unshift(v); delete vice[v]; } }   // a vice-captain takes over, else the longest member
-  if (t.length < 2) { teams.splice(teams.indexOf(t), 1); delete teamMeta[t.id]; }   // a team of one is no team: its channel goes with it
+  if (t.length < 1) { teams.splice(teams.indexOf(t), 1); delete teamMeta[t.id]; }   // update 105: a team lives on while anybody is in it (it has a name and an icon now); the last one out closes it
   saveTeams();
   if (kicked) { teamSend(o, 'kicked_me'); teamSendAll(t, 'kicked', ownerName(o)); }
   else if (!quiet) { teamSend(o, 'left_me'); teamSendAll(t, 'left', ownerName(o)); }
@@ -459,6 +468,61 @@ function worldTeam(c, m) {
     teamJoin(inv.from, c.owner); return;
   }
   if (a === 'no') { const inv = invites.get(c.owner); invites.delete(c.owner); if (inv) teamSend(inv.from, 'declined', c.name); return teamSend(c.owner); }
+  if (a === 'create') {   // start a team of your own, with a name
+    if (myT) return teamSend(c.owner, 'inteam');
+    if (now - (c.tcT || 0) < 3000) return; c.tcT = now;
+    const nm = cleanTxt(m.nm, 16).replace(/\s+/g, ' '); if (!nm) return teamSend(c.owner, 'noname');
+    if (nameTaken(nm, null)) return teamSend(c.owner, 'nametaken', nm);
+    const t = [c.owner]; t.id = newTid(); teams.push(t); const M = metaOf(t); M.nm = nm; M.ic = 'e:' + (Math.random() * TEAM_ICON_N | 0);
+    dropApps(c.owner); invites.delete(c.owner);
+    teamLog(t, 's', '', 'created', nm); saveTeams(); teamHistAll(t); teamSendAll(t, 'created', nm); return;
+  }
+  if (a === 'join' || a === 'apply') {   // from the team list: walk straight in, or ask
+    const t = teamById(String(m.id || '')); if (!t) return teamSend(c.owner, 'gone');
+    if (myT === t) return teamSend(c.owner, 'already_in');
+    if (myT) return teamSend(c.owner, 'inteam');
+    const M = metaOf(t), tn = M.nm || ownerName(t[0]);
+    if (M.md === 'closed') return teamSend(c.owner, 'closed', tn);
+    if (t.length >= TEAM_MAX) return teamSend(c.owner, 'full');
+    if (M.md === 'open') { dropApps(c.owner); invites.delete(c.owner); teamJoin(t[0], c.owner); return; }
+    if (now - (c.taT || 0) < 4000) return teamSend(c.owner, 'slow'); c.taT = now;
+    const msg = cleanTxt(m.msg, 200).replace(/\s+/g, ' ');
+    M.apps = M.apps.filter((x) => x.o !== c.owner); M.apps.push({ o: c.owner, n: c.name || ownerName(c.owner), m: msg, t: now }); if (M.apps.length > 30) M.apps.shift();
+    saveTeams(); teamSend(c.owner, 'applied', tn);
+    for (const q of teamLeads(t)) teamSend(q, 'app_new', c.name || ownerName(c.owner));
+    return;
+  }
+  if (a === 'appok' || a === 'appno') {   // the captain or a vice-captain answers an application
+    if (!myT || !myR) return teamSend(c.owner, 'notlead');
+    const M = metaOf(myT), ap = M.apps.find((x) => x.o === String(m.o || '')); if (!ap) return teamSend(c.owner);
+    M.apps = M.apps.filter((x) => x !== ap); saveTeams();
+    const tn = M.nm || ownerName(myT[0]);
+    if (a === 'appno') { teamSend(ap.o, 'app_no', tn); for (const q of teamLeads(myT)) teamSend(q, 'app_said_no', ap.n); return; }
+    if (teamOf(ap.o)) { for (const q of teamLeads(myT)) teamSend(q, 'app_inteam', ap.n); return; }
+    if (myT.length >= TEAM_MAX) return teamSend(c.owner, 'full');
+    dropApps(ap.o); invites.delete(ap.o); teamJoin(myT[0], ap.o); teamSend(ap.o, 'app_yes', tn); return;
+  }
+  if (a === 'prof') {   // the captain or a vice-captain sets the name, the icon, the words and who may join
+    if (!myT || !myR) return teamSend(c.owner, 'notlead');
+    if (now - (c.tpT || 0) < 1500) return; c.tpT = now;
+    const M = metaOf(myT);
+    if (m.nm !== undefined) { const nm = cleanTxt(m.nm, 16).replace(/\s+/g, ' '); if (!nm) return teamSend(c.owner, 'noname'); if (nameTaken(nm, myT)) return teamSend(c.owner, 'nametaken', nm); M.nm = nm; }
+    if (m.ic !== undefined && ICON_RE.test(String(m.ic))) M.ic = String(m.ic);
+    if (m.ds !== undefined) M.ds = cleanTxt(m.ds, 300).replace(/\n{3,}/g, '\n\n');
+    if (m.md !== undefined && ['open', 'apply', 'closed'].includes(m.md)) M.md = m.md;
+    saveTeams(); teamLog(myT, 's', '', 'prof', c.name || ownerName(c.owner)); teamSendAll(myT); teamSend(c.owner, 'prof_ok'); return;
+  }
+  if (a === 'recruit') {   // a recruiting message to everybody on the island
+    if (!myT || !myR) return teamSend(c.owner, 'notlead');
+    const M = metaOf(myT);
+    if (M.md === 'closed') return teamSend(c.owner, 'rec_closed');
+    if (myT.length >= TEAM_MAX) return teamSend(c.owner, 'full');
+    const wait = 90000 - (now - (M.recT || 0)); if (wait > 0) return teamSend(c.owner, 'rec_wait', String(Math.ceil(wait / 1000)));
+    M.recT = now; saveTeams();
+    const msg = cleanTxt(m.msg, 120).replace(/\s+/g, ' ');
+    chatPush({ t: 'RTR', tid: myT.id, nm: M.nm || ownerName(myT[0]), ic: M.ic || '', cap: ownerName(myT[0]), md: M.md, n: myT.length, max: TEAM_MAX, m: msg, by: c.name || '' });
+    teamSend(c.owner, 'rec_ok'); return;
+  }
   if (a === 'leave') {   // asks first: a second /leave (or the confirm button) within 15 seconds really leaves
     if (!myT) return teamSend(c.owner);
     if (!m.c && !(c.leaveAsk && now - c.leaveAsk < 15000)) { c.leaveAsk = now; return teamSend(c.owner, 'leave_ask'); }
@@ -773,10 +837,10 @@ function wbRestore(c, str, ct) {
     if (Array.isArray(w.tm)) {   // teams come back (anybody already in a team stays where they are)
       let k = 0;
       w.tm.slice(0, 2000).forEach((t, i) => {
-        if (!Array.isArray(t)) return; const list = t.filter((o) => typeof o === 'string' && /^[uk]:/.test(o) && !teamOf(o)).slice(0, TEAM_MAX); if (list.length < 2) return;
+        if (!Array.isArray(t)) return; const list = t.filter((o) => typeof o === 'string' && /^[uk]:/.test(o) && !teamOf(o)).slice(0, TEAM_MAX); if (list.length < 1 || (list.length < 2 && !(w.tmeta && w.tmeta[w.tid && w.tid[i]] && w.tmeta[w.tid[i]].nm))) return;   // update 105: a named team of one comes back too
         list.id = (Array.isArray(w.tid) && /^t[a-z0-9]{4,20}$/.test(String(w.tid[i])) && String(w.tid[i])) || newTid(); teams.push(list); k++;
         const M = w.tmeta && w.tmeta[list.id];   // its channel comes back too
-        if (M && typeof M === 'object' && !teamMeta[list.id]) teamMeta[list.id] = { chat: (Array.isArray(M.chat) ? M.chat : []).slice(-TEAM_CHAT_MAX).filter((e) => e && typeof e === 'object').map((e) => ({ k: /^[cnsg]$/.test(e.k) ? e.k : 'c', n: String(e.n || '').slice(0, 24), m: String(e.m || '').slice(0, 400), a: String(e.a || '').slice(0, 40), t: +e.t || 0 })), goal: String(M.goal || '').slice(0, 120), plan: String(M.plan || '').slice(0, 1200), gby: String(M.gby || '').slice(0, 24), gt: +M.gt || 0 };
+        if (M && typeof M === 'object' && !teamMeta[list.id]) teamMeta[list.id] = { chat: (Array.isArray(M.chat) ? M.chat : []).slice(-TEAM_CHAT_MAX).filter((e) => e && typeof e === 'object').map((e) => ({ k: /^[cnsg]$/.test(e.k) ? e.k : 'c', n: String(e.n || '').slice(0, 24), m: String(e.m || '').slice(0, 400), a: String(e.a || '').slice(0, 40), t: +e.t || 0 })), goal: String(M.goal || '').slice(0, 120), plan: String(M.plan || '').slice(0, 1200), gby: String(M.gby || '').slice(0, 24), gt: +M.gt || 0, nm: String(M.nm || '').slice(0, 16), ic: ICON_RE.test(String(M.ic || '')) ? String(M.ic) : '', ds: String(M.ds || '').slice(0, 300), md: ['open', 'apply', 'closed'].includes(M.md) ? M.md : 'apply', apps: [] };
       });
       if (w.tsd && typeof w.tsd === 'object') for (const q in w.tsd) seedDone[q] = 1;
       if (k && w.tv && typeof w.tv === 'object') for (const q in w.tv) if (teamOf(q)) vice[q] = 1;
