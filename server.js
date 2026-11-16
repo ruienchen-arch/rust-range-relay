@@ -155,7 +155,7 @@ saveDb();   // writes the secret on first start
 // extra: tc -> {a:[authorised owners]}, bx -> {s:[18 slots]}, fu -> {s:[fuel, input, frags, cooked], t:tick}.
 // Same disk caveat as accounts.json.
 const BUILD_FILE = path.join(DATA_DIR, 'world.json');
-const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'dr', 'bx', 'fu', 'tc', 'sb',
+const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'ss', 'dr', 'bx', 'fu', 'tc', 'sb',
   'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm', 'aa']);
 const DOORS = new Set(['dr', 'sd', 'd2', 'gd', 'xg']);                       // open and close, take a code lock
 const HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // inserts and the wall they sit in
@@ -644,15 +644,16 @@ function worldStatKill(c, m) {   // a player's own game reports an enemy or anim
 // ---- cars (update 38): every car on the island, who sits where, kept in DATA_DIR/cars.json ----
 const CAR_FILE = path.join(DATA_DIR, 'cars.json');
 let cars = new Map(), carSeed = '', carSeq = 1, carT = null;
-const VTY = (t) => (t === 'h' || t === 'b' || t === 'r') ? t : '';   // h helicopter, b rowboat, r RHIB
-const carSeats = (ty) => ty === 'h' || ty === 'b' ? [0, 0] : [0, 0, 0, 0];   // a helicopter seats a pilot and one passenger
-try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), ty: VTY(q.ty), seats: carSeats(q.ty) }); }); } catch (e) {}
+const VTY = (t) => (t === 'h' || t === 'b' || t === 'r' || t === 't') ? t : '';   // h helicopter, b rowboat, r RHIB, t tank (update 106)
+const carSeats = (ty) => ty === 'h' || ty === 'b' || ty === 't' ? [0, 0] : [0, 0, 0, 0];
+const TANK_CAP = 8;   // shells a tank holds; players load them from their backpacks   // a helicopter seats a pilot and one passenger
+try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)) }); }); } catch (e) {}
 function saveCars() {
   if (carT) return;
-  carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })) })); } catch (e) {} }, 3000);
+  carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '', am: q.am | 0 })) })); } catch (e) {} }, 3000);
 }
 function checkCarSeed() { const s = worldSeed(); if (carSeed !== s) { cars.clear(); carSeq = 1; carSeed = s; saveCars(); } }
-const carPub = (q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, seats: q.seats, by: q.by, ty: q.ty || '' });
+const carPub = (q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, seats: q.seats, by: q.by, ty: q.ty || '', am: q.am | 0 });
 function carSeatOf(cid) { for (const q of cars.values()) { const i = q.seats.indexOf(cid); if (i >= 0) return [q, i]; } return null; }
 function carFree(cid) { const s = carSeatOf(cid); if (!s) return; s[0].seats[s[1]] = 0; if (s[1] === 0) s[0].sp = 0; worldAll(J({ t: 'RVs', car: carPub(s[0]) })); }
 function carXYZ(m) { const x = num(m.x, WORLD_SIZE + 60), y = num(m.y, 500), z = num(m.z, WORLD_SIZE + 60); return x === null || y === null || z === null ? null : [x, y, z]; }
@@ -675,8 +676,22 @@ function worldCarMove(c, m) {
   const q = cars.get(String(m.id || '')); if (!q || q.seats[0] !== c.id) return;
   const p = carXYZ(m); if (!p) return;
   q.x = p[0]; q.y = p[1]; q.z = p[2]; q.yaw = +m.yaw || 0; q.sp = +m.sp || 0; saveCars();
-  const out = J({ t: 'RVm', id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, sp: q.sp, p: +m.p || 0, r: +m.r || 0, st: Math.max(-1, Math.min(1, +m.st || 0)) });
+  const out = J({ t: 'RVm', id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, sp: q.sp, p: +m.p || 0, r: +m.r || 0, st: Math.max(-1, Math.min(1, +m.st || 0)), tu: +m.tu || 0, tp: +m.tp || 0 });
   for (const o of world.clients.values()) if (o !== c) o.send(out);
+}
+function worldTankLoad(c, m) {   // update 106: shells from a rider's backpack go into the tank
+  const q = cars.get(String(m.id || '')); if (!q || q.ty !== 't' || q.seats.indexOf(c.id) < 0) return;
+  const n = Math.max(0, Math.min(TANK_CAP - (q.am | 0), m.n | 0)); if (!n) return;
+  q.am = (q.am | 0) + n; saveCars(); worldAll(J({ t: 'RVa', id: q.id, am: q.am, by: c.id, n }));
+}
+function worldTankFire(c, m) {   // the driver fires: one shell less, and everybody else sees the shot
+  const q = cars.get(String(m.id || '')); if (!q || q.ty !== 't' || q.seats[0] !== c.id) return;
+  const now = Date.now(); if (now - (q.fT || 0) < 2200) return;
+  if (!(q.am > 0)) { c.send(J({ t: 'RVa', id: q.id, am: 0 })); return; }
+  q.fT = now; q.am--; saveCars();
+  worldAll(J({ t: 'RVa', id: q.id, am: q.am }));
+  const v = (k) => Math.round((+m[k] || 0) * 1000) / 1000, shot = J({ t: 'RVsh', id: q.id, x: v('x'), y: v('y'), z: v('z'), dx: v('dx'), dy: v('dy'), dz: v('dz') });
+  for (const o of world.clients.values()) if (o !== c) o.send(shot);
 }
 function worldCarMake(c, m) {
   const p = carXYZ(m); if (!p) return;
@@ -825,7 +840,7 @@ function wbRestore(c, str, ct) {
     for (const q of Array.isArray(w.cars) ? w.cars.slice(0, 500) : []) {
       if (!q || typeof q.id !== 'string' || !/^(m\d{1,3}_\d|p\d{1,7})$/.test(q.id) || cars.has(q.id) || wbCarKnown.has(q.id)) continue;
       const p = carXYZ(q); if (!p) continue;
-      const car = { id: q.id, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: VTY(q.ty), seats: carSeats(q.ty) };
+      const car = { id: q.id, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)) };
       cars.set(q.id, car); wbCarKnown.add(q.id); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
     }
     if ((+w.cs | 0) > carSeq) carSeq = +w.cs | 0;
@@ -1369,6 +1384,8 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Vx') { carFree(c.id); return; }
   if (c.world && m.t === 'Vm') { worldCarMove(c, m); return; }
   if (c.world && m.t === 'Vc') { worldCarMake(c, m); return; }
+  if (c.world && m.t === 'Vam') { worldTankLoad(c, m); return; }
+  if (c.world && m.t === 'Vfi') { worldTankFire(c, m); return; }
   if (c.world && (m.t === 'Bq' || m.t === 'Bp' || m.t === 'Bt' || m.t === 'Bl' || m.t === 'Bc')) { worldCont(c, m); return; }
   const to = m.to; delete m.to;
   m.i = c.id;

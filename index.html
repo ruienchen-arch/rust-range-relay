@@ -7300,10 +7300,15 @@ Object.assign(EN, {
     else if (k === 'wn') { W(-1.05, 0, 3, 0.9); W(1.05, 0, 3, 0.9); W(0, 0, 1.0, 1.2); W(0, 2.0, 3, 1.2); }
     else if (k === 'st') { var dx = [1, 0, -1, 0][r], dz = [0, 1, 0, -1][r]; for (var i = 0; i < 6; i++) { var o = -1.25 + i * 0.5, top = (i + 1) * 0.5; L.push([dx * o, top / 2, dz * o, dx ? 0.5 : 3, top, dz ? 0.5 : 3, 1]); } }
     else if (k === 'dr') { if (r === 0) L.push([0, 1.09, 0, 1.16, 2.18, 0.08, 1]); else L.push([0, 1.09, 0, 0.08, 2.18, 1.16, 1]); }
+    else if (k === 'ss') {   // update 109: spiral stairs - 12 steps of 0.25 m round a pole, one full turn up to the next floor (collision blocks, drawn separately)
+      for (var si = 0; si < 12; si++) { var sa = r * Math.PI / 2 + si * Math.PI / 6, stp = (si + 1) * 0.25; L.push([Math.cos(sa) * 0.8, stp / 2, Math.sin(sa) * 0.8, 0.85, stp, 0.85, 1, 1]); }
+      L.push([0, 1.55, 0, 0.3, 3.1, 0.3, 1, 1]);
+    }
     return L;
   }
   function rwPieceGeo(k, r, dep, seed) {
     if (k === 'rf') return rwRoofGeo(seed);
+    if (k === 'ss') return rwSpiralGeo(r, seed);
     var pos = [], nor = [], uvs = [], ou = seed ? rwHash(seed, 3, 11) : 0, ov = seed ? rwHash(seed, 5, 13) : 0;   // each part shows a different patch of the texture
     rwPieceParts(k, r, dep).forEach(function (q) {
       if (q[7]) return;   // collision-only part
@@ -7382,7 +7387,7 @@ Object.assign(EN, {
     rwPieceSolid(p, true);
     RW.pieces[id] = p; RW.plist.push(p);
     if (k === 'fd') rwFdChanged(p);
-    if (k === 'st' && Math.abs(P.x - p.x) < 1.6 && Math.abs(P.z - p.z) < 1.6 && P.y > p.y - 0.5 && P.y < p.y + 2.5) { P.y = groundAt(P.x, P.z, p.y + 3.2); P.vy = 0; }   // stood where the stairs went: now on the step
+    if ((k === 'st' || k === 'ss') && Math.abs(P.x - p.x) < 1.6 && Math.abs(P.z - p.z) < 1.6 && P.y > p.y - 0.5 && P.y < p.y + 2.5) { P.y = groundAt(P.x, P.z, p.y + 3.2); P.vy = 0; }   // stood where the stairs went: now on the step
     if (p.o === RW.me && RW.pendB && RW.pendB.length) RW.pendB.shift();
   }
   function rwPieceDel(id) {
@@ -7475,7 +7480,7 @@ Object.assign(EN, {
         if (rwIsFullWall(p.k)) { var sx = p.r === 1 ? 1.5 : 0, sz = p.r === 0 ? 1.5 : 0; consider({ x: p.x + sx, y: p.y + 3, z: p.z + sz, r: 0 }, p.x + sx, p.y + 3, p.z + sz); consider({ x: p.x - sx, y: p.y + 3, z: p.z - sz, r: 0 }, p.x - sx, p.y + 3, p.z - sz); }
         if (k === 'fl' && p.k === 'fl') [[3, 0], [-3, 0], [0, 3], [0, -3]].forEach(function (q) { consider({ x: p.x + q[0], y: p.y, z: p.z + q[1], r: 0 }, p.x + q[0], p.y, p.z + q[1]); });
       }
-      if (k === 'st' && (p.k === 'fd' || p.k === 'fl')) consider({ x: p.x, y: p.y, z: p.z, r: RW.brot }, p.x, p.y + 0.6, p.z);
+      if ((k === 'st' || k === 'ss') && (p.k === 'fd' || p.k === 'fl')) consider({ x: p.x, y: p.y, z: p.z, r: RW.brot }, p.x, p.y + 0.6, p.z);
       if (RW_HOST[k] && p.k === RW_HOST[k]) consider({ x: p.x, y: p.y, z: p.z, r: p.r }, p.x, p.y + (k === 'wb' ? 1.5 : 1.1), p.z);
     });
     if (!best && k === 'fd' && hit && dir.y < 0) {   // free foundation: keep it in front of you, never on top of you
@@ -7520,8 +7525,8 @@ Object.assign(EN, {
         for (i = 0; i < ch.nodes.length; i++) { var n = ch.nodes[i]; if (rwNodeAlive(n) && n.kind !== 'hemp' && Math.abs(n.x - c.x) < 1.5 + n.r && Math.abs(n.z - c.z) < 1.5 + n.r) return zt('有树或石头挡着', 'A tree or rock is in the way'); }
       }
     }
-    if (k === 'fl' || k === 'rf') for (i = 0; i < RW.plist.length; i++) { p = RW.plist[i]; if (p.k === 'st' && Math.abs(p.x - c.x) < 0.3 && Math.abs(p.z - c.z) < 0.3 && Math.abs(p.y + 3 - c.y) < 0.3) return zt('楼梯正上方不能放，不然就上不去了', 'Not right above stairs, or you could not get up'); }
-    var parts = k === 'st' ? [] : rwPieceParts(k, c.r, c.dep || 1);   // stairs: you may stand there, you get lifted onto the step
+    if (k === 'fl' || k === 'rf') for (i = 0; i < RW.plist.length; i++) { p = RW.plist[i]; if ((p.k === 'st' || p.k === 'ss') && Math.abs(p.x - c.x) < 0.3 && Math.abs(p.z - c.z) < 0.3 && Math.abs(p.y + 3 - c.y) < 0.3) return zt('楼梯正上方不能放，不然就上不去了', 'Not right above stairs, or you could not get up'); }
+    var parts = (k === 'st' || k === 'ss') ? [] : rwPieceParts(k, c.r, c.dep || 1);   // stairs: you may stand there, you get lifted onto the step
     for (i = 0; i < parts.length; i++) {
       var q = parts[i]; if (!q[6]) continue;
       var cx = c.x + q[0], cy = c.y + q[1], cz = c.z + q[2];
@@ -7901,7 +7906,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt); tankFxTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt); tankFxTick(dt); rwStuckTick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -8388,7 +8393,7 @@ Object.assign(EN, {
     RW.hud.appendChild(el); RWC.el = el; RWC.list = el.querySelector('.cl'); RWC.inp = el.querySelector('input');
     RWC.inp.addEventListener('keydown', function (e) {
       e.stopPropagation();
-      if (e.key === 'Enter') { var v = RWC.inp.value.trim(); if (v) dSend({ t: 'Rm', m: v.slice(0, 140) }); rwChatClose(); e.preventDefault(); }
+      if (e.key === 'Enter') { var v = RWC.inp.value.trim(); if (/^\/(stuck|unstuck|卡住)$/i.test(v)) { rwChatClose(); e.preventDefault(); banner(rwUnstick(true) ? zt('已经把你移到旁边空的地方', 'Moved you to a free spot') : zt('附近找不到空的地方', 'No free spot nearby'), 1800); return; } if (v) dSend({ t: 'Rm', m: v.slice(0, 140) }); rwChatClose(); e.preventDefault(); }
       else if (e.key === 'Escape') { rwChatClose(); e.preventDefault(); }
     });
     RWC.inp.addEventListener('keyup', function (e) { e.stopPropagation(); });
@@ -11511,6 +11516,7 @@ Object.assign(EN, {
     }
     if (d.seats) c.seats = d.seats.slice(0, carSeatsOf(c).length);
     if (d.am !== undefined) c.am = d.am | 0;
+    if (d.y !== undefined && isFinite(+d.y)) c.srvY = +d.y;
     if (CAR.mine !== c || d.force) { c.x = +d.x; c.y = +d.y; c.z = +d.z; c.yaw = +d.yaw || 0; c.tgt = null; }
     carPlace(c);
     return c;
@@ -12188,8 +12194,9 @@ Object.assign(EN, {
       if (CAR.mine === c) P.yaw += dy * f;
       carPlace(c);
     } else {   // nobody flies it: it comes down and settles
-      var gy = heliGround(c.x, c.z, c.y);
-      if (c.y > gy + 0.01) { c.vy = (c.vy || 0) - 9.8 * dt; c.y = Math.max(gy, c.y + c.vy * dt); if (c.y <= gy) { c.vy = 0; if (gtime > 3) sfx('thud', { x: c.x, z: c.z }); } }
+      var gy = heliGround(c.x, c.z, Math.max(c.y, c.srvY === undefined ? -1e9 : c.srvY));   // update 108: never sink below where it was parked
+      if (c.y < gy - 0.01) { c.y = gy; c.vy = 0; }
+      else if (c.y > gy + 0.01) { c.vy = (c.vy || 0) - 9.8 * dt; c.y = Math.max(gy, c.y + c.vy * dt); if (c.y <= gy) { c.vy = 0; if (gtime > 3) sfx('thud', { x: c.x, z: c.z }); } }
       else { c.y = gy; c.vy = 0; }
       c.p *= 1 - Math.min(1, dt * 3); c.r *= 1 - Math.min(1, dt * 3); c.tgt = null;
       carPlace(c);
@@ -12286,7 +12293,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 107;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 109;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -15651,6 +15658,79 @@ Object.assign(EN, {
       p.x += s.dir.x * dist; p.y += s.dir.y * dist; p.z += s.dir.z * dist;
       if (Math.hypot(p.x - P.x, p.z - P.z) < 0.7 && p.y > P.y && p.y < P.y + 1.9) { scene.remove(s.m); TANK.fx.splice(i, 1); tankBoom(p, false); }
     }
+  }
+
+  /* ---- update 108: never stuck inside a wall or under a floor ----
+     If your body is inside a building part for a moment (for example the buildings arrived after you, when the server came
+     back from a backup, and you dropped under your own floor), you are lifted onto the floor above, or moved to the nearest
+     free spot. Typing /stuck (or /卡住) in the chat does it at once. */
+  var STK = { t: 0 };
+  function rwBodyHit(x, y, z, r) {   // a building part (or a rock of the map) where a body at x,y,z would be
+    for (var i = 0; i < blockers.length; i++) {
+      var b = blockers[i];
+      if (x + r <= b.minX || x - r >= b.maxX || z + r <= b.minZ || z - r >= b.maxZ) continue;
+      if (y + 0.3 > b.minY + 0.02 && y + 0.3 < b.maxY - 0.05) return b;   // feet level
+      if (y + 1.3 > b.minY && y + 1.3 < b.maxY) return b;                 // chest level
+    }
+    return null;
+  }
+  function rwUnstick(force) {
+    if (!RW.on || RW.dead || CAR.mine) return false;
+    if (!force && !rwBodyHit(P.x, P.y, P.z, 0.25)) return false;
+    var up = groundAt(P.x, P.z, P.y + 3.4);   // the top of whatever you are in, if it is a floor you can stand on
+    if (up > P.y + 0.15 && !rwBodyHit(P.x, up, P.z, 0.3)) { P.y = up; P.vy = 0; return true; }
+    for (var r = 0.6; r <= 9; r += 0.6) {
+      for (var a = 0; a < 16; a++) {
+        var an = a / 16 * 6.283, x = P.x + Math.cos(an) * r, z = P.z + Math.sin(an) * r;
+        var y = groundAt(x, z, P.y + 3.4); if (rwH(x, z) < RW_SEA - 1.2) continue;
+        if (Math.abs(y - P.y) > 3.6 || rwBodyHit(x, y, z, 0.36)) continue;
+        P.x = x; P.z = z; P.y = y; P.vy = 0; RW.px = x; RW.pz = z; return true;
+      }
+    }
+    return false;
+  }
+  function rwStuckTick(dt) {
+    if (!RW.on || RW.dead || CAR.mine || state !== 'playing') { STK.t = 0; return; }
+    if (rwBodyHit(P.x, P.y, P.z, 0.25)) { STK.t += dt; if (STK.t > 0.35) { STK.t = 0; if (rwUnstick(false)) banner(zt('你卡在建筑里了，已经把你移出来', 'You were stuck inside a building - moved you out'), 1800); } }
+    else STK.t = 0;
+  }
+
+  /* ---- update 109: spiral stairs (旋转楼梯) - one tile, a full turn round a pole up to the next floor ---- */
+  RWB.ss = { c: { wood: 75 }, n: ['旋转楼梯', 'Spiral Stairs'] };
+  RWB_SVG.ss = '<circle cx="24" cy="24" r="17" fill="none" stroke="#5a4632" stroke-width="2"/><circle cx="24" cy="24" r="3.5" fill="#5a4632"/>' +
+    [0, 1, 2, 3, 4, 5, 6, 7].map(function (i) { var a = i / 8 * 6.283, a2 = a + 0.62; return '<path d="M' + (24 + Math.cos(a) * 4).toFixed(1) + ' ' + (24 + Math.sin(a) * 4).toFixed(1) + 'L' + (24 + Math.cos(a) * 17).toFixed(1) + ' ' + (24 + Math.sin(a) * 17).toFixed(1) + 'L' + (24 + Math.cos(a2) * 17).toFixed(1) + ' ' + (24 + Math.sin(a2) * 17).toFixed(1) + 'L' + (24 + Math.cos(a2) * 4).toFixed(1) + ' ' + (24 + Math.sin(a2) * 4).toFixed(1) + 'Z" fill="' + (i % 2 ? '#8a6a4a' : '#a5825c') + '"/>'; }).join('');
+  (function () {
+    var i = RWB_ORDER.indexOf('st'); if (RWB_ORDER.indexOf('ss') < 0) RWB_ORDER.splice(i < 0 ? RWB_ORDER.length : i + 1, 0, 'ss');
+    var G = RWB_GROUPS[0][1], j = G.indexOf('st'); if (G.indexOf('ss') < 0) G.splice(j < 0 ? G.length : j + 1, 0, 'ss');
+  })();
+  function rwSpiralGeo(r, seed) {
+    var pos = [], nor = [], uvs = [], ou = seed ? rwHash(seed, 3, 11) : 0, ov = seed ? rwHash(seed, 5, 13) : 0;
+    var M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), S1 = new THREE.Vector3(1, 1, 1), Y = new THREE.Vector3(0, 1, 0);
+    function put(w, h, d, x, y, z, yaw, tiltZ) {
+      var g = rwTexBox(w, h, d, ou, ov);
+      if (tiltZ) g.rotateZ(tiltZ);
+      Q.setFromAxisAngle(Y, yaw || 0); M4.compose(V.set(x, y, z), Q, S1); g.applyMatrix4(M4);
+      var ng = g.toNonIndexed(), pa = ng.attributes.position.array, na = ng.attributes.normal.array, ua = ng.attributes.uv.array, i;
+      for (i = 0; i < pa.length; i++) { pos.push(pa[i]); nor.push(na[i]); }
+      for (i = 0; i < ua.length; i++) uvs.push(ua[i]);
+      g.dispose(); ng.dispose();
+    }
+    put(0.26, 3.1, 0.26, 0, 1.55, 0, 0);   // the centre pole
+    var a0 = r * Math.PI / 2, R = 1.32;
+    for (var i = 0; i < 12; i++) {
+      var a = a0 + i * Math.PI / 6, top = (i + 1) * 0.25, cx = Math.cos(a), cz = Math.sin(a);
+      put(1.22, 0.09, 0.62, cx * 0.74, top - 0.045, cz * 0.74, -a);          // the tread: long side pointing out from the pole
+      put(1.1, 0.16, 0.1, cx * 0.74, top - 0.17, cz * 0.74, -a);             // a bearer under it
+      put(0.06, 1.0, 0.06, cx * R, top + 0.45, cz * R, -a);                  // handrail post
+      var an = a + Math.PI / 6, mx = (Math.cos(a) + Math.cos(an)) / 2 * R, mz = (Math.sin(a) + Math.sin(an)) / 2 * R, chord = 2 * R * Math.sin(Math.PI / 12);
+      put(chord + 0.04, 0.06, 0.07, mx, top + 0.95 + 0.125, mz, -(a + Math.PI / 12) - Math.PI / 2, Math.atan2(0.25, chord));   // the rail rises to the next post
+    }
+    var G = new THREE.BufferGeometry();
+    G.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    G.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    G.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    G.computeBoundingSphere();
+    return G;
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
