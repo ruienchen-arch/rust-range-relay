@@ -80,7 +80,7 @@ function worldJoin(c, m) {
   if (!world.auth || !world.clients.has(world.auth) || Date.now() - (world.clients.get(world.auth).alast || 0) > AUTH_QUIET) world.auth = c.id;
   c.send(JSON.stringify({ op: 'world-welcome', id: c.id, now: Date.now(), seed: worldSeed(), season: seasonNow(), size: WORLD_SIZE, name: c.name, peers, names, auth: world.auth, nodes: dmg, me: c.owner, save: c.owner[0] !== 'c' ? players[c.owner] || null : null, chat: chatLog, builds: [...builds.values()].map(pub), drops: [...world.drops.values()].map(dropPub), cars: [...cars.values()].map(carPub), ev: eventsFor() }));
   setTimeout(() => { if (!c.closed) raidsOnJoin(c); }, 3000);
-  teamSeed(); leadSeed(); giftSeed(); setTimeout(() => { if (!c.closed) { giftSend(c); richSend(c); } }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); teamHist(c.owner); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
+  teamSeed(); leadSeed(); giftSeed(); setTimeout(() => { if (!c.closed) { giftSend(c); richSend(c); skinSend(c); } }, 5000); teamBoard(); { const t0 = teamOf(c.owner); if (t0) teamAccess(t0, true); teamSendAll(t0 || [c.owner]); teamHist(c.owner); const iv = invites.get(c.owner); if (iv && Date.now() < iv.exp) setTimeout(() => { if (!c.closed) teamSend(c.owner, 'got', iv.n); }, 4000); }   // after the island has loaded on their side
   setTimeout(() => bkSend(c, true), 3000);
   setTimeout(() => wbSendAll(true), 4000);
   for (const o of world.clients.values()) if (o !== c) o.send(JSON.stringify({ op: 'peer-joined', id: c.id, name: c.name }));
@@ -211,7 +211,9 @@ function cleanSave(s) {
   if (Array.isArray(s.mk)) o.mk = s.mk.filter((m) => Array.isArray(m) && num(m[0], WORLD_SIZE * 2) !== null && num(m[1], WORLD_SIZE * 2) !== null).slice(0, 6).map((m) => [Math.round(+m[0]), Math.round(+m[1])]);   // map markers
   for (const it of s.inv) o.inv.push(cleanSlot(it) || 0);
   if (s.wm) o.wm = 1;
-  if (s.vit) o.vit = int(s.vit, 0, 3);   // Vitality used (max HP +20 each)
+  if (s.vit) o.vit = int(s.vit, 0, 3);
+  if (Array.isArray(s.sko)) o.sko = s.sko.filter((id) => typeof id === 'string' && /^[a-z0-9_]{2,40}$/.test(id) && !/^(ex|lim)_/.test(id)).slice(0, 400);   // update 122: skins you bought
+  if (s.ske && typeof s.ske === 'object') { o.ske = {}; Object.keys(s.ske).slice(0, 40).forEach((k) => { if (/^[a-z0-9]{1,10}$/.test(k) && typeof s.ske[k] === 'string' && /^[a-z0-9_]{0,40}$/.test(s.ske[k])) o.ske[k] = s.ske[k]; }); }   // and which one is on each weapon   // Vitality used (max HP +20 each)
   if (Array.isArray(s.wl) && s.wl.length <= 24) o.wl = s.wl.map((v) => int(v, 1, 20));   // weapon upgrade levels
   if (Array.isArray(s.wp) && s.wp.length <= 24) o.wp = s.wp.map((a) => (Array.isArray(a) ? a.filter((id) => typeof id === 'string' && /^[a-z0-9_]{1,20}$/i.test(id)).slice(0, 3) : []));
   if (s.dead) { o.dead = 1; return o; }
@@ -540,7 +542,7 @@ function worldTeam(c, m) {
 // ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
 const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
 // GIFT_SEED="name:item:count[:batch];..." - each line is given once. A new batch name gives the same thing again.
-const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:atur:10:b6;ryan:rhatchet:1:b7' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:atur:10:b6;ryan:rhatchet:1:b7;ryan:rhatchet:1:b8' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
 // GIFT_STOP="atur" - items that are no longer given: anything of these still waiting to be handed out is dropped
 const GIFT_STOP = (process.env.GIFT_STOP === undefined ? 'atur;tank;heli' : process.env.GIFT_STOP).split(/[;,+]/).map((x) => x.trim()).filter(Boolean);
 const giftOk = (id, k) => !GIFT_STOP.includes(String(id)) || (!!k && GIFT_SEED.some((g) => (g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : '')) === k));   // update 115: a stopped item is still given when this very line is in GIFT_SEED (Ryan's 10 turrets)
@@ -572,6 +574,12 @@ setInterval(() => {   // the time is up: tell everyone online who had them
   for (const c of world.clients.values()) if (isRichTemp(c.owner)) richSend(c);
   if (!on) console.log('temporary endless coins ended');
 }, 30000);
+// update 122: Limited / Exclusive skins (ids starting lim_ / ex_) and who has them: SKIN_GRANTS="ex_stormfang:ryan;lim_s1_g1:name+name"
+const SKIN_GRANTS = {};
+(process.env.SKIN_GRANTS === undefined ? 'ex_stormfang:ryan' : process.env.SKIN_GRANTS).split(';').forEach((g) => { const p = g.split(':'); if (p.length === 2 && /^(ex|lim)_[a-z0-9_]{1,30}$/.test(p[0].trim())) SKIN_GRANTS[p[0].trim()] = p[1].split(/[,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean); });
+const skinLocked = (id) => /^(ex|lim)_/.test(id);
+const skinsOf = (o) => Object.keys(SKIN_GRANTS).filter((id) => SKIN_GRANTS[id].some((n) => boundOwner(n) === o));
+function skinSend(c) { if (!c.closed && c.owner) c.send(JSON.stringify({ t: 'RSKN', g: skinsOf(c.owner) })); }
 function richSend(c) {
   if (c.closed) return; richNote(c.owner);
   const on = isRich(c.owner), m = { t: 'RRICH', on: on ? 1 : 0 };
@@ -580,6 +588,7 @@ function richSend(c) {
 }
 function giftSeed() {
   for (const n of RICH_NAMES.concat(richTempOn() ? RICH_TEMP_NAMES : [])) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
+  for (const id in SKIN_GRANTS) for (const n of SKIN_GRANTS[id]) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) skinSend(c); }   // update 122
   for (const o in gifts) { const q = gifts[o].filter((x) => giftOk(x.id, x.k)); if (q.length !== gifts[o].length) { console.log('gift stopped for ' + o); saveGifts(); } if (q.length) gifts[o] = q; else delete gifts[o]; }
   for (const g of GIFT_SEED) {
     const key = g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : ''); if (giftDone[key]) continue;
@@ -1459,6 +1468,10 @@ function onMessage(c, text) {
   if (c.world && (m.t === 'Bq' || m.t === 'Bp' || m.t === 'Bt' || m.t === 'Bl' || m.t === 'Bc')) { worldCont(c, m); return; }
   const to = m.to; delete m.to;
   m.i = c.id;
+  if (m.t === 's' && typeof m.hk === 'string' && m.hk.indexOf('#') > 0) {   // update 122: a Limited / Exclusive skin only shows for the people who have it
+    const sk = m.hk.slice(m.hk.indexOf('#') + 1);
+    if (!/^[a-z0-9_]{1,40}$/.test(sk) || (skinLocked(sk) && !skinsOf(c.owner || '').includes(sk))) m.hk = m.hk.slice(0, m.hk.indexOf('#'));
+  }
   const out = J(m);
   const live = m.t === 's' || m.t === 'f' || m.t === 'Ce';
   if (c.world && (m.t === 's' || m.t === 'f') && to === undefined) {   // area of interest
