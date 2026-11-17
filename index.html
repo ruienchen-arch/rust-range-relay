@@ -7915,7 +7915,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt); tankFxTick(dt); rwStuckTick(dt); rwToolLookTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt); tankFxTick(dt); rwStuckTick(dt); rwToolLookTick(dt); rwRyanRemoteTick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -12287,7 +12287,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 120;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 121;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -16580,6 +16580,57 @@ Object.assign(EN, {
     var t = humCopy(T, false);
     hid.forEach(function (o) { o.visible = false; }); if (dc) dc.visible = !ry; if (ry) ry.visible = true;
     return t;
+  }
+
+  /* ---- update 121: Stormfang stays with Ryan ----
+     It cannot be dropped, put in a box, recycled or sold, and it is not in the bag you leave when you die: it stays in
+     your backpack through death and respawn (and through a refresh while dead). Other players see it in your hand,
+     now with its colours, glow and circling crystals moving for them too. */
+  function rwBound(s) { return !!(s && s.id === 'rhatchet'); }
+  function rwBoundDeny() { sfx('deny'); banner(zt('雷霆龙斧和你绑定，不能丢掉', 'Stormfang is bound to you and cannot be dropped'), 1600); }
+  RW.keep = [];
+  var rwDropSlot0 = rwDropSlot;
+  rwDropSlot = function (i, one) { if (rwBound(RW.inv[i])) { rwBoundDeny(); return; } return rwDropSlot0(i, one); };
+  var rwContPut0 = rwContPut;
+  rwContPut = function (i) { if (rwBound(RW.inv[i])) { rwBoundDeny(); return; } return rwContPut0(i); };
+  var rwRecycle0 = rwRecycle;
+  rwRecycle = function (id, all) { if (id === 'rhatchet') { rwBoundDeny(); return; } return rwRecycle0(id, all); };
+  var rwDropOnDeath0 = rwDropOnDeath;
+  rwDropOnDeath = function () {
+    var keep = [];
+    for (var i = 0; i < RW_SLOTS; i++) if (rwBound(RW.inv[i])) { keep.push(RW.inv[i]); RW.inv[i] = null; }
+    RW.keep = RW.keep.concat(keep);
+    rwDropOnDeath0();
+  };
+  var rwSaveState0 = rwSaveState;
+  rwSaveState = function () {
+    var s = rwSaveState0();
+    if (RW.dead && s && Array.isArray(s.inv)) {   // dead: the bound things are still yours when you come back
+      var list = RW.keep.slice(); RW.inv.forEach(function (o) { if (rwBound(o)) list.push(o); });
+      list.forEach(function (o) { var j = s.inv.indexOf(0); if (j >= 0) s.inv[j] = rwItemArr(o); });
+    }
+    return s;
+  };
+  var rwInvReset0 = rwInvReset;
+  rwInvReset = function (fresh) {
+    var keep = fresh ? [] : RW.keep.slice();
+    if (!fresh) RW.inv.forEach(function (o) { if (rwBound(o)) keep.push(o); });
+    RW.keep = [];
+    rwInvReset0(fresh);
+    keep.forEach(function (o) { if (!rwCount(o.id)) rwGive(o.id, 1, o.u); });
+    if (keep.length) rwInvChanged();
+  };
+  // other players' copies move too
+  var RYW = [];
+  var ryanAxe0 = ryanAxe;
+  ryanAxe = function (world) { var g = ryanAxe0(world); if (world) { RYW.push(g); if (RYW.length > 40) RYW.shift(); } return g; };
+  function rwRyanRemoteTick(dt) {
+    for (var i = RYW.length - 1; i >= 0; i--) {
+      var g = RYW[i], p = g, inScene = false;
+      while (p) { if (p === scene) { inScene = true; break; } p = p.parent; }
+      if (!inScene) { if (g.userData.seenOut > 3) RYW.splice(i, 1); else g.userData.seenOut = (g.userData.seenOut || 0) + dt; continue; }
+      g.userData.seenOut = 0; ryanAxeAnim(g, dt, false);
+    }
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable

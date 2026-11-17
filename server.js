@@ -164,7 +164,7 @@ const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw
 const HP = { aa: 1500, at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 5000;   // update 82: 5000 parts per player (was 1500)
 const TC_RANGE = 25;
-const ITEM_RE = /^(wood|stone|metal|frags|cloth|meat|cooked|bandage|satchel|c4|box|furnace|tc|sbag|rock|hatchet|pickaxe|plan|hammer|medkit|armor|adren|ammo|vital|lock|bench|campfire|lbox|barri|spikes|mine|trap|lantern|chair|table|rug|hwall|hswall|hgate|car|heli|sign|rowboat|rhib|arrow|spear|machete|apis|arif|ashot|arkt|parts|atur|gtrap|clay|aad|carpet|carpet2|kcg|kcb|kcr|g[0-9]{1,2})$/;
+const ITEM_RE = /^[a-z][a-z0-9_]{1,15}$/;   // update 121: any item id (a fixed list kept missing new items - scopes, tanks, tank shells, Stormfang - and the server copy of backpacks, boxes and bags silently lost them)
 const builds = new Map();
 let buildSeq = 0, buildSeed = '', buildT = null;
 function maxHp(k, g) { return HP[k] || [250, 500, 1000][g | 0] || 250; }
