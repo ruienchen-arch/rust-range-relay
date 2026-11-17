@@ -4165,7 +4165,7 @@ Object.assign(EN, {
     var tb = [['guns', '枪械'], ['scopes', '倍镜'], ['heal', '回复'], ['supply', '弹药与投掷']];
     tb.splice(2, 0, ['gunup', '枪械升级']);
     if (siege) { tb.push(['fort', '守城']); tb.push(['upg', '升级']); }
-    if (RW.on) tb.push(['sell', '收购']);
+    if (RW.on) { tb.push(['mats', '材料']); tb.push(['toolup', '工具外观']); tb.push(['sell', '收购']); }
     return tb;
   }
   function ammoPrice(d) { return Math.round(d.price * 0.12 + 30); }
@@ -4206,6 +4206,10 @@ Object.assign(EN, {
       });
     } else if (shopTab === 'sell') {
       h += rwSellHtml();
+    } else if (shopTab === 'mats' && RW.on) {
+      h += rwMatShopHtml();
+    } else if (shopTab === 'toolup' && RW.on) {
+      h += rwToolUpHtml();
     } else if (shopTab === 'gunup') {
       h += gunUpHtml();
     } else if (shopTab === 'scopes' && RW.on) {
@@ -4258,6 +4262,8 @@ Object.assign(EN, {
   function buy(kind, i) {
     if (kind === 'sell') { rwSell(i); renderShop(); return; }
     if (kind === 'ammo') { rwBuyAmmo(i); renderShop(); return; }
+    if (kind === 'mbuy') { rwBuyMat(i); renderShop(); return; }
+    if (kind === 'tlook') { rwToolUp(i); renderShop(); return; }
     if (kind === 'twr' || kind === 'twrx') {
       if (!siege || !towers[i]) return;
       if (kind === 'twrx') assignTower(i, -1);
@@ -7909,7 +7915,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt); tankFxTick(dt); rwStuckTick(dt);
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt); tankFxTick(dt); rwStuckTick(dt); rwToolLookTick();
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -10482,28 +10488,10 @@ Object.assign(EN, {
     } else if (n.kind === 'crate') {
       var tier = n.tier || '';
       if (dead) { rwBoxB(B, n.x, n.y, n.z, 0.9, 0.14, 0.9, [0.28, 0.3, 0.22]); return; }
-      if (tier === 'locked') {   // hackable locked crate: big orange case with a black lid and a keypad screen
-        rwBoxB(B, n.x, n.y, n.z, 1.8, 0.85, 1.0, [0.86, 0.42, 0.1]); rwBoxB(B, n.x, n.y + 0.85, n.z, 1.86, 0.14, 1.06, [0.12, 0.12, 0.12]);
-        rwBoxB(B, n.x, n.y + 0.35, n.z + 0.51, 0.5, 0.3, 0.04, [0.1, 0.25, 0.12]); rwBoxB(B, n.x - 0.7, n.y + 0.2, n.z, 0.12, 0.5, 1.04, [0.15, 0.15, 0.15]); rwBoxB(B, n.x + 0.7, n.y + 0.2, n.z, 0.12, 0.5, 1.04, [0.15, 0.15, 0.15]);
-      } else if (tier === 'elite') {   // elite crate: long dark green-grey box, orange bands, lid handles
-        rwBoxB(B, n.x, n.y, n.z, 1.5, 0.75, 0.85, [0.2, 0.24, 0.22]); rwBoxB(B, n.x, n.y + 0.75, n.z, 1.56, 0.1, 0.9, [0.14, 0.16, 0.15]);
-        rwBoxB(B, n.x - 0.5, n.y + 0.2, n.z, 0.1, 0.45, 0.88, [0.95, 0.42, 0.1]); rwBoxB(B, n.x + 0.5, n.y + 0.2, n.z, 0.1, 0.45, 0.88, [0.95, 0.42, 0.1]);
-        rwBoxB(B, n.x, n.y + 0.85, n.z, 0.3, 0.05, 0.12, [0.6, 0.6, 0.6]);
-      } else if (tier === 'mil') {   // military crate: olive with yellow stencil band
-        rwBoxB(B, n.x, n.y, n.z, 1.3, 0.7, 0.8, [0.3, 0.36, 0.22]); rwBoxB(B, n.x, n.y + 0.7, n.z, 1.36, 0.1, 0.86, [0.22, 0.27, 0.16]);
-        rwBoxB(B, n.x, n.y + 0.28, n.z, 1.33, 0.12, 0.83, [0.88, 0.76, 0.2]);
-      } else {
-        rwBoxB(B, n.x, n.y, n.z, 1.0, 0.85, 1.0, [0.3, 0.38, 0.24]); rwBoxB(B, n.x, n.y + 0.85, n.z, 1.06, 0.1, 1.06, [0.22, 0.28, 0.18]);
-        rwBoxB(B, n.x, n.y + 0.3, n.z, 1.04, 0.14, 1.04, [0.9, 0.75, 0.15]);
-      }
+      rwCrateB(B, n);   // update 118: the detailed models
     } else if (n.kind === 'barrel') {   // roadside loot barrel: blue or yellow oil drum with ribs
       if (dead) { rwBlobB(B, n.x, n.y, n.z, 0.45, 0.12, 0.45, [0.22, 0.24, 0.26], rg, 0.3); return; }
-      var bc = n.v < 0.5 ? [0.16, 0.33, 0.6] : [0.82, 0.62, 0.12];
-      rwFrustumB(B, n.x, n.y, n.z, 0.36, 0.36, 1.05, 12, bc, [bc[0] * 0.8, bc[1] * 0.8, bc[2] * 0.8]);   // closed top (it used to be open and looked cut in half)
-      rwFrustumB(B, n.x, n.y + 0.3, n.z, 0.38, 0.38, 0.06, 12, [bc[0] * 0.7, bc[1] * 0.7, bc[2] * 0.7]);
-      rwFrustumB(B, n.x, n.y + 0.72, n.z, 0.38, 0.38, 0.06, 12, [bc[0] * 0.7, bc[1] * 0.7, bc[2] * 0.7]);
-      rwFrustumB(B, n.x, n.y + 1.05, n.z, 0.34, 0.34, 0.03, 12, [0.25, 0.26, 0.27], [0.3, 0.31, 0.32]);
-      rwBoxB(B, n.x + 0.16, n.y + 1.07, n.z, 0.08, 0.03, 0.08, [0.15, 0.15, 0.15]);   // bung
+      rwBarrelB(B, n);   // update 118
     }
   }
 
@@ -12298,7 +12286,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 115;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 118;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -14184,7 +14172,10 @@ Object.assign(EN, {
         return { g: wrap, two: len > 0.35 };
       }
       if (d && d.tool && VM.tools[d.tool]) {
-        var t = humCopy(VM.tools[d.tool], false), tw = new THREE.Group(); tw.add(t);
+        var dcv = VM.tools[d.tool].userData.deco; if (dcv) dcv.visible = false;   // update 117: not my own tool's decorations...
+        var t = humCopy(VM.tools[d.tool], false), tw = new THREE.Group(); tw.add(t); toolLook(t, lvR, true);
+        if (dcv) dcv.visible = true;
+        if (/^(rock|hatchet|pickaxe|hammer|spear|machete)$/.test(d.tool)) toolDeco(t, d.tool, lvR, true);   // ...but the ones of ITS level
         humFit(tw, d.tool === 'rock' ? 0.16 : d.tool === 'plan' ? 0.3 : d.tool === 'spear' ? 1.5 : 0.62);
         return { g: tw, two: false, tool: d.tool };
       }
@@ -14333,6 +14324,7 @@ Object.assign(EN, {
       if (RWI[s.id].gun !== undefined && s.u && s.u.l > 1) {   // update 95: an upgraded gun shows its level and traits to everyone
         return s.id + '~' + Math.min(9, s.u.l) + (s.u.p || []).map(function (id) { var k = PERKS.findIndex(function (q) { return q.id === id; }); return k >= 0 && k < 26 ? String.fromCharCode(97 + k) : ''; }).join('');
       }
+      if (RWI[s.id].tool && s.u && s.u.l > 1) return s.id + '~' + Math.min(9, s.u.l);   // update 116: a tool shows its look level
       return s.id;
     } catch (e) { return 'gun'; }
   }
@@ -15869,6 +15861,537 @@ Object.assign(EN, {
     }
     if (!quiet) rwInvChanged();
     return true;
+  }
+
+  /* ---- update 116: the Outpost sells materials, and tools can be upgraded for looks ----
+     - Materials tab: wood, stone, metal ore, metal fragments and cloth for coins. Every price is well above what the
+       Outpost pays for the same thing, so buying and selling back never makes coins.
+     - Tool looks tab: a tool (rock, hatchet, pickaxe, hammer, spear, machete) goes up to level 9. The level only
+       changes how it looks - colour of the head, the handle and the bindings, a glow at the top levels - and nothing
+       about how it works. The level is stored on that very tool (u.l), like a gun's, so it travels with it. */
+  var RW_MAT_SHOP = [['wood', 100, 30], ['wood', 1000, 280], ['stone', 100, 40], ['stone', 1000, 380], ['metal', 100, 100], ['metal', 1000, 950], ['frags', 100, 150], ['frags', 1000, 1400], ['cloth', 20, 60], ['cloth', 100, 280]];
+  function rwMatShopHtml() {
+    var h = '<div class="shrow"><div><b>' + zt('材料', 'Materials') + '</b><small>' + zt('买的材料直接放进背包。', 'Bought materials go straight into your backpack.') + '</small></div></div>';
+    RW_MAT_SHOP.forEach(function (q, i) {
+      h += '<div class="shrow"><div><b>' + rwIN(q[0]) + ' ×' + q[1] + '<em>' + zt('背包 ×', 'have ×') + rwCount(q[0]) + '</em></b><small>' + zt('每 100 个 ' + Math.round(q[2] * 100 / q[1]) + ' 金币', Math.round(q[2] * 100 / q[1]) + ' coins per 100') + '</small></div><button type="button" class="buy" data-k="mbuy" data-i="' + i + '"' + (coins >= q[2] ? '' : ' disabled') + '>' + tf('购买 {0}', q[2]) + '</button></div>';
+    });
+    return h;
+  }
+  function rwBuyMat(i) {
+    var q = RW_MAT_SHOP[i]; if (!q || coins < q[2]) return;
+    var left = rwGive(q[0], q[1]);
+    if (left >= q[1]) { banner(zt('背包满了', 'Inventory full'), 1200); return; }
+    if (left > 0) { rwTake(q[0], q[1] - left, true); rwInvChanged(); banner(zt('背包放不下这么多', 'Not enough room in your backpack'), 1200); return; }
+    coins -= q[2]; sfx('coins'); rwSaveSoon();
+  }
+  // ---- tool looks
+  var TL_PRICE = [0, 0, 150, 300, 500, 800, 1200, 1800, 2600, 3600];   // price of reaching level n
+  var TL_NAME = [null, ['普通', 'Plain'], ['青铜', 'Bronze'], ['黑铁', 'Black Iron'], ['钢蓝', 'Blued Steel'], ['翡翠', 'Jade'], ['赤红', 'Crimson'], ['紫晶', 'Amethyst'], ['冰钻', 'Ice Diamond'], ['黄金', 'Gold']];
+  // per level: [head, head highlight, trim, handle, handle dark, glow]
+  var TL_COL = [null, null,
+    [0xb07a3a, 0xd8a25a, 0x5a3a1a, 0x6a4526, 0x4a2e18, 0],
+    [0x50555a, 0x7a8086, 0x2a1a10, 0x3a2414, 0x2a1a0e, 0],
+    [0x3f6aa8, 0x7aa8e0, 0x1c1c22, 0x26262c, 0x18181c, 0],
+    [0x2fa070, 0x7ad8a8, 0xc8a050, 0x3a2616, 0x2a1a0e, 0x08301c],
+    [0xc0302c, 0xff6a5a, 0x1a1a1a, 0x222222, 0x141414, 0x300808],
+    [0x8a4fd0, 0xc89aff, 0xd8d8e0, 0x2a1a3a, 0x1c1028, 0x2a1050],
+    [0x8fe6ff, 0xe0faff, 0xc8ccd2, 0xb0b6be, 0x8a9098, 0x1a6080],
+    [0xf2c443, 0xfff0a0, 0x8a1a1a, 0x2a1a0a, 0x1a1006, 0x6a4a00]];
+  var TL_MATS = {};
+  (function () { for (var k in VMM) VMM[k].userData.lk = k; })();
+  function toolLookMat(k, lv) {
+    if (!k || !(lv > 1) || !TL_COL[lv] || !VMM[k] || /^(skin|skinD|sleeve|cuff)$/.test(k)) return VMM[k] || null;
+    var key = k + lv; if (TL_MATS[key]) return TL_MATS[key];
+    var C = TL_COL[lv], m = VMM[k].clone(), col = k === 'steel' || k === 'stone' ? C[0] : k === 'steelL' ? C[1] : k === 'dark' ? C[2] : k === 'wood' ? C[3] : C[4];
+    m.color.setHex(col); m.userData.lk = k;
+    if (/steel|stone/.test(k)) { m.metalness = 0.85; m.roughness = lv >= 8 ? 0.15 : 0.3; if (C[5] && m.emissive) m.emissive.setHex(C[5]); }
+    if (k === 'dark' && lv >= 5 && m.emissive) { m.metalness = 0.7; m.roughness = 0.35; }
+    m.needsUpdate = true;
+    return (TL_MATS[key] = m);
+  }
+  function toolLook(g, lv, world) {   // recolour every part of a tool model for level lv
+    g.traverse(function (o) {
+      if (!o.isMesh || !o.material || !o.material.userData) return;
+      var k = o.material.userData.lk; if (!k) return;
+      var m = toolLookMat(k, lv); if (m) o.material = world ? humWorldMat(m) : m;
+    });
+  }
+  function rwToolUpOk(s) { var d = s && RWI[s.id]; return !!(d && d.tool && VM.tools[d.tool] && /^(rock|hatchet|pickaxe|hammer|spear|machete)$/.test(d.tool)); }
+  function rwToolLookTick() {
+    if (!RW.on) return;
+    var s = rwHeldSlot(), d = s && RWI[s.id];
+    if (!d || !d.tool || !VM.tools[d.tool]) return;
+    var lv = s.u && s.u.l > 1 ? s.u.l : 1, key = d.tool + lv;
+    if (VM.tools[d.tool].lookKey !== key) { VM.tools[d.tool].lookKey = key; toolLook(VM.tools[d.tool], lv, false); }
+  }
+  function rwToolUpHtml() {
+    var h = '<div class="shrow"><div><b>' + zt('工具外观', 'Tool Looks') + '</b><small>' + zt('升级只改变工具的样子（颜色、光泽，最高级会发光），不改变任何属性。最高 9 级，别人也看得见。', 'Upgrades only change how a tool looks (colour, shine, a glow at the top) - nothing about how it works. Up to level 9; other players see it too.') + '</small></div></div>';
+    var any = false;
+    for (var i = 0; i < RW_SLOTS; i++) {
+      var s = RW.inv[i]; if (!rwToolUpOk(s)) continue; any = true;
+      var lv = s.u && s.u.l > 1 ? s.u.l : 1, mx = lv >= 9, pr = mx ? 0 : TL_PRICE[lv + 1], bar = '';
+      for (var k = 1; k <= 9; k++) bar += k <= lv ? '■' : '□';
+      h += '<div class="shrow"><div><b>' + rwIN(s.id) + '<em>Lv' + lv + ' · ' + zt(TL_NAME[lv][0], TL_NAME[lv][1]) + '</em></b><small>' + bar + (mx ? zt('　已满级', '  max level') : zt('　下一级：', '  next: ') + zt(TL_NAME[lv + 1][0], TL_NAME[lv + 1][1])) + (i >= RW_HOT0 ? zt('（快捷栏 ' + (i - RW_HOT0 + 1) + '）', ' (belt ' + (i - RW_HOT0 + 1) + ')') : zt('（背包）', ' (backpack)')) + '</small></div>' +
+        (mx ? '<button type="button" class="buy" disabled>' + zt('满级', 'Max') + '</button>' : '<button type="button" class="buy" data-k="tlook" data-i="' + i + '"' + (coins >= pr ? '' : ' disabled') + '>' + tf('升级 {0}', pr) + '</button>') + '</div>';
+    }
+    if (!any) h += '<div class="shrow"><div><small>' + zt('背包里没有能升级外观的工具（石块、斧头、镐、锤子、石矛、砍刀）。', 'No tool to upgrade in your backpack (rock, hatchet, pickaxe, hammer, spear, machete).') + '</small></div></div>';
+    return h;
+  }
+  function rwToolUp(i) {
+    var s = RW.inv[i]; if (!rwToolUpOk(s)) return;
+    var lv = s.u && s.u.l > 1 ? s.u.l : 1; if (lv >= 9) return;
+    var pr = TL_PRICE[lv + 1]; if (coins < pr) return;
+    coins -= pr; s.u = { l: lv + 1, p: [] };
+    sfx('upgrade'); banner(rwIN(s.id) + ' → Lv' + (lv + 1) + ' ' + zt(TL_NAME[lv + 1][0], TL_NAME[lv + 1][1]), 1500);
+    rwInvChanged(); rwSaveSoon();
+  }
+  EN['材料'] = 'Materials'; EN['工具外观'] = 'Tool Looks';
+
+  /* ---- update 117: tool levels get real looks, not just a new colour ----
+     Every level adds parts to the model: grip wraps, collar and pommel, rivets, a sharpened edge, a back spike,
+     gold inlays and a gem, a tassel, a spiral wrap and spikes, crystal shards and glowing runes, frost spikes and a
+     see-through ice head, and at level 9 gold wings, a big gem, a glow and sparkles circling the head.
+     Still looks only: nothing about how the tool works changes. */
+  // where the parts go on each tool: handle along y (or -z for the spear) from h0 to h1, head centre, head half size,
+  // the side the edge faces (f: -1 = -z) and the length of the head front to back
+  var TL_AN = {
+    hatchet: { ax: 'y', h0: -0.09, h1: 0.3, hd: [0, 0.35, -0.05], hs: [0.013, 0.045, 0.07], fr: -0.125, bk: 0.05 },
+    pickaxe: { ax: 'y', h0: -0.09, h1: 0.42, hd: [0, 0.44, 0], hs: [0.016, 0.03, 0.2], fr: -0.23, bk: 0.2, two: 1 },
+    hammer: { ax: 'y', h0: -0.08, h1: 0.29, hd: [0, 0.32, -0.015], hs: [0.025, 0.027, 0.075], fr: -0.09, bk: 0.065 },
+    machete: { ax: 'y', h0: -0.02, h1: 0.1, hd: [0, 0.33, -0.012], hs: [0.005, 0.21, 0.03], fr: -0.05, bk: 0.02, blade: 1 },
+    spear: { ax: 'z', h0: 0.3, h1: -1.3, hd: [0, 0, -1.46], hs: [0.034, 0.034, 0.1], fr: -1.58, bk: -1.36, spear: 1 },
+    rock: { ax: 'n', hd: [0, 0.05, -0.03], hs: [0.075, 0.064, 0.082] }
+  };
+  var TL_DM = {};
+  function tlMat(hex, o) {   // a decoration material, cached; o: { e: glow colour, op: see-through, mt: metalness, r: roughness, basic }
+    o = o || {}; var key = hex + '|' + (o.e || 0) + '|' + (o.op || 1) + '|' + (o.mt === undefined ? 'd' : o.mt) + '|' + (o.r || 0) + (o.basic ? 'b' : '');
+    if (TL_DM[key]) return TL_DM[key];
+    var m = o.basic ? new THREE.MeshBasicMaterial({ color: hex, fog: false, depthTest: false }) : VMM.steel.clone();
+    if (!o.basic) { m.color.setHex(hex); m.metalness = o.mt === undefined ? 0.8 : o.mt; m.roughness = o.r || 0.3; if (o.e) m.emissive.setHex(o.e); }
+    if (o.op && o.op < 1) { m.transparent = true; m.opacity = o.op; }
+    if (o.basic && o.op) { m.blending = THREE.AdditiveBlending; m.depthWrite = false; }
+    m.userData = {}; m.needsUpdate = true;
+    return (TL_DM[key] = m);
+  }
+  var TL_GLOW = null;
+  function tlGlowTex() {
+    if (TL_GLOW) return TL_GLOW;
+    var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64); TL_GLOW = new THREE.CanvasTexture(c); return TL_GLOW;
+  }
+  function toolDeco(root, tool, lv, world) {
+    var old = root.userData.deco; if (old && old.parent) old.parent.remove(old); root.userData.deco = null;
+    var A = TL_AN[tool]; if (!A || !(lv > 1)) return null;
+    var g = new THREE.Group(); root.add(g); root.userData.deco = g; g.userData.sp = [];
+    var W = function (m) { return world ? humWorldMat(m) : m; };
+    function add(geo, mat, x, y, z, rx, ry, rz, sx, sy, sz, ro) {
+      var m = new THREE.Mesh(geo, W(mat)); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0);
+      if (sx) m.scale.set(sx, sy, sz); m.renderOrder = ro || 23; m.frustumCulled = false; g.add(m); return m;
+    }
+    function box(w, h, d, mat, x, y, z, rx, ry, rz, ro) { return add(gBox(w, h, d), mat, x, y, z, rx, ry, rz, 0, 0, 0, ro); }
+    function at(t) { return A.ax === 'y' ? [0, A.h0 + (A.h1 - A.h0) * t, 0] : [0, 0, A.h0 + (A.h1 - A.h0) * t]; }   // a point up the handle, t 0..1
+    function ring(t, mat, th, w) { var p = at(t); w = w || 0.044; return A.ax === 'y' ? box(w, th || 0.022, w, mat, p[0], p[1], p[2]) : box(w, w, th || 0.022, mat, p[0], p[1], p[2]); }
+    function gem(r, mat, x, y, z) { return add(new THREE.OctahedronGeometry(r, 0), mat, x, y, z, 0, 0.6, 0, 1, 1.3, 1, 24); }
+    function cone(r, h, mat, x, y, z, rx, ry, rz) { return add(new THREE.ConeGeometry(r, h, 5), mat, x, y, z, rx, ry, rz, 0, 0, 0, 24); }
+    function shard(r, h, mat, x, y, z, rx, rz) { return add(new THREE.OctahedronGeometry(r, 0), mat, x, y, z, rx, 0, rz, 1, h / r, 1, 24); }
+    function glow(col, size, x, y, z, op) {
+      var sm = new THREE.SpriteMaterial({ map: tlGlowTex(), color: col, transparent: true, opacity: op || 0.6, depthTest: !!world, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+      var s = new THREE.Sprite(sm); s.position.set(x, y, z); s.scale.set(size, size, size); s.renderOrder = 25; s.frustumCulled = false; g.add(s); g.userData.glow = s; return s;
+    }
+    function sparks(col, n, rad) {
+      for (var i = 0; i < n; i++) {
+        var m = add(new THREE.OctahedronGeometry(0.006 + (i % 3) * 0.002, 0), tlMat(col, { basic: 1, op: 0.95 }), H[0], H[1], H[2], 0, 0, 0, 0, 0, 0, 26);
+        g.userData.sp.push({ m: m, a: i / n * Math.PI * 2, r: rad * (0.8 + (i % 4) * 0.12), s: 1.2 + (i % 3) * 0.5, y: (i % 5 - 2) * 0.02 });
+      }
+    }
+    var H = A.hd, S = A.hs, hasH = A.ax !== 'n';
+    // colours per level: [trim, accent, gem]
+    var leather = tlMat(0x4a2c18, { mt: 0, r: 0.9 }), iron = tlMat(0x3c3f44, { mt: 0.85, r: 0.35 }), silver = tlMat(0xd8dde2, { mt: 0.95, r: 0.15 });
+    var gold = tlMat(0xf2c443, { mt: 1, r: 0.18, e: 0x3a2800 }), bronze = tlMat(0xc08040, { mt: 0.9, r: 0.3 });
+    var trim = [null, null, bronze, iron, silver, gold, tlMat(0x1a1a1a, { mt: 0.6, r: 0.4 }), silver, tlMat(0xbfefff, { mt: 0.9, r: 0.1, e: 0x10404a }), gold][lv];
+    // --- handle: wraps, collar, pommel
+    if (hasH) {
+      var wrap = lv === 6 ? tlMat(0xc0302c, { mt: 0.2, r: 0.6, e: 0x300000 }) : lv === 7 ? tlMat(0x3a1a5a, { mt: 0.2, r: 0.6 }) : lv === 9 ? gold : leather;
+      if (A.blade) { ring(0.25, trim, 0.02, 0.04); ring(0.65, trim, 0.02, 0.04); }
+      else if (lv === 6 || lv === 9) for (var k = 0; k < 7; k++) { var p = at(0.08 + k * 0.1); if (A.ax === 'y') box(0.042, 0.012, 0.042, wrap, p[0], p[1], p[2], 0.35, 0, 0.35); else box(0.042, 0.042, 0.012, wrap, p[0], p[1], p[2], 0, 0.35, 0.35); }
+      else { ring(0.12, wrap, 0.05, 0.04); ring(0.3, wrap, 0.05, 0.04); }
+      if (lv >= 3) {   // collar under the head and a pommel cap
+        ring(A.blade ? 0.98 : 0.97, trim, 0.03, 0.05);
+        var pb = at(-0.02); if (A.ax === 'y') box(0.05, 0.035, 0.05, trim, pb[0], pb[1], pb[2]); else box(0.05, 0.05, 0.035, trim, pb[0], pb[1], pb[2]);
+      }
+      if (lv >= 5 && lv !== 6) {   // a gem in the collar
+        var gc = lv === 5 ? 0x2ad07a : lv === 7 ? 0xc070ff : lv === 8 ? 0x9af6ff : 0xff2a3a, pc = at(A.blade ? 0.98 : 0.97);
+        gem(lv === 9 ? 0.022 : 0.016, tlMat(gc, { mt: 0.3, r: 0.05, e: gc & 0x3f3f3f, op: 0.92 }), pc[0] + 0.028, pc[1], pc[2]);
+      }
+      if (lv === 5) {   // a red tassel hanging from the pommel
+        var pt = at(-0.06), tas = tlMat(0xc02020, { mt: 0, r: 0.9 });
+        for (var q = 0; q < 4; q++) box(0.006, 0.07, 0.006, tas, pt[0] + (q - 1.5) * 0.007, pt[1] - 0.04, pt[2] + (q % 2) * 0.006, 0.15 * (q - 1.5), 0, 0);
+      }
+      if (lv >= 7) {   // glowing runes up the handle
+        var rc = lv === 7 ? 0xd08aff : lv === 8 ? 0x9af6ff : 0xffd84a;
+        for (var r = 0; r < 5; r++) { var pr = at(0.4 + r * 0.11); box(0.006, A.ax === 'y' ? 0.018 : 0.03, A.ax === 'y' ? 0.03 : 0.018, tlMat(rc, { basic: 1, op: 0.9 }), pr[0] + 0.017, pr[1], pr[2], 0, 0, 0, 24); }
+      }
+    }
+    // --- head
+    if (hasH && !A.spear && !A.blade) {
+      if (lv >= 3) {   // rivets on both sides of the head
+        for (var s2 = -1; s2 <= 1; s2 += 2) for (var rv = -1; rv <= 1; rv += 2) gem(0.007, trim === gold ? gold : silver, H[0] + s2 * (S[0] + 0.004), H[1] + rv * S[1] * 0.45, H[2] + (A.two ? rv * 0.05 : 0.01));
+      }
+      if (lv >= 4) {   // a bright sharpened edge
+        var em = lv === 6 ? tlMat(0xff4a3a, { basic: 1, op: 0.95 }) : lv === 8 ? tlMat(0xe8ffff, { basic: 1, op: 0.95 }) : lv >= 7 ? tlMat(lv === 9 ? 0xfff4b0 : 0xe8c8ff, { basic: 1, op: 0.9 }) : silver;
+        box(S[0] * 2 + 0.006, S[1] * 2 + 0.01, 0.01, em, H[0], H[1] - (A.two ? 0.03 : 0), A.fr, A.two ? -0.5 : 0, 0, 0, 24);
+        if (A.two) box(S[0] * 2 + 0.006, S[1] * 2 + 0.01, 0.01, em, H[0], H[1] - 0.03, A.bk, 0.5, 0, 0, 24);
+      }
+      if (lv >= 4 && !A.two) cone(0.014, lv >= 6 ? 0.08 : 0.06, trim === gold ? gold : lv === 6 ? tlMat(0x1a1a1a, { mt: 0.7 }) : silver, H[0], H[1], A.bk + 0.03, Math.PI / 2, 0, 0);   // back spike
+      if (lv === 5 || lv === 9) for (var s3 = -1; s3 <= 1; s3 += 2) box(0.004, S[1] * 1.4, S[2] * 1.3, gold, H[0] + s3 * (S[0] + 0.003), H[1], H[2], 0, 0, 0, 24);   // gold inlay
+      if (lv === 6) for (var sp = 0; sp < 3; sp++) cone(0.01, 0.05, tlMat(0x1a1a1a, { mt: 0.7 }), H[0], H[1] + S[1] + 0.02, H[2] + (sp - 1) * S[2] * 0.6, 0, 0, 0);   // spikes on top
+    }
+    if (A.blade) {   // machete: edge glint, gold spine, guard spikes
+      if (lv >= 4) box(0.004, 0.38, 0.008, lv === 6 ? tlMat(0xff4a3a, { basic: 1, op: 0.95 }) : lv >= 7 ? tlMat(lv === 8 ? 0xe8ffff : lv === 9 ? 0xfff4b0 : 0xe8c8ff, { basic: 1, op: 0.9 }) : silver, 0, 0.33, -0.054, 0, 0, 0, 24);
+      if (lv === 5 || lv === 9) box(0.011, 0.36, 0.006, gold, 0, 0.33, 0.02, 0, 0, 0, 24);
+      if (lv >= 6) for (var gs = -1; gs <= 1; gs += 2) cone(0.008, 0.04, trim, 0, 0.115, gs * 0.04, gs * Math.PI / 2, 0, 0);
+    }
+    if (A.spear) {   // spear: winged blade behind the tip, streamers
+      if (lv >= 4) for (var wsd = -1; wsd <= 1; wsd += 2) box(0.006, 0.05, 0.08, lv === 9 ? gold : silver, 0, wsd * 0.035, -1.36, wsd * 0.4, 0, 0, 24);
+      if (lv === 5 || lv === 6) for (var st = 0; st < 3; st++) box(0.004, 0.012, 0.12, tlMat(lv === 5 ? 0xc02020 : 0x1a1a1a, { mt: 0, r: 0.9 }), (st - 1) * 0.01, -0.03, -1.22, 0.5, 0, 0);
+    }
+    if (!hasH) {   // the rock: metal bands, then studs, crystals and gold
+      add(new THREE.TorusGeometry(0.074, 0.008, 5, 14), trim, H[0], H[1], H[2], Math.PI / 2, 0, 0, 1, 1.12, 0.88);   // a band around it
+      if (lv >= 3) add(new THREE.TorusGeometry(0.07, 0.008, 5, 14), trim, H[0], H[1], H[2], 0, Math.PI / 2, 0, 1.1, 0.9, 1);
+      if (lv >= 5) for (var rs = 0; rs < 4; rs++) gem(0.01, lv === 9 ? tlMat(0xff2a3a, { mt: 0.3, r: 0.05, e: 0x400000 }) : gold, H[0] + Math.cos(rs * 1.57) * S[0], H[1] + 0.03, H[2] + Math.sin(rs * 1.57) * S[2]);
+    }
+    // --- crystals and frost on the head
+    if (lv === 7 || lv === 8) {
+      var cm = lv === 7 ? tlMat(0xb06aff, { mt: 0.2, r: 0.05, e: 0x40108a, op: 0.85 }) : tlMat(0xc8f6ff, { mt: 0.2, r: 0.05, e: 0x206880, op: 0.8 });
+      var n = lv === 7 ? 4 : 6;
+      for (var ci = 0; ci < n; ci++) {
+        var ang = ci / n * Math.PI * 2, ox = Math.cos(ang) * (S[0] + 0.01), oy = Math.sin(ang) * (S[1] + 0.01);
+        if (A.spear) shard(0.012, 0.05, cm, H[0] + Math.cos(ang) * 0.03, H[1] + Math.sin(ang) * 0.03, H[2] + 0.1, Math.PI / 2 + Math.sin(ang) * 0.6, Math.cos(ang) * 0.6);
+        else if (A.blade) shard(0.01, 0.04, cm, 0, 0.18 + ci * 0.06, 0.03, 0.4, 0);
+        else shard(lv === 8 ? 0.01 : 0.013, lv === 8 ? 0.05 : 0.06, cm, H[0] + ox, H[1] + S[1] + 0.012 + (ci % 2) * 0.01, H[2] + (ci - n / 2) * (S[2] * 1.6 / n), (ci - n / 2) * 0.15, ox * 6);
+      }
+    }
+    // --- level 9: gold wings and a big gem
+    if (lv === 9 && hasH && !A.blade) {
+      var big = tlMat(0xff2a3a, { mt: 0.3, r: 0.04, e: 0x500008, op: 0.95 });
+      if (A.spear) { gem(0.02, big, 0, 0, -1.34); for (var wg = -1; wg <= 1; wg += 2) box(0.004, 0.09, 0.05, gold, 0, wg * 0.07, -1.3, wg * 0.7, 0, 0, 24); }
+      else {
+        gem(0.022, big, H[0] + S[0] + 0.012, H[1], H[2] + (A.two ? 0 : 0.01));
+        gem(0.022, big, H[0] - S[0] - 0.012, H[1], H[2] + (A.two ? 0 : 0.01));
+        for (var wi = 0; wi < 3; wi++) for (var wsd2 = -1; wsd2 <= 1; wsd2 += 2)
+          box(0.004, 0.012, 0.07 - wi * 0.015, gold, H[0] + wsd2 * (S[0] + 0.006), H[1] + S[1] + 0.01 + wi * 0.016, (A.two ? 0 : A.bk) + 0.01, -0.5 - wi * 0.25, 0, 0, 24);
+      }
+    }
+    // --- glow and sparkles (levels 7-9)
+    var gl = lv === 7 ? 0xb06aff : lv === 8 ? 0x8fe6ff : lv === 9 ? 0xffc83a : 0;
+    if (gl) {
+      if (lv >= 8) glow(gl, A.spear ? 0.3 : A.blade ? 0.4 : 0.3, H[0], H[1], H[2], lv === 9 ? 0.55 : 0.45);
+      sparks(gl, lv === 9 ? 10 : 6, A.blade ? 0.08 : Math.max(S[2], S[1]) + 0.05);
+    }
+    if (lv === 6 || lv === 5) glow(lv === 6 ? 0xff3a2a : 0x3ad08a, 0.16, H[0], H[1], A.fr === undefined ? H[2] : (A.spear ? H[2] : H[2]), 0.25);
+    return g;
+  }
+  function rwToolDecoAnim(dt) {   // sparkles circle the head, the glow breathes
+    var s = rwHeldSlot(), d = s && RWI[s.id]; if (!d || !d.tool || !VM.tools[d.tool]) return;
+    var g = VM.tools[d.tool].userData.deco; if (!g) return;
+    var t = (gtime || 0), A = TL_AN[d.tool], H = A.hd;
+    g.userData.sp.forEach(function (q) {
+      var a = q.a + t * q.s;
+      if (A.ax === 'z') q.m.position.set(H[0] + Math.cos(a) * q.r * 0.5, H[1] + Math.sin(a) * q.r * 0.5, H[2] + 0.08 + q.y);
+      else if (A.blade) q.m.position.set(H[0] + Math.cos(a) * 0.04, H[1] + Math.sin(a * 0.7) * 0.2, H[2] + Math.sin(a) * 0.04);
+      else q.m.position.set(H[0] + Math.cos(a) * q.r * 0.45, H[1] + q.y + Math.sin(a * 2) * 0.02, H[2] + Math.sin(a) * q.r);
+      var k = 0.6 + 0.4 * Math.sin(t * 6 + q.a * 3); q.m.scale.set(k, k, k);
+    });
+    if (g.userData.glow) g.userData.glow.material.opacity = 0.35 + 0.2 * Math.sin(t * 3);
+  }
+  // the hand model and the look follow the tool in your hand
+  function rwToolLookTick() {
+    if (!RW.on) return;
+    var s = rwHeldSlot(), d = s && RWI[s.id];
+    if (!d || !d.tool || !VM.tools[d.tool]) return;
+    var lv = s.u && s.u.l > 1 ? s.u.l : 1, key = d.tool + lv, T = VM.tools[d.tool];
+    if (T.lookKey !== key) { T.lookKey = key; toolLook(T, lv, false); toolDeco(T, d.tool, rwToolUpOk(s) ? lv : 1, false); }
+    rwToolDecoAnim();
+  }
+
+  /* ---- update 118: better loot barrels and crates ----
+     Built from the same merged boxes and cylinders as the rest of the island (cheap to draw), but with real detail:
+     barrels get rolling hoops, a raised rim, bungs, a hazard label, rust streaks and paint chips (blue, yellow and
+     a red fuel drum); crates get planks, corner posts, metal brackets, latches, handles, stencils, hazard stripes and
+     a keypad on the locked one. Sizes stay the same, so nothing changes about where you can walk or what you hit. */
+  function rwSh(c, k) { return [c[0] * k, c[1] * k, c[2] * k]; }
+  function rwBarrelB(B, n) {
+    var x = n.x, y = n.y, z = n.z, v = n.v, i;
+    var kind = v < 0.42 ? 0 : v < 0.8 ? 1 : 2;   // blue, yellow, red
+    var bc = kind === 0 ? [0.16, 0.33, 0.6] : kind === 1 ? [0.85, 0.64, 0.12] : [0.62, 0.14, 0.1];
+    var R = 0.36, S = 16;
+    rwFrustumB(B, x, y + 0.04, z, R, R, 0.97, S, bc);                                           // the drum
+    rwFrustumB(B, x, y, z, R - 0.01, R + 0.012, 0.04, S, rwSh(bc, 0.62));                        // bottom chime
+    rwFrustumB(B, x, y + 1.0, z, R + 0.012, R + 0.012, 0.05, S, rwSh(bc, 0.7));                   // top rim
+    rwFrustumB(B, x, y + 1.0, z, R - 0.025, R - 0.025, 0.03, S, rwSh(bc, 0.55), rwSh(bc, 0.78));   // the lid, sunk inside the rim
+    [0.3, 0.69].forEach(function (h) { rwFrustumB(B, x, y + h, z, R + 0.022, R + 0.022, 0.05, S, rwSh(bc, 0.78)); rwFrustumB(B, x, y + h + 0.05, z, R + 0.022, R, 0.012, S, rwSh(bc, 0.6)); });   // rolling hoops
+    if (kind === 1) { rwFrustumB(B, x, y + 0.48, z, R + 0.004, R + 0.004, 0.12, S, [0.1, 0.1, 0.1]); }   // a black band on the yellow one
+    if (kind === 0) { rwFrustumB(B, x, y + 0.86, z, R + 0.004, R + 0.004, 0.05, S, [0.88, 0.88, 0.86]); }   // a white band on the blue one
+    // bungs: a big one and a small one on the lid
+    rwFrustumB(B, x + 0.17, y + 1.03, z + 0.05, 0.05, 0.045, 0.035, 8, [0.2, 0.2, 0.21], [0.32, 0.32, 0.33]);
+    rwFrustumB(B, x - 0.19, y + 1.03, z - 0.06, 0.03, 0.028, 0.03, 8, [0.2, 0.2, 0.21], [0.32, 0.32, 0.33]);
+    // the label: a white plate with a hazard diamond, on the side facing +z
+    rwBoxB(B, x, y + 0.42, z + R - 0.01, 0.26, 0.22, 0.03, [0.92, 0.9, 0.84]);
+    var dc = kind === 2 ? [0.9, 0.2, 0.1] : kind === 1 ? [0.95, 0.5, 0.1] : [0.95, 0.85, 0.1];
+    rwBoxB(B, x, y + 0.47, z + R + 0.01, 0.09, 0.09, 0.012, dc); rwBoxB(B, x, y + 0.455, z + R + 0.012, 0.05, 0.12, 0.01, dc); rwBoxB(B, x, y + 0.49, z + R + 0.012, 0.12, 0.05, 0.01, dc);   // a stepped diamond
+    rwBoxB(B, x, y + 0.44, z + R + 0.016, 0.16, 0.012, 0.008, [0.15, 0.15, 0.15]);   // stencil lines
+    rwBoxB(B, x, y + 0.585, z + R + 0.016, 0.2, 0.012, 0.008, [0.15, 0.15, 0.15]);
+    // rust streaks running down from the hoops and paint chips (each barrel a little different)
+    var rs = Math.floor(v * 1000);
+    for (i = 0; i < 4; i++) {
+      var a = ((rs >> i) % 16) / 16 * Math.PI * 2 + i * 1.7, rr = R - 0.006, hh = 0.12 + ((rs >> (i + 2)) % 5) * 0.05;
+      rwBoxB(B, x + Math.cos(a) * rr, y + 0.66 - hh, z + Math.sin(a) * rr, 0.03, hh, 0.03, [0.42, 0.22, 0.1]);
+    }
+    for (i = 0; i < 5; i++) { var a2 = (rs * (i + 3) % 360) / 57.3; rwBoxB(B, x + Math.cos(a2) * (R + 0.005), y + 0.12 + ((rs >> i) % 7) * 0.12, z + Math.sin(a2) * (R + 0.005), 0.05, 0.035, 0.05, rwSh(bc, 0.4)); }
+  }
+  function rwCrateB(B, n) {
+    var x = n.x, y = n.y, z = n.z, tier = n.tier || '', i, j;
+    var steel = [0.38, 0.4, 0.42], dark = [0.12, 0.12, 0.13];
+    if (tier === 'locked') {   // hackable locked crate: an orange case on skids, black lid, warning stripes, keypad and a light
+      var W = 1.8, H = 0.85, D = 1.0, O = [0.88, 0.42, 0.1];
+      rwBoxB(B, x - 0.6, y, z, 0.16, 0.08, D + 0.06, dark); rwBoxB(B, x + 0.6, y, z, 0.16, 0.08, D + 0.06, dark);   // skids
+      rwBoxB(B, x, y + 0.08, z, W, H - 0.08, D, O);
+      for (i = 0; i < 4; i++) rwBoxB(B, x - W / 2 + 0.2 + i * 0.47, y + 0.08, z, 0.05, H - 0.1, D + 0.02, rwSh(O, 0.8));   // ribs
+      for (i = 0; i < 9; i++) rwBoxB(B, x - W / 2 + 0.1 + i * 0.2, y + 0.12, z + D / 2 + 0.005, 0.1, 0.1, 0.012, i % 2 ? dark : [0.95, 0.8, 0.1]);   // warning stripe
+      rwBoxB(B, x, y + H, z, W + 0.06, 0.14, D + 0.06, [0.12, 0.12, 0.12]); rwBoxB(B, x, y + H + 0.14, z, W - 0.2, 0.04, D - 0.2, [0.17, 0.17, 0.18]);   // lid
+      // keypad and screen on the front
+      rwBoxB(B, x, y + 0.3, z + D / 2, 0.56, 0.42, 0.05, [0.14, 0.14, 0.15]);
+      rwBoxB(B, x, y + 0.53, z + D / 2 + 0.025, 0.44, 0.13, 0.01, [0.15, 0.55, 0.25]);
+      for (i = 0; i < 3; i++) for (j = 0; j < 4; j++) rwBoxB(B, x - 0.15 + j * 0.1, y + 0.35 + i * 0.055, z + D / 2 + 0.025, 0.07, 0.04, 0.012, i === 0 && j === 3 ? [0.8, 0.2, 0.15] : [0.55, 0.56, 0.58]);
+      // handles at the ends, a red light and a short antenna on the lid
+      [-1, 1].forEach(function (s) { rwBoxB(B, x + s * (W / 2 + 0.03), y + 0.5, z - 0.25, 0.05, 0.05, 0.05, steel); rwBoxB(B, x + s * (W / 2 + 0.03), y + 0.5, z + 0.25, 0.05, 0.05, 0.05, steel); rwBoxB(B, x + s * (W / 2 + 0.07), y + 0.5, z, 0.04, 0.05, 0.55, steel); });
+      rwFrustumB(B, x + 0.65, y + H + 0.14, z - 0.3, 0.06, 0.05, 0.08, 8, [0.9, 0.12, 0.08], [1, 0.3, 0.2]);
+      rwBoxB(B, x - 0.7, y + H + 0.14, z - 0.35, 0.02, 0.4, 0.02, dark);
+      return;
+    }
+    if (tier === 'elite') {   // elite crate: dark armoured case, orange-and-black hazard bands, latches, a green status light
+      var W2 = 1.5, H2 = 0.75, D2 = 0.85, Bd = [0.2, 0.24, 0.22];
+      rwBoxB(B, x, y, z, W2, H2, D2, Bd);
+      rwBoxB(B, x, y + 0.02, z, W2 + 0.02, 0.06, D2 + 0.02, rwSh(Bd, 0.6));   // base bumper
+      [-1, 1].forEach(function (s) {   // corner bumpers
+        [-1, 1].forEach(function (t) { rwBoxB(B, x + s * (W2 / 2 - 0.04), y, z + t * (D2 / 2 - 0.04), 0.12, H2 + 0.02, 0.12, [0.1, 0.11, 0.11]); });
+      });
+      [-0.48, 0.48].forEach(function (bx) { for (var k = 0; k < 6; k++) rwBoxB(B, x + bx, y + 0.08 + k * 0.1, z, 0.12, 0.1, D2 + 0.02, k % 2 ? dark : [0.95, 0.45, 0.1]); });   // hazard bands
+      rwBoxB(B, x, y + H2, z, W2 + 0.06, 0.1, D2 + 0.06, [0.14, 0.16, 0.15]);   // lid
+      rwBoxB(B, x, y + H2 + 0.1, z, 0.7, 0.02, 0.5, [0.85, 0.85, 0.8]);   // white panel on the lid
+      rwBoxB(B, x - 0.15, y + H2 + 0.12, z, 0.25, 0.008, 0.06, dark); rwBoxB(B, x + 0.15, y + H2 + 0.12, z - 0.1, 0.2, 0.008, 0.05, dark); rwBoxB(B, x + 0.1, y + H2 + 0.12, z + 0.12, 0.3, 0.008, 0.05, dark);
+      rwBoxB(B, x, y + H2 + 0.1, z - 0.4, 0.5, 0.05, 0.06, steel);   // hinge
+      [-0.25, 0.25].forEach(function (lx) { rwBoxB(B, x + lx, y + H2 - 0.18, z + D2 / 2 + 0.01, 0.12, 0.2, 0.04, steel); rwBoxB(B, x + lx, y + H2 - 0.1, z + D2 / 2 + 0.035, 0.06, 0.06, 0.02, dark); });   // latches
+      rwBoxB(B, x + 0.62, y + H2 - 0.12, z + D2 / 2 + 0.02, 0.06, 0.04, 0.02, [0.2, 1, 0.35]);   // status light
+      [-1, 1].forEach(function (s) { rwBoxB(B, x + s * (W2 / 2 + 0.05), y + 0.45, z, 0.05, 0.05, 0.4, steel); });   // handles
+      return;
+    }
+    if (tier === 'mil') {   // military crate: olive ribbed case, stencil band, latches, rope handles
+      var W3 = 1.3, H3 = 0.7, D3 = 0.8, Ol = [0.3, 0.36, 0.22];
+      rwBoxB(B, x, y, z, W3, H3, D3, Ol);
+      for (i = 0; i < 3; i++) rwBoxB(B, x, y + 0.1 + i * 0.2, z, W3 + 0.02, 0.04, D3 + 0.02, rwSh(Ol, 0.78));   // ribs
+      [-1, 1].forEach(function (s) { [-1, 1].forEach(function (t) { rwBoxB(B, x + s * (W3 / 2 - 0.03), y, z + t * (D3 / 2 - 0.03), 0.08, H3, 0.08, rwSh(Ol, 0.7)); }); });   // corner rails
+      rwBoxB(B, x, y + H3, z, W3 + 0.06, 0.1, D3 + 0.06, [0.22, 0.27, 0.16]);   // lid
+      rwBoxB(B, x, y + H3 + 0.1, z, W3 - 0.2, 0.03, D3 - 0.2, [0.26, 0.31, 0.19]);
+      rwBoxB(B, x, y + 0.27, z + D3 / 2 + 0.008, 0.9, 0.14, 0.01, [0.9, 0.78, 0.2]);   // stencil band
+      for (i = 0; i < 7; i++) rwBoxB(B, x - 0.36 + i * 0.12, y + 0.3, z + D3 / 2 + 0.014, 0.07, 0.08, 0.006, [0.15, 0.15, 0.1]);   // the "letters"
+      rwBoxB(B, x, y + 0.27, z - D3 / 2 - 0.008, 0.9, 0.14, 0.01, [0.9, 0.78, 0.2]);
+      [-0.4, 0.4].forEach(function (lx) { rwBoxB(B, x + lx, y + H3 - 0.14, z + D3 / 2 + 0.01, 0.1, 0.16, 0.03, steel); rwBoxB(B, x + lx, y + H3 - 0.08, z + D3 / 2 + 0.03, 0.05, 0.05, 0.015, dark); });
+      [-1, 1].forEach(function (s) { rwBoxB(B, x + s * (W3 / 2 + 0.04), y + 0.42, z - 0.15, 0.04, 0.04, 0.04, [0.3, 0.25, 0.18]); rwBoxB(B, x + s * (W3 / 2 + 0.04), y + 0.42, z + 0.15, 0.04, 0.04, 0.04, [0.3, 0.25, 0.18]); rwBoxB(B, x + s * (W3 / 2 + 0.06), y + 0.38, z, 0.03, 0.04, 0.34, [0.45, 0.38, 0.26]); });   // rope handles
+      return;
+    }
+    // ordinary supply crate: a wooden crate with corner posts, planks, metal brackets and a yellow stencil plate
+    var Wd = [0.55, 0.4, 0.24], W4 = 1.0, H4 = 0.85;
+    rwBoxB(B, x, y + 0.02, z, W4 - 0.04, H4 - 0.04, W4 - 0.04, rwSh(Wd, 0.45));   // dark inside, seen through the gaps
+    for (i = 0; i < 4; i++) {   // planks on all four sides
+      var py = y + 0.04 + i * 0.205, sh = [0.92, 1.05, 0.97, 1.08][i];
+      rwBoxB(B, x, py, z + W4 / 2 - 0.02, W4 - 0.1, 0.185, 0.04, rwSh(Wd, sh)); rwBoxB(B, x, py, z - W4 / 2 + 0.02, W4 - 0.1, 0.185, 0.04, rwSh(Wd, sh * 0.95));
+      rwBoxB(B, x + W4 / 2 - 0.02, py, z, 0.04, 0.185, W4 - 0.1, rwSh(Wd, sh * 0.9)); rwBoxB(B, x - W4 / 2 + 0.02, py, z, 0.04, 0.185, W4 - 0.1, rwSh(Wd, sh));
+    }
+    [-1, 1].forEach(function (s) { [-1, 1].forEach(function (t) {   // corner posts with metal brackets top and bottom
+      rwBoxB(B, x + s * (W4 / 2 - 0.04), y, z + t * (W4 / 2 - 0.04), 0.1, H4, 0.1, rwSh(Wd, 0.78));
+      rwBoxB(B, x + s * (W4 / 2 - 0.035), y, z + t * (W4 / 2 - 0.035), 0.12, 0.1, 0.12, steel); rwBoxB(B, x + s * (W4 / 2 - 0.035), y + H4 - 0.04, z + t * (W4 / 2 - 0.035), 0.12, 0.14, 0.12, steel);
+    }); });
+    for (i = 0; i < 5; i++) rwBoxB(B, x - 0.4 + i * 0.2, y + H4, z, 0.18, 0.06, W4, rwSh(Wd, [1, 0.9, 1.06, 0.94, 1.02][i]));   // lid boards
+    rwBoxB(B, x, y + H4 + 0.06, z - 0.3, W4, 0.03, 0.08, rwSh(Wd, 0.75)); rwBoxB(B, x, y + H4 + 0.06, z + 0.3, W4, 0.03, 0.08, rwSh(Wd, 0.75));   // battens
+    rwBoxB(B, x, y + 0.36, z + W4 / 2 + 0.005, 0.5, 0.16, 0.01, [0.9, 0.75, 0.15]); rwBoxB(B, x, y + 0.36, z - W4 / 2 - 0.005, 0.5, 0.16, 0.01, [0.9, 0.75, 0.15]);   // stencil plates
+    for (i = 0; i < 4; i++) rwBoxB(B, x - 0.15 + i * 0.1, y + 0.39, z + W4 / 2 + 0.012, 0.06, 0.1, 0.005, [0.12, 0.1, 0.08]);
+  }
+
+  /* ---- update 118: the helicopter is a military utility helicopter now ----
+     Olive drab with darker panels and stencils, a flat-paned glass cockpit with chin windows, twin engines on the roof
+     with exhausts, a four-blade rotor, stub wings with rocket pods, a door gun, a sensor ball under the nose, wheels
+     instead of skids and a tail wheel, a tall tail fin with the four-blade tail rotor and the owner's colour as a band
+     on the tail. The seats, the rotor parts the game spins and the size of the cabin stay where they were. */
+  function heliModel(col) {
+    var g = new THREE.Group(), U = g.userData;
+    function M(c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.6, metalness: 0.2 }, o || {})); }
+    var od = M(0x4a5226, { roughness: 0.72, metalness: 0.15 }), odD = M(0x3a4120, { roughness: 0.75, metalness: 0.15 }), odL = M(0x5a6230, { roughness: 0.7, metalness: 0.15 }),
+      blk = M(0x1b1d1b, { roughness: 0.65, metalness: 0.3 }), gun = M(0x2a2c2e, { roughness: 0.4, metalness: 0.75 }), steel = M(0x6a6e70, { roughness: 0.35, metalness: 0.8 }),
+      seatM = M(0x3a3528, { roughness: 0.95, metalness: 0 }), band = M(col || 0xc8c6bc, { roughness: 0.55 }), white = M(0xd8d8cc, { roughness: 0.6 }),
+      glass = M(0x9fc0c8, { transparent: true, opacity: 0.16, metalness: 0.2, roughness: 0.05, depthWrite: false, side: THREE.DoubleSide }),
+      lens = M(0x10202a, { roughness: 0.1, metalness: 0.6 }), tire = M(0x151515, { roughness: 0.9, metalness: 0 }),
+      red = new THREE.MeshBasicMaterial({ color: 0xff2a1a }), green = new THREE.MeshBasicMaterial({ color: 0x2aff5a }), strobeM = new THREE.MeshBasicMaterial({ color: 0xfff6e0 }),
+      mfd = new THREE.MeshBasicMaterial({ color: 0x3ad86a }), mfd2 = new THREE.MeshBasicMaterial({ color: 0xe0a030 });
+    function box(w, h, d, m, x, y, z, rx, ry, rz, par) { var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.rotation.set(rx || 0, ry || 0, rz || 0); (par || g).add(b); return b; }
+    function cyl(r0, r1, h, m, x, y, z, rx, rz, seg, par) { var o = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, seg || 12), m); o.position.set(x, y, z); o.rotation.set(rx || 0, 0, rz || 0); (par || g).add(o); return o; }
+    function tube(a, b, r, m, par) {
+      var A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]), d = B.clone().sub(A), L = d.length();
+      var o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 8), m); o.position.copy(A).add(B).multiplyScalar(0.5);
+      o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); (par || g).add(o); return o;
+    }
+    function ext(pts, depth, m, x, bevel) {   // side profile (z, y) pushed across x, rounded edges
+      var sh = new THREE.Shape(); pts.forEach(function (p, i) { if (i) sh.lineTo(p[0], p[1]); else sh.moveTo(p[0], p[1]); });
+      var bt = bevel === undefined ? 0.07 : bevel;
+      var geo = new THREE.ExtrudeGeometry(sh, { depth: depth - 2 * bt, bevelEnabled: bt > 0, bevelThickness: bt, bevelSize: bt, bevelOffset: -bt, bevelSegments: 3, curveSegments: 8 });
+      geo.rotateY(-Math.PI / 2); geo.translate(x + depth / 2 - bt, 0, 0);
+      var o = new THREE.Mesh(geo, m); g.add(o); return o;
+    }
+    function pane(p, m) {   // a flat glass pane through four corners
+      var geo = new THREE.BufferGeometry(), v = [];
+      [[0, 1, 2], [0, 2, 3]].forEach(function (t) { t.forEach(function (k) { v.push(p[k][0], p[k][1], p[k][2]); }); });
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); geo.computeVertexNormals();
+      var o = new THREE.Mesh(geo, m); g.add(o); return o;
+    }
+    var HW = 0.86;   // half width of the cabin
+    // ---- lower hull up to the window line, the cabin behind the cockpit, the nose
+    ext([[-1.72, 0.98], [-1.5, 0.74], [1.95, 0.74], [2.2, 1.0], [2.2, 1.28], [-1.86, 1.28]], HW * 2, od, 0);
+    ext([[0.22, 1.24], [2.2, 1.24], [2.2, 2.08], [1.85, 2.34], [0.22, 2.34]], HW * 2, od, 0);
+    ext([[-1.86, 1.0], [-2.02, 1.12], [-2.02, 1.26], [-1.86, 1.3]], HW * 1.7, odD, 0, 0.04);   // nose cap
+    box(HW * 2 + 0.02, 0.06, 0.26, odD, 0, 2.31, -0.12);   // roof over the cockpit
+    box(HW * 2 - 0.1, 0.05, 0.6, od, 0, 2.31, -0.45, -0.12);   // its front lip
+    // panel lines, rivet strips and stencils
+    [-1, 1].forEach(function (s) {
+      box(0.012, 0.5, 0.012, blk, s * (HW + 0.002), 0.98, 0.22); box(0.012, 0.5, 0.012, blk, s * (HW + 0.002), 0.98, 1.3);
+      box(0.012, 0.012, 3.8, blk, s * (HW + 0.002), 1.27, 0.2);
+      box(0.012, 0.7, 1.2, odD, s * (HW + 0.004), 1.72, 0.85);   // sliding door
+      box(0.014, 0.025, 1.24, steel, s * (HW + 0.01), 2.08, 0.85);   // its rail
+      box(0.02, 0.24, 0.3, glass, s * (HW + 0.01), 1.88, 0.62); box(0.02, 0.24, 0.3, glass, s * (HW + 0.01), 1.88, 1.1);   // door windows
+      box(0.01, 0.06, 0.4, white, s * (HW + 0.008), 1.42, 1.75);   // stencil
+      box(0.01, 0.04, 0.22, blk, s * (HW + 0.008), 1.06, -0.9);
+    });
+    // ---- cockpit glass: windshield (two panes and a centre post), side windows, chin windows
+    var wF = -1.86, wT = -0.62, yB = 1.3, yT = 2.28;
+    pane([[-HW + 0.06, yB, wF], [-0.02, yB, wF], [-0.02, yT, wT], [-HW + 0.06, yT, wT]], glass);
+    pane([[0.02, yB, wF], [HW - 0.06, yB, wF], [HW - 0.06, yT, wT], [0.02, yT, wT]], glass);
+    tube([0, yB, wF], [0, yT, wT], 0.012, blk); tube([-HW + 0.04, yB, wF], [-HW + 0.04, yT, wT], 0.02, od); tube([HW - 0.04, yB, wF], [HW - 0.04, yT, wT], 0.02, od);
+    tube([-HW + 0.04, yB, wF], [HW - 0.04, yB, wF], 0.03, od);
+    [-1, 1].forEach(function (s) {
+      var X = s * (HW - 0.01);
+      pane([[X, 1.3, -1.82], [X, 1.3, 0.2], [X, 2.28, 0.2], [X, 2.28, -0.64]], glass);   // cockpit door window
+      tube([X, 1.29, 0.2], [X, 2.3, 0.2], 0.03, od); tube([X, 1.29, -0.45], [X, 2.25, -0.55], 0.014, blk);
+      pane([[s * 0.1, 0.86, -1.6], [s * 0.66, 0.86, -1.6], [s * 0.7, 1.22, -1.86], [s * 0.1, 1.22, -1.86]], glass);   // chin window
+      box(0.02, 0.3, 0.02, blk, s * 0.24, 1.12, -1.82, 0.4);   // wiper
+    });
+    // ---- the sensor ball under the nose, a wire cutter, pitot tubes
+    var tur = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 10), blk); tur.position.set(0, 0.7, -1.62); g.add(tur);
+    var ln = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.04, 12), lens); ln.rotation.x = Math.PI / 2; ln.position.set(0, 0.7, -1.79); g.add(ln);
+    box(0.03, 0.38, 0.05, steel, 0, 2.5, -0.45, -0.5); box(0.03, 0.28, 0.04, steel, 0, 0.62, -1.75, 0.4);
+    tube([-0.5, 1.1, -1.9], [-0.5, 1.1, -2.25], 0.012, steel); tube([0.5, 1.1, -1.9], [0.5, 1.1, -2.25], 0.012, steel);
+    // ---- twin engines on the roof with intakes and exhausts, the gearbox fairing, antennas
+    box(1.0, 0.24, 1.7, odL, 0, 2.45, 0.85);   // fairing
+    [-1, 1].forEach(function (s) {
+      cyl(0.2, 0.22, 1.5, od, s * 0.42, 2.52, 1.05, Math.PI / 2, 0, 14);
+      cyl(0.17, 0.17, 0.04, blk, s * 0.42, 2.52, 0.28, Math.PI / 2, 0, 14);   // intake
+      cyl(0.08, 0.08, 0.05, steel, s * 0.42, 2.52, 0.27, Math.PI / 2, 0, 8);
+      var ex = cyl(0.12, 0.15, 0.42, blk, s * 0.58, 2.48, 1.9, Math.PI / 2, s * -0.5, 10);   // exhausts, turned out
+      for (var k = 0; k < 4; k++) box(0.42, 0.012, 0.03, blk, s * 0.42, 2.74, 0.5 + k * 0.12);   // grille
+    });
+    box(0.02, 0.3, 0.1, blk, 0.3, 2.6, 2.05, -0.3); box(0.02, 0.22, 0.08, blk, -0.25, 2.5, 2.1, -0.3);   // antennas
+    // ---- mast, hub and four blades
+    cyl(0.09, 0.11, 0.36, steel, 0, 2.72, 0.75); cyl(0.22, 0.22, 0.08, gun, 0, 2.86, 0.75, 0, 0, 16);
+    var mr = new THREE.Group(); mr.position.set(0, 2.94, 0.75); g.add(mr);
+    cyl(0.12, 0.14, 0.16, gun, 0, 0, 0, 0, 0, 12, mr);
+    for (var bi = 0; bi < 4; bi++) {
+      var arm = new THREE.Group(); arm.rotation.y = bi * Math.PI / 2; mr.add(arm);
+      box(0.5, 0.07, 0.14, steel, 0.3, 0, 0, 0, 0, 0, arm);
+      var bl = box(3.4, 0.04, 0.27, blk, 2.2, 0.02, 0, 0.05, 0, -0.02, arm);
+      box(0.22, 0.045, 0.28, white, 3.8, 0.03, 0, 0, 0, -0.02, arm);   // tip stripe
+    }
+    var blur = new THREE.Mesh(new THREE.CylinderGeometry(3.95, 3.95, 0.01, 48), new THREE.MeshBasicMaterial({ color: 0x2a2c2a, transparent: true, opacity: 0, depthWrite: false }));
+    blur.position.set(0, 2.98, 0.75); g.add(blur);
+    U.rotor = mr; U.blur = blur;
+    // ---- tail boom, fin, stabilator, tail rotor on the right
+    cyl(0.17, 0.46, 3.4, od, 0, 1.95, 3.85, Math.PI / 2 + 0.06, 0, 16);
+    ext([[2.1, 1.3], [2.9, 1.62], [2.9, 2.2], [2.1, 2.3]], 1.2, od, 0, 0.1);   // where the boom joins the cabin
+    box(0.012, 0.012, 2.6, blk, 0.3, 2.1, 3.6);
+    cyl(0.27, 0.25, 0.36, band, 0, 1.97, 4.35, Math.PI / 2 + 0.06, 0, 16);   // the owner's colour
+    ext([[5.05, 1.7], [5.6, 1.7], [6.05, 3.05], [5.7, 3.1], [5.25, 2.2]], 0.1, od, 0, 0.03);   // fin
+    box(0.012, 0.25, 0.3, white, 0.06, 2.4, 5.55, -0.35);   // tail number
+    box(1.7, 0.05, 0.42, od, 0, 1.75, 5.2);   // stabilator
+    [-1, 1].forEach(function (s) { box(0.04, 0.2, 0.34, od, s * 0.86, 1.82, 5.2); });
+    var tr = new THREE.Group(); tr.position.set(0.16, 2.6, 5.85); g.add(tr);
+    cyl(0.07, 0.07, 0.14, gun, 0, 0, 0, 0, Math.PI / 2, 10, tr);
+    for (var ti = 0; ti < 4; ti++) { var tb = box(0.03, 0.62, 0.1, blk, 0.04, 0, 0, ti * Math.PI / 4 * 2 + (ti > 1 ? 0.3 : 0), 0, 0, tr); tb.geometry.translate(0, 0.31, 0); tb.position.y = 0; }
+    U.trotor = tr;
+    // ---- landing gear: two main wheels on struts and a tail wheel
+    [-1, 1].forEach(function (s) {
+      tube([s * HW, 0.98, -0.55], [s * 1.12, 0.26, -0.75], 0.05, steel); tube([s * HW, 0.86, -1.05], [s * 1.12, 0.3, -0.75], 0.035, steel);
+      var w = cyl(0.26, 0.26, 0.16, tire, s * 1.16, 0.26, -0.75, 0, Math.PI / 2, 16); cyl(0.12, 0.12, 0.18, steel, s * 1.16, 0.26, -0.75, 0, Math.PI / 2, 10);
+    });
+    tube([0, 1.8, 4.6], [0, 0.18, 4.75], 0.045, steel); tube([0, 1.8, 4.2], [0, 0.3, 4.72], 0.03, steel); cyl(0.17, 0.17, 0.1, tire, 0, 0.17, 4.75, 0, Math.PI / 2, 14);
+    // ---- stub wings with rocket pods, and a door gun
+    [-1, 1].forEach(function (s) {
+      box(0.95, 0.06, 0.42, odD, s * (HW + 0.47), 2.1, 1.05, 0, 0, s * -0.12);
+      box(0.06, 0.22, 0.2, blk, s * (HW + 0.72), 1.92, 1.05);   // pylon
+      cyl(0.14, 0.14, 0.95, odD, s * (HW + 0.72), 1.72, 1.0, Math.PI / 2, 0, 12);   // rocket pod
+      cyl(0.13, 0.08, 0.14, odD, s * (HW + 0.72), 1.72, 0.47, Math.PI / 2, 0, 12);
+      for (var rk = 0; rk < 7; rk++) { var a = rk === 6 ? 0 : rk / 6 * Math.PI * 2, rr = rk === 6 ? 0 : 0.08; cyl(0.025, 0.025, 0.02, blk, s * (HW + 0.72) + Math.cos(a) * rr, 1.72 + Math.sin(a) * rr, 0.4, Math.PI / 2, 0, 6); }
+    });
+    var dg = new THREE.Group(); dg.position.set(HW + 0.12, 1.6, 0.35); g.add(dg);   // door gun on the right
+    box(0.08, 0.3, 0.08, steel, 0, -0.15, 0, 0, 0, 0, dg); box(0.14, 0.12, 0.3, gun, 0, 0.04, 0, 0, 0, 0, dg);
+    for (var gb = 0; gb < 6; gb++) { var ga = gb / 6 * Math.PI * 2; cyl(0.012, 0.012, 0.55, gun, Math.cos(ga) * 0.03, 0.06 + Math.sin(ga) * 0.03, -0.42, Math.PI / 2, 0, 6, dg); }
+    box(0.1, 0.12, 0.14, odD, 0.1, 0.0, 0.05, 0, 0, 0, dg);   // ammo box
+    // ---- lights
+    var nl = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), red); nl.position.set(-(HW + 0.94), 2.0, 1.05); g.add(nl);
+    var nr = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), green); nr.position.set(HW + 0.94, 2.0, 1.05); g.add(nr);
+    var st = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), strobeM); st.position.set(0, 3.12, 5.9); g.add(st); U.strobe = st;
+    cyl(0.09, 0.09, 0.04, strobeM, 0, 0.72, -1.2, 0, 0, 12);   // landing light
+    // ---- inside: floor, seats, instrument panel with screens, sticks
+    box(HW * 2 - 0.1, 0.04, 2.0, blk, 0, 1.0, -0.8);
+    HELI_SEATS.forEach(function (s) {
+      box(0.5, 0.12, 0.48, seatM, s[0], 1.08, s[2] + 0.02);
+      box(0.5, 0.66, 0.1, seatM, s[0], 1.44, s[2] + 0.3, -0.1);
+      box(0.28, 0.16, 0.08, seatM, s[0], 1.84, s[2] + 0.35, -0.1);
+      box(0.05, 0.6, 0.02, blk, s[0] - 0.12, 1.45, s[2] + 0.24, -0.1); box(0.05, 0.6, 0.02, blk, s[0] + 0.12, 1.45, s[2] + 0.24, -0.1);   // harness
+      tube([s[0], 1.02, s[2] - 0.32], [s[0], 1.3, s[2] - 0.4], 0.018, blk);
+      var kn = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), blk); kn.position.set(s[0], 1.32, s[2] - 0.41); g.add(kn);
+    });
+    var dash = box(1.5, 0.2, 0.14, blk, 0, 1.33, -1.55, -0.5);
+    box(1.52, 0.06, 0.3, odD, 0, 1.44, -1.5, -0.2);   // glare shield
+    [-0.52, -0.2, 0.2, 0.52].forEach(function (x, i) { var sc = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.15), i % 2 ? mfd2 : mfd); sc.position.set(x, 1.36, -1.47); sc.rotation.x = -0.5; g.add(sc); });   // screens
+    box(0.2, 0.06, 0.5, blk, 0, 1.08, -1.0);   // centre console
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = false; });
+    return g;
+  }
+  // the airdrop: a blue drop crate in a steel frame with straps, stencils and a blinking beacon, under a striped parachute
+  function rwCrateChute() {
+    var g = new THREE.Group();
+    function M(c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.7, metalness: 0.1 }, o || {})); }
+    var blue = M(0x2f5fa0), blueD = M(0x244a7e), frame = M(0x5a5e62, { metalness: 0.7, roughness: 0.4 }), strap = M(0xd8c89a, { roughness: 0.9 }), wht = M(0xe8e2d0), blk = M(0x1c1c1c);
+    function box(w, h, d, m, x, y, z, par) { var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); (par || g).add(b); return b; }
+    box(1.36, 1.06, 1.36, blue, 0, 0.55, 0);
+    for (var i = 0; i < 3; i++) box(1.38, 0.05, 1.38, blueD, 0, 0.22 + i * 0.33, 0);   // panel seams
+    [-1, 1].forEach(function (s) { [-1, 1].forEach(function (t) { box(0.09, 1.12, 0.09, frame, s * 0.68, 0.56, t * 0.68); }); });   // corner frame
+    [0.02, 1.1].forEach(function (y) { box(1.44, 0.07, 0.09, frame, 0, y, 0.68); box(1.44, 0.07, 0.09, frame, 0, y, -0.68); box(0.09, 0.07, 1.44, frame, 0.68, y, 0); box(0.09, 0.07, 1.44, frame, -0.68, y, 0); });
+    box(1.4, 1.14, 0.12, strap, 0, 0.56, 0); box(0.12, 1.14, 1.4, strap, 0, 0.56, 0);   // straps crossing over
+    box(0.5, 0.2, 0.01, wht, 0.35, 0.72, 0.685); box(0.3, 0.06, 0.01, wht, 0.35, 0.5, 0.685); box(0.01, 0.2, 0.5, wht, 0.685, 0.72, -0.35);   // stencils
+    box(0.2, 0.04, 0.2, blk, 0, 1.13, 0);
+    var bc = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff3a2a })); bc.position.set(0, 1.2, 0); g.add(bc);   // beacon
+    (function blink() { bc.onBeforeRender = function () { bc.material.color.setHex(((performance.now() / 500) | 0) % 2 ? 0xff3a2a : 0x401010); }; })();
+    // parachute: twelve alternating gores, a vent hole on top, eight lines
+    var ch = new THREE.Group(); ch.name = 'chute'; g.add(ch);
+    var cR = M(0xd8462a, { side: THREE.DoubleSide, roughness: 0.9 }), cW = M(0xece4d4, { side: THREE.DoubleSide, roughness: 0.9 });
+    for (var k = 0; k < 12; k++) { var gm = new THREE.Mesh(new THREE.SphereGeometry(3.2, 3, 8, k / 12 * Math.PI * 2, Math.PI * 2 / 12, 0.12, Math.PI / 2.4 - 0.12), k % 2 ? cW : cR); gm.position.y = 5.2; ch.add(gm); }
+    var skirt = new THREE.Mesh(new THREE.TorusGeometry(3.2 * Math.sin(Math.PI / 2.4), 0.04, 5, 36), M(0x9a2a1a)); skirt.rotation.x = Math.PI / 2; skirt.position.y = 5.2 + 3.2 * Math.cos(Math.PI / 2.4); ch.add(skirt);
+    var lm = new THREE.MeshBasicMaterial({ color: 0x222222 }), top = new THREE.Vector3(0, 1.15, 0);
+    for (var j = 0; j < 8; j++) {
+      var a = j / 8 * Math.PI * 2, rr = 3.2 * Math.sin(Math.PI / 2.4), P = new THREE.Vector3(Math.cos(a) * rr, 5.2 + 3.2 * Math.cos(Math.PI / 2.4), Math.sin(a) * rr);
+      var corner = new THREE.Vector3(Math.cos(a) > 0 ? 0.68 : -0.68, 1.12, Math.sin(a) > 0 ? 0.68 : -0.68), d = P.clone().sub(corner), L = d.length();
+      var ln = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, L, 4), lm); ln.position.copy(corner).add(P).multiplyScalar(0.5); ln.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); ch.add(ln);
+    }
+    return g;
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
