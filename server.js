@@ -557,7 +557,7 @@ function boundOwner(n) {   // the player a name means for gifts and coins: chose
   nameBind[low] = o; saveGifts(); console.log('name bound: ' + low + ' -> ' + o); return o;
 }
 // update 115: RICH_TEMP="name,name@2026-11-20T05:15:00Z" - endless coins until that time; afterwards they get back the coins they had before
-const RICH_TEMP = (process.env.RICH_TEMP === undefined ? 'masonton,tanyol,kamchak2012@2026-11-20T05:15:00Z' : process.env.RICH_TEMP).split('@');
+const RICH_TEMP = (process.env.RICH_TEMP === undefined ? 'masonton,tanyol@2026-11-20T05:15:00Z' : process.env.RICH_TEMP).split('@');
 const RICH_TEMP_NAMES = RICH_TEMP[0].split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean), RICH_TEMP_END = Date.parse(RICH_TEMP[1] || '') || 0;
 let richBack = {};   // player key -> coins they had when the endless coins started
 try { richBack = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')).rb || {}; } catch (e) {}
