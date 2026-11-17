@@ -7915,7 +7915,7 @@ Object.assign(EN, {
     rwBombTick(dt);
     rwBuildTick();
     rwPromptTick();
-    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt); tankFxTick(dt); rwStuckTick(dt); rwToolLookTick();
+    rwMonTick(dt); wxTick(dt); rwWaterTick(dt); rwCarTick(dt); rwLbTick(dt); rwEvTick(dt); rwDebrisTick(dt); rwTcHintTick(dt); rwAmmoTick(); rwTurretTick(dt); rwAmmoHint(); rwArrowTick(dt); rwHealTick(dt); rwHudTick(dt); rwCovTick(dt); rwWeapSync(); rwVehSndTick(dt); bowTick(dt); boatSprayTick(dt); rwBagTick(); rwAATick(dt); tankFxTick(dt); rwStuckTick(dt); rwToolLookTick(dt);
     RW.hotT -= dt; if (RW.hotT <= 0) { RW.hotT = 0.25; rwHotRender(false); rwMRender(); }
   }
   function rwDropOnDeath() {   // everything you carried stays where you fell, in a bag everybody can see and loot
@@ -8635,8 +8635,9 @@ Object.assign(EN, {
       if (s.hp > 0) P.hp = Math.min(P.maxHp, s.hp);
       if (s.ar > 0) P.armor = Math.min(100, s.ar);
       var lim = RW.half * 1.05;
-      if (isFinite(s.x) && isFinite(s.z) && Math.abs(s.x) < lim && Math.abs(s.z) < lim && rwH(s.x, s.z) > RW_SEA - 0.2) {
-        P.x = +s.x; P.z = +s.z; P.y = groundAt(P.x, P.z, (+s.y || 0) + 0.6); P.vy = 0; RW.px = P.x; RW.pz = P.z;
+      var spot = isFinite(s.x) && isFinite(s.z) && Math.abs(s.x) < lim && Math.abs(s.z) < lim ? rwRestoreSpot(s) : null;
+      if (spot) {
+        P.x = spot[0]; P.z = spot[2]; P.y = spot[1]; P.vy = 0; RW.px = P.x; RW.pz = P.z;
         if (isFinite(s.yaw)) P.yaw = +s.yaw;
         placed = true;
       }
@@ -12286,7 +12287,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 118;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 120;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -14172,9 +14173,8 @@ Object.assign(EN, {
         return { g: wrap, two: len > 0.35 };
       }
       if (d && d.tool && VM.tools[d.tool]) {
-        var dcv = VM.tools[d.tool].userData.deco; if (dcv) dcv.visible = false;   // update 117: not my own tool's decorations...
-        var t = humCopy(VM.tools[d.tool], false), tw = new THREE.Group(); tw.add(t); toolLook(t, lvR, true);
-        if (dcv) dcv.visible = true;
+        if (id === 'rhatchet') { var rxa = new THREE.Group(); rxa.add(ryanAxe(true)); humFit(rxa, 0.7); return { g: rxa, two: false, tool: d.tool }; }   // update 120: Stormfang
+        var t = humToolCopy(d.tool), tw = new THREE.Group(); tw.add(t); toolLook(t, lvR, true);   // update 117: the plain model, without my own tool's decorations...
         if (/^(rock|hatchet|pickaxe|hammer|spear|machete)$/.test(d.tool)) toolDeco(t, d.tool, lvR, true);   // ...but the ones of ITS level
         humFit(tw, d.tool === 'rock' ? 0.16 : d.tool === 'plan' ? 0.3 : d.tool === 'spear' ? 1.5 : 0.62);
         return { g: tw, two: false, tool: d.tool };
@@ -16392,6 +16392,194 @@ Object.assign(EN, {
       var ln = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, L, 4), lm); ln.position.copy(corner).add(P).multiplyScalar(0.5); ln.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); ch.add(ln);
     }
     return g;
+  }
+
+  /* ---- update 119: coming back after a refresh puts you where you were ----
+     A saved spot over the water (in a boat, swimming, on a pier or a base built over the sea) used to be refused, and
+     you woke up on some far-away coast. Now: standing on something above the water - stay there (the floor arrives with
+     the buildings a moment later); in the water - the nearest dry land. */
+  function rwRestoreSpot(s) {
+    var x = +s.x, z = +s.z, y = +s.y || 0;
+    if (rwH(x, z) > RW_SEA - 0.2) return [x, groundAt(x, z, y + 0.6), z];
+    if (y > RW_SEA + 1.2) return [x, Math.max(groundAt(x, z, y + 0.6), y), z];   // on a pier, a platform or a floor over the water
+    for (var r = 3; r <= 400; r += 3) {   // in the water: the nearest dry land
+      var n = Math.max(12, Math.round(r * 0.8));
+      for (var a = 0; a < n; a++) {
+        var an = a / n * Math.PI * 2, px = x + Math.cos(an) * r, pz = z + Math.sin(an) * r;
+        if (Math.abs(px) > RW.half - 4 || Math.abs(pz) > RW.half - 4) continue;
+        if (rwH(px, pz) > RW_SEA + 0.4) return [px, groundAt(px, pz, rwH(px, pz) + 3), pz];
+      }
+    }
+    return null;
+  }
+
+  /* ---- update 120: Stormfang (雷霆龙斧) - Ryan's own hatchet ----
+     A one-of-a-kind hatchet given to Ryan. It chops exactly like a hatchet (same tool); only the look is its own:
+     an obsidian bearded blade with a glowing edge and runes that change colour, RYAN written on the blade in light,
+     lightning crackling along the edge, crystal shards circling the head, a pulsing core gem, a gold-wrapped handle
+     and a dragon claw holding an orb at the end. Sparks drift up from it, and pour off the blade when you swing.
+     Everybody else sees it in his hand too. */
+  RWI.rhatchet = { n: ['雷霆龙斧', 'Stormfang'], st: 1, tool: 'hatchet', d: ['Ryan 专属的传说斧头：黑曜石刀刃上闪着雷电，刻着发光的名字。砍树和普通斧头一样，只是好看得多。', 'Ryan\'s own legendary hatchet: lightning crackles over an obsidian blade with his name in light. Chops like a hatchet - it just looks far better.'] };
+  RWURL.rhatchet = (function () {   // its icon
+    var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d');
+    x.shadowColor = '#3ae0ff'; x.shadowBlur = 8;
+    x.strokeStyle = '#d8a83a'; x.lineWidth = 6; x.lineCap = 'round'; x.beginPath(); x.moveTo(14, 58); x.lineTo(40, 14); x.stroke();
+    x.strokeStyle = '#1a1c22'; x.lineWidth = 3; x.beginPath(); x.moveTo(14, 58); x.lineTo(40, 14); x.stroke();
+    x.fillStyle = '#14121c'; x.beginPath(); x.moveTo(36, 8); x.quadraticCurveTo(62, 4, 60, 30); x.quadraticCurveTo(50, 26, 44, 30); x.lineTo(36, 22); x.closePath(); x.fill();
+    x.strokeStyle = '#6af0ff'; x.lineWidth = 2.5; x.beginPath(); x.moveTo(37, 8); x.quadraticCurveTo(62, 4, 60, 30); x.stroke();
+    x.fillStyle = '#c070ff'; x.beginPath(); x.arc(39, 18, 3.5, 0, 7); x.fill();
+    x.fillStyle = '#ffd84a'; x.font = 'bold 9px sans-serif'; x.shadowBlur = 4; x.fillText('R', 46, 22);
+    return c.toDataURL();
+  })();
+  var RYX = null;
+  function ryanAxe(world) {   // the whole axe in hatchet coordinates: handle up y, blade towards -z
+    var g = new THREE.Group(), A = { t: 0, sh: [], arcs: [], sp: [], gl: [], ed: [], gem: null, orb: null, rune: null };
+    var dt = !world, RO = function (o, r) { o.renderOrder = r || 23; o.frustumCulled = false; return o; };
+    function std(c, mt, r, e, ei) { var m = new THREE.MeshStandardMaterial({ color: c, metalness: mt, roughness: r, depthTest: !dt ? true : false, fog: !!world }); if (e) { m.emissive.setHex(e); m.emissiveIntensity = ei || 1; } return m; }
+    function add(geo, m, x, y, z, rx, ry, rz, ro) { var o = RO(new THREE.Mesh(geo, m), ro); o.position.set(x, y, z); o.rotation.set(rx || 0, ry || 0, rz || 0); g.add(o); return o; }
+    var gm = std(0x1a1c22, 0.9, 0.28), gold = std(0xe8b840, 1, 0.2, 0x3a2400), obs = std(0x120f1a, 0.85, 0.12, 0x10052a, 1), lea = std(0x4a1418, 0.2, 0.8);
+    var glowM = new THREE.MeshBasicMaterial({ color: 0x6af0ff, transparent: true, opacity: 0.95, depthTest: !dt ? true : false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    A.glowM = glowM;
+    // handle, leather grip, gold spiral
+    add(new THREE.CylinderGeometry(0.016, 0.018, 0.56, 10), gm, 0, 0.15, 0);
+    for (var i = 0; i < 6; i++) add(new THREE.CylinderGeometry(0.02, 0.02, 0.028, 10), lea, 0, -0.08 + i * 0.034, 0, 0.08 * (i % 2 ? 1 : -1));
+    for (i = 0; i < 9; i++) add(new THREE.BoxGeometry(0.04, 0.008, 0.008), gold, 0, 0.13 + i * 0.022, 0, 0, i * 0.7, 0.35);
+    // pommel: dragon claw holding an orb
+    add(new THREE.CylinderGeometry(0.024, 0.018, 0.03, 10), gold, 0, -0.14, 0);
+    for (i = 0; i < 3; i++) { var a = i / 3 * Math.PI * 2; add(new THREE.ConeGeometry(0.008, 0.05, 5), gold, Math.cos(a) * 0.02, -0.175, Math.sin(a) * 0.02, Math.sin(a) * 2.6, 0, -Math.cos(a) * 2.6); }
+    A.orb = add(new THREE.SphereGeometry(0.02, 12, 10), new THREE.MeshBasicMaterial({ color: 0xc070ff, depthTest: !dt, fog: false }), 0, -0.18, 0, 0, 0, 0, 24);
+    // head socket: gold collar, the core gem
+    add(new THREE.BoxGeometry(0.05, 0.12, 0.07), gold, 0, 0.4, 0.0);
+    add(new THREE.BoxGeometry(0.056, 0.02, 0.076), gm, 0, 0.35, 0); add(new THREE.BoxGeometry(0.056, 0.02, 0.076), gm, 0, 0.45, 0);
+    A.gem = add(new THREE.OctahedronGeometry(0.026, 0), new THREE.MeshBasicMaterial({ color: 0xc070ff, depthTest: !dt, fog: false }), 0.032, 0.4, 0.0, 0, 0.6, 0, 24);
+    var gem2 = add(new THREE.OctahedronGeometry(0.026, 0), A.gem.material, -0.032, 0.4, 0.0, 0, 0.6, 0, 24);
+    // the blade: a big bearded crescent of obsidian
+    var sh = new THREE.Shape();
+    sh.moveTo(-0.02, 0.45); sh.quadraticCurveTo(-0.12, 0.53, -0.23, 0.56); sh.quadraticCurveTo(-0.3, 0.42, -0.24, 0.24); sh.quadraticCurveTo(-0.15, 0.25, -0.1, 0.2); sh.quadraticCurveTo(-0.07, 0.3, -0.02, 0.35); sh.closePath();
+    var bg = new THREE.ExtrudeGeometry(sh, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.005, bevelSize: 0.006, bevelSegments: 2, curveSegments: 14 });
+    bg.rotateY(-Math.PI / 2); bg.translate(0.007, 0, 0);   // shape x -> -z, centred on the handle
+    add(bg, obs, 0, 0, 0);
+    // a raised violet plate in the middle of the blade and gold trims along the spine and the beard
+    var ins = new THREE.Shape();
+    ins.moveTo(-0.05, 0.43); ins.quadraticCurveTo(-0.12, 0.49, -0.2, 0.51); ins.quadraticCurveTo(-0.25, 0.41, -0.21, 0.29); ins.quadraticCurveTo(-0.15, 0.29, -0.11, 0.26); ins.quadraticCurveTo(-0.08, 0.33, -0.05, 0.37); ins.closePath();
+    var ig = new THREE.ExtrudeGeometry(ins, { depth: 0.022, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.004, bevelSegments: 2, curveSegments: 12 });
+    ig.rotateY(-Math.PI / 2); ig.translate(0.011, 0, 0);
+    add(ig, std(0x2a1450, 0.9, 0.18, 0x12062a, 1), 0, 0, 0, 0, 0, 0, 24);
+    [[[-0.02, 0.45], [-0.12, 0.53], [-0.23, 0.56]], [[-0.24, 0.24], [-0.15, 0.25], [-0.1, 0.2]], [[-0.1, 0.2], [-0.07, 0.3], [-0.02, 0.35]]].forEach(function (c) {
+      var cu = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, c[0][1], c[0][0]), new THREE.Vector3(0, c[1][1], c[1][0]), new THREE.Vector3(0, c[2][1], c[2][0]));
+      add(new THREE.TubeGeometry(cu, 16, 0.0125, 8, false), gold, 0, 0, 0, 0, 0, 0, 24);
+    });
+    for (var sc2 = 0; sc2 < 5; sc2++) add(new THREE.OctahedronGeometry(0.007, 0), gold, 0.019 * (sc2 % 2 ? 1 : -1), 0.47 - sc2 * 0.01, -0.06 - sc2 * 0.03, 0, 0, 0, 25);   // gold studs
+    // the glowing edge: a thin crescent along the cutting side, both faces
+    var es = new THREE.Shape();
+    es.moveTo(-0.23, 0.56); es.quadraticCurveTo(-0.3, 0.42, -0.24, 0.24); es.lineTo(-0.225, 0.26); es.quadraticCurveTo(-0.28, 0.42, -0.215, 0.54); es.closePath();
+    [-1, 1].forEach(function (s) { var eg = new THREE.ShapeGeometry(es, 10); eg.rotateY(-Math.PI / 2); var e = add(eg, glowM, s * 0.0135, 0, 0, 0, 0, 0, 25); A.ed.push(e); });
+    var edge2 = add(new THREE.TorusGeometry(0.17, 0.004, 4, 24, 1.6), glowM, 0, 0.4, -0.08, 0, Math.PI / 2, -0.75, 25);
+    // runes and RYAN on both faces of the blade (a canvas texture)
+    var cv = document.createElement('canvas'); cv.width = 256; cv.height = 128; var cx = cv.getContext('2d');
+    cx.fillStyle = 'rgba(0,0,0,0)'; cx.fillRect(0, 0, 256, 128);
+    cx.shadowColor = '#7af4ff'; cx.shadowBlur = 12; cx.fillStyle = '#bff8ff'; cx.font = 'bold 44px Georgia, serif'; cx.textAlign = 'center'; cx.fillText('RYAN', 128, 78);
+    cx.strokeStyle = '#9af0ff'; cx.lineWidth = 2; cx.shadowBlur = 8;
+    for (i = 0; i < 9; i++) { var rx = 22 + i * 26; cx.beginPath(); cx.moveTo(rx, 100); cx.lineTo(rx + 8, 112); cx.lineTo(rx + 2, 120); cx.moveTo(rx + 8, 100); cx.lineTo(rx + 12, 120); cx.stroke(); }
+    for (i = 0; i < 9; i++) { var rx2 = 22 + i * 26; cx.beginPath(); cx.arc(rx2 + 6, 22, 5, i * 0.7, i * 0.7 + 4.5); cx.moveTo(rx2, 14); cx.lineTo(rx2 + 12, 30); cx.stroke(); }
+    var tex = new THREE.CanvasTexture(cv);
+    var runeM = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: !dt, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide });
+    A.runeM = runeM;
+    [-1, 1].forEach(function (s) { add(new THREE.PlaneGeometry(0.17, 0.085), runeM, s * 0.0158, 0.4, -0.15, 0, s * Math.PI / 2, 0.35, 26); });
+    // back spike
+    add(new THREE.ConeGeometry(0.018, 0.12, 6), obs, 0, 0.42, 0.09, Math.PI / 2 - 0.2, 0, 0);
+    add(new THREE.ConeGeometry(0.008, 0.05, 5), gold, 0, 0.44, 0.15, Math.PI / 2 - 0.2, 0, 0, 24);
+    // crystal shards circling the head
+    for (i = 0; i < 4; i++) { var shd = add(new THREE.OctahedronGeometry(0.014, 0), new THREE.MeshBasicMaterial({ color: 0x9af6ff, transparent: true, opacity: 0.9, depthTest: !dt, fog: false }), 0, 0.4, -0.1, 0, 0, 0, 25); shd.scale.set(1, 2.4, 1); A.sh.push({ m: shd, a: i / 4 * Math.PI * 2 }); }
+    // glow
+    var sm = new THREE.SpriteMaterial({ map: tlGlowTex(), color: 0x6af0ff, transparent: true, opacity: 0.5, depthTest: !dt, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    var gs = new THREE.Sprite(sm); gs.position.set(0, 0.4, -0.2); gs.scale.set(0.42, 0.42, 0.42); RO(gs, 27); g.add(gs); A.gl.push(gs);
+    var gs2 = new THREE.Sprite(sm.clone()); gs2.material.color.setHex(0xc070ff); gs2.position.set(0, -0.18, 0); gs2.scale.set(0.12, 0.12, 0.12); RO(gs2, 27); g.add(gs2); A.gl.push(gs2);
+    if (!world) {
+      // lightning arcs along the edge (re-drawn every few frames) and a pool of sparks
+      for (i = 0; i < 3; i++) {
+        var lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(8 * 3), 3));
+        var ln = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xdffcff, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+        RO(ln, 28); g.add(ln); A.arcs.push(ln);
+      }
+      for (i = 0; i < 16; i++) {
+        var spk = add(new THREE.OctahedronGeometry(0.005, 0), new THREE.MeshBasicMaterial({ color: 0x9af6ff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }), 0, 0, 0, 0, 0, 0, 28);
+        A.sp.push({ m: spk, life: 0, v: new THREE.Vector3() });
+      }
+    }
+    g.userData.ax = A;
+    return g;
+  }
+  function ryanEdgePt(u, out) {   // a point on the cutting edge, u 0..1 (top to bottom), in axe coordinates
+    var t = u, z0 = -0.23, y0 = 0.56, cz = -0.3, cy = 0.42, z1 = -0.24, y1 = 0.24, k = 1 - t;
+    out.set(0, k * k * y0 + 2 * k * t * cy + t * t * y1, k * k * z0 + 2 * k * t * cz + t * t * z1); return out;
+  }
+  var RYV = new THREE.Vector3(), RYV2 = new THREE.Vector3();
+  function ryanAxeAnim(g, dt, swing) {
+    var A = g.userData.ax; if (!A) return;
+    A.t += dt; var t = A.t;
+    var hue = 0.52 + 0.1 * Math.sin(t * 0.6), col = new THREE.Color().setHSL(hue, 1, 0.62), col2 = new THREE.Color().setHSL(hue + 0.25, 1, 0.65);
+    A.glowM.color.copy(col); A.glowM.opacity = 0.7 + 0.3 * Math.sin(t * 5);
+    A.runeM.opacity = 0.55 + 0.45 * Math.sin(t * 2.2); A.runeM.color.copy(col);
+    A.gem.material.color.copy(col2); A.gem.rotation.y += dt * 2; A.orb.material.color.copy(col2);
+    A.gl[0].material.color.copy(col); A.gl[0].material.opacity = 0.35 + 0.2 * Math.sin(t * 3) + (swing ? 0.25 : 0);
+    A.gl[1].material.color.copy(col2);
+    A.sh.forEach(function (q, i) { var a = q.a + t * 1.6; q.m.position.set(Math.cos(a) * 0.05, 0.4 + Math.sin(t * 2 + i) * 0.03, -0.12 + Math.sin(a) * 0.14); q.m.rotation.y = t * 3 + i; q.m.material.color.copy(col); });
+    if (A.arcs.length) {
+      A.arcT = (A.arcT || 0) - dt;
+      if (A.arcT <= 0) {
+        A.arcT = 0.05 + Math.random() * 0.07;
+        A.arcs.forEach(function (ln) {
+          var on = Math.random() < (swing ? 0.95 : 0.6); ln.visible = on; if (!on) return;
+          var p = ln.geometry.attributes.position, u0 = Math.random() * 0.7, u1 = u0 + 0.15 + Math.random() * 0.25;
+          for (var k = 0; k < 8; k++) {
+            ryanEdgePt(u0 + (u1 - u0) * k / 7, RYV);
+            var j = k === 0 || k === 7 ? 0 : 1;
+            p.setXYZ(k, RYV.x + (Math.random() - 0.5) * 0.03 * j, RYV.y + (Math.random() - 0.5) * 0.03 * j, RYV.z - Math.random() * 0.025 * j);
+          }
+          p.needsUpdate = true; ln.material.color.copy(col).lerp(new THREE.Color(0xffffff), 0.5);
+        });
+      }
+      // sparks: drift up slowly, pour off the blade while swinging
+      var rate = swing ? 0.5 : 0.08;
+      A.sp.forEach(function (s) {
+        if (s.life <= 0) {
+          if (Math.random() < rate) { ryanEdgePt(Math.random(), RYV2); s.m.position.copy(RYV2); s.v.set((Math.random() - 0.5) * 0.05, 0.05 + Math.random() * 0.12, -Math.random() * 0.08 - (swing ? 0.15 : 0)); s.life = 0.5 + Math.random() * 0.6; }
+          s.m.material.opacity = 0; return;
+        }
+        s.life -= dt; s.m.position.addScaledVector(s.v, dt); s.m.material.opacity = Math.min(1, s.life * 2); s.m.material.color.copy(col);
+      });
+    }
+  }
+  // the hatchet in your hand: Stormfang swaps the whole look while it is held
+  function rwSkinFor(s) { return s && s.id === 'rhatchet' ? 'ryan' : ''; }
+  var rwToolLookTick0 = rwToolLookTick;
+  rwToolLookTick = function (dt) {
+    if (!RW.on) return;
+    var s = rwHeldSlot(), d = s && RWI[s.id], T = VM.tools.hatchet, sk = rwSkinFor(s);
+    if (T) {
+      var want = sk === 'ryan' && d && d.tool === 'hatchet';
+      if (want && !T.userData.ryan) {
+        T.children.forEach(function (o) { if (o !== T.userData.deco && o.isMesh) { o.userData.wasVis = o.visible; o.visible = false; } });
+        if (T.userData.deco) T.userData.deco.visible = false;
+        T.userData.ryan = ryanAxe(false); T.add(T.userData.ryan); T.lookKey = 'ryan';
+      } else if (!want && T.userData.ryan) {
+        T.remove(T.userData.ryan); T.userData.ryan = null;
+        T.children.forEach(function (o) { if (o.isMesh) o.visible = o.userData.wasVis !== false; });
+        if (T.userData.deco) T.userData.deco.visible = true; T.lookKey = '';
+      }
+      if (T.userData.ryan) { ryanAxeAnim(T.userData.ryan, Math.min(0.05, dt || 0.016), VM.sw > 0); return; }
+    }
+    rwToolLookTick0();
+  };
+  function rwToolUpOk(s) { var d = s && RWI[s.id]; return !!(d && d.tool && VM.tools[d.tool] && s.id !== 'rhatchet' && /^(rock|hatchet|pickaxe|hammer|spear|machete)$/.test(d.tool)); }
+  function humToolCopy(tool) {   // a world copy of a tool's plain model, whatever my own hand is showing right now
+    var T = VM.tools[tool], dc = T.userData.deco, ry = T.userData.ryan, hid = [];
+    if (dc) dc.visible = false; if (ry) ry.visible = false;
+    T.children.forEach(function (o) { if (o.isMesh && !o.visible && o.userData.wasVis !== undefined) { o.visible = true; hid.push(o); } });
+    var t = humCopy(T, false);
+    hid.forEach(function (o) { o.visible = false; }); if (dc) dc.visible = !ry; if (ry) ry.visible = true;
+    return t;
   }
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable

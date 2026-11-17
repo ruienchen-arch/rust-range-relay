@@ -22,7 +22,7 @@ const MAX_ACCOUNTS = 20000;
 const TOKEN_DAYS = 30;
 const COOP_MAX = +process.env.COOP_MAX || 0;      // 0 = unlimited
 const MAX_MSG = 16 * 1024;                          // the game never sends more than this
-const MAX_FRAME = 1024 * 1024;   // a player's base backup can be a few hundred KB
+const MAX_FRAME = 8 * 1024 * 1024;   // update 119: room for a big island copy and a big base copy in one join message   // a player's base backup can be a few hundred KB
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 const rooms = new Map();
@@ -540,7 +540,7 @@ function worldTeam(c, m) {
 // ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
 const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
 // GIFT_SEED="name:item:count[:batch];..." - each line is given once. A new batch name gives the same thing again.
-const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:atur:10:b6' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:atur:10:b6;ryan:rhatchet:1:b7' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
 // GIFT_STOP="atur" - items that are no longer given: anything of these still waiting to be handed out is dropped
 const GIFT_STOP = (process.env.GIFT_STOP === undefined ? 'atur;tank;heli' : process.env.GIFT_STOP).split(/[;,+]/).map((x) => x.trim()).filter(Boolean);
 const giftOk = (id, k) => !GIFT_STOP.includes(String(id)) || (!!k && GIFT_SEED.some((g) => (g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : '')) === k));   // update 115: a stopped item is still given when this very line is in GIFT_SEED (Ryan's 10 turrets)
@@ -675,7 +675,10 @@ function saveCars() {
   if (carT) return;
   carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '', am: q.am | 0, hp: q.hp, dead: q.dead || undefined })), g: [...carGone].slice(-2000) })); } catch (e) {} }, 3000);
 }
-function checkCarSeed() { const s = worldSeed(); if (carSeed !== s) { cars.clear(); carSeq = 1; carSeed = s; saveCars(); } }
+// update 119: a server that lost its disk numbers new vehicles from the clock, so they can never take the id of a vehicle
+// that a player's island copy is about to bring back (that one used to be dropped - a vehicle gone after a restart)
+if (!fs.existsSync(CAR_FILE)) carSeq = 100000 + Math.floor(Date.now() / 1000) % 9000000;
+function checkCarSeed() { const s = worldSeed(); if (carSeed !== s) { cars.clear(); carSeq = 100000 + Math.floor(Date.now() / 1000) % 9000000; carSeed = s; saveCars(); } }
 const carPub = (q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, seats: q.seats, by: q.by, ty: q.ty || '', am: q.am | 0, hp: q.hp === undefined ? (q.ty === 't' ? TANK_HP : undefined) : Math.round(q.hp), dead: q.dead ? 1 : undefined });
 function carSeatOf(cid) { for (const q of cars.values()) { const i = q.seats.indexOf(cid); if (i >= 0) return [q, i]; } return null; }
 function carFree(cid) { const s = carSeatOf(cid); if (!s) return; s[0].seats[s[1]] = 0; if (s[1] === 0) s[0].sp = 0; worldAll(J({ t: 'RVs', car: carPub(s[0]) })); }
@@ -695,12 +698,12 @@ function worldCarEnter(c, m) {
   carFree(c.id);
   const seat = q.seats.indexOf(0);
   if (seat < 0) { c.send(J({ t: 'RVf', id })); return; }
-  q.seats[seat] = c.id; saveCars(); worldAll(J({ t: 'RVs', car: carPub(q) }));
+  q.seats[seat] = c.id; q.wbT = 0; saveCars(); worldAll(J({ t: 'RVs', car: carPub(q) }));
 }
 function worldCarMove(c, m) {
   const q = cars.get(String(m.id || '')); if (!q || q.seats[0] !== c.id) return;
   const p = carXYZ(m); if (!p) return;
-  q.x = p[0]; q.y = p[1]; q.z = p[2]; q.yaw = +m.yaw || 0; q.sp = +m.sp || 0; saveCars();
+  q.x = p[0]; q.y = p[1]; q.z = p[2]; q.yaw = +m.yaw || 0; q.sp = +m.sp || 0; q.wbT = 0; saveCars();
   const out = J({ t: 'RVm', id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, sp: q.sp, p: +m.p || 0, r: +m.r || 0, st: Math.max(-1, Math.min(1, +m.st || 0)), tu: +m.tu || 0, tp: +m.tp || 0 });
   for (const o of world.clients.values()) if (o !== c) o.send(out);
 }
@@ -745,7 +748,8 @@ function worldCarMake(c, m) {
   if (c.hasPos && Math.hypot(c.x - p[0], c.z - p[2]) > 14) return;
   const CAR_MAX = +process.env.CAR_MAX || 0;   // update 112: no limit unless CAR_MAX is set
   if (CAR_MAX > 0 && [...cars.values()].filter((q) => q.by && q.by === c.owner).length >= CAR_MAX) { c.send(J({ t: 'RVf', id: '', why: 'max' })); return; }
-  const id = 'p' + (carSeq++), ty = VTY(m.ty);
+  let id; do { id = 'p' + (carSeq++); if (carSeq > 9999999) carSeq = 1; } while (cars.has(id) || wbCarKnown.has(id) || carGone.has(id));   // update 119: never an id a backup still has
+  const ty = VTY(m.ty);
   const q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: c.owner || '', ty, seats: carSeats(ty) };
   cars.set(id, q); saveCars(); worldAll(J({ t: 'RVc', car: carPub(q) }));
 }
@@ -842,16 +846,22 @@ const WB_KEY = crypto.createHash('sha256').update('world-backup|' + BK_KEY).dige
 const wbKnown = new Set(), wbCarKnown = new Set();
 function wbNote() { for (const a of builds.values()) wbKnown.add(a[7]); for (const id of cars.keys()) wbCarKnown.add(id); }
 function wbMake() {
-  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tid: teams.map((t) => t.id), tmeta: teamMeta, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, gfw: nameBind, grb: richBack, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
+  const mk = (withB) => JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tid: teams.map((t) => t.id), tmeta: teamMeta, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, gfw: nameBind, grb: richBack, b: withB ? [...builds.values()] : [], nb: withB ? 0 : 1, cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
+  let body = mk(true);
   const h = crypto.createHash('sha1').update(body).digest('hex');
   if (h === wbMake.h) return null;
-  const zz = zlib.deflateRawSync(body.slice(0, -1) + ',"t":' + Date.now() + '}'); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
+  let zz = zlib.deflateRawSync(body.slice(0, -1) + ',"t":' + Date.now() + '}');
+  if (zz.length > 2400000) {   // update 119: too big for one copy - still hand out everything except the bases (each player's own copy brings their base back), so vehicles, teams and the rest never go stale
+    if (!wbMake.big) { console.log('world backup too big (' + zz.length + ' bytes): sending it without bases'); wbMake.big = 1; }
+    body = mk(false); zz = zlib.deflateRawSync(body.slice(0, -1) + ',"t":' + Date.now() + '}');
+    if (zz.length > 2400000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
+  }
   const iv = crypto.randomBytes(12), ci = crypto.createCipheriv('aes-256-gcm', WB_KEY, iv), enc = Buffer.concat([ci.update(zz), ci.final()]);
   wbMake.h = h;
   return Buffer.concat([iv, ci.getAuthTag(), enc]).toString('base64');
 }
 function wbOpen(str) {
-  const buf = Buffer.from(String(str), 'base64'); if (buf.length < 40 || buf.length > 900000) return null;
+  const buf = Buffer.from(String(str), 'base64'); if (buf.length < 40 || buf.length > 3000000) return null;
   const d = crypto.createDecipheriv('aes-256-gcm', WB_KEY, buf.subarray(0, 12)); d.setAuthTag(buf.subarray(12, 28));
   const zz = Buffer.concat([d.update(buf.subarray(28)), d.final()]);
   return JSON.parse(zlib.inflateRawSync(zz, { maxOutputLength: 30e6 }).toString('utf8'));
@@ -886,10 +896,20 @@ function wbRestore(c, str, ct) {
     const ps = 0;   // backpacks are not in it: each player's own copy brings theirs back
     let nc = 0;
     for (const q of Array.isArray(w.cars) ? w.cars.slice(0, 500) : []) {
-      if (!q || typeof q.id !== 'string' || !/^(m\d{1,3}_\d|p\d{1,7})$/.test(q.id) || cars.has(q.id) || wbCarKnown.has(q.id) || carGone.has(q.id)) continue;
+      if (!q || typeof q.id !== 'string' || !/^(m\d{1,3}_\d|p\d{1,7})$/.test(q.id) || carGone.has(q.id)) continue;
       const p = carXYZ(q); if (!p) continue;
-      const car = { id: q.id, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)) };
-      cars.set(q.id, car); wbCarKnown.add(q.id); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
+      const qby = typeof q.by === 'string' ? q.by.slice(0, 80) : '';
+      let e = cars.get(q.id);
+      if (e && e.wbT && wt > e.wbT && !e.seats.some(Boolean) && (e.by || '') === qby) {   // update 119: it came from an older copy and nobody touched it since: this newer copy knows where it really is
+        e.x = p[0]; e.y = p[1]; e.z = p[2]; e.yaw = +q.yaw || 0; e.ty = VTY(q.ty); e.seats = carSeats(e.ty); e.am = Math.max(0, Math.min(TANK_CAP, q.am | 0)); e.wbT = wt;
+        nc++; worldAll(J({ t: 'RVc', car: carPub(e) })); continue;
+      }
+      let nid = q.id;
+      if (e && nid[0] === 'p' && (e.by || '') !== qby && !wbCarKnown.has(nid + '>')) {   // update 119: the id was taken by a vehicle built after the restart: this one gets a new id instead of being dropped
+        do { nid = 'p' + (carSeq++); } while (cars.has(nid)); wbCarKnown.add(q.id + '>');
+      } else if (e || wbCarKnown.has(q.id)) continue;
+      const car = { id: nid, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)), wbT: wt };
+      cars.set(nid, car); wbCarKnown.add(nid); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
     }
     if ((+w.cs | 0) > carSeq) carSeq = +w.cs | 0;
     if (w.gn && typeof w.gn === 'object') {   // names people picked come back (a name somebody uses now wins)
