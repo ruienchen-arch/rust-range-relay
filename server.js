@@ -540,27 +540,48 @@ function worldTeam(c, m) {
 // ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
 const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
 // GIFT_SEED="name:item:count[:batch];..." - each line is given once. A new batch name gives the same thing again.
-const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:tank:10:b5;ryan:heli:10:b5' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:atur:10:b6' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
 // GIFT_STOP="atur" - items that are no longer given: anything of these still waiting to be handed out is dropped
-const GIFT_STOP = (process.env.GIFT_STOP === undefined ? 'atur' : process.env.GIFT_STOP).split(/[;,+]/).map((x) => x.trim()).filter(Boolean);
-const giftOk = (id) => !GIFT_STOP.includes(String(id));
+const GIFT_STOP = (process.env.GIFT_STOP === undefined ? 'atur;tank;heli' : process.env.GIFT_STOP).split(/[;,+]/).map((x) => x.trim()).filter(Boolean);
+const giftOk = (id, k) => !GIFT_STOP.includes(String(id)) || (!!k && GIFT_SEED.some((g) => (g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : '')) === k));   // update 115: a stopped item is still given when this very line is in GIFT_SEED (Ryan's 10 turrets)
 // RICH_NAMES="ryan" - these players have endless coins
 const RICH_NAMES = (process.env.RICH_NAMES === undefined ? 'ryan' : process.env.RICH_NAMES).split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean);
 let gifts = {}, giftDone = {}, giftT = null, nameBind = {};   // nameBind: name -> the ONE player (key) it was given to, fixed the first time, so somebody who later calls himself the same gets nothing
 try { const o = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')); gifts = o.g || {}; giftDone = o.d || {}; nameBind = o.w || {}; } catch (e) {}
-function saveGifts() { if (giftT) return; giftT = setTimeout(() => { giftT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(GIFT_FILE, JSON.stringify({ g: gifts, d: giftDone, w: nameBind })); } catch (e) {} }, 1000); }
+function saveGifts() { if (giftT) return; giftT = setTimeout(() => { giftT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(GIFT_FILE, JSON.stringify({ g: gifts, d: giftDone, w: nameBind, rb: richBack })); } catch (e) {} }, 1000); }
 function boundOwner(n) {   // the player a name means for gifts and coins: chosen once (the one in a team, else whoever played last), then never changes
   const low = n.toLowerCase(); if (nameBind[low]) return nameBind[low];
   const L = ownersByName(low); const o = L.find((q) => teamOf(q)) || L[0]; if (!o) return '';
   nameBind[low] = o; saveGifts(); console.log('name bound: ' + low + ' -> ' + o); return o;
 }
-const isRich = (o) => !!o && RICH_NAMES.some((n) => nameBind[n] === o);
-function richSend(c) { if (!c.closed) c.send(JSON.stringify({ t: 'RRICH', on: isRich(c.owner) ? 1 : 0 })); }
+// update 115: RICH_TEMP="name,name@2026-11-20T05:15:00Z" - endless coins until that time; afterwards they get back the coins they had before
+const RICH_TEMP = (process.env.RICH_TEMP === undefined ? 'masonton,tanyol,kamchak2012@2026-11-20T05:15:00Z' : process.env.RICH_TEMP).split('@');
+const RICH_TEMP_NAMES = RICH_TEMP[0].split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean), RICH_TEMP_END = Date.parse(RICH_TEMP[1] || '') || 0;
+let richBack = {};   // player key -> coins they had when the endless coins started
+try { richBack = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')).rb || {}; } catch (e) {}
+const richTempOn = () => Date.now() < RICH_TEMP_END;
+const isRichTemp = (o) => !!o && RICH_TEMP_NAMES.some((n) => nameBind[n] === o);
+const isRich = (o) => !!o && (RICH_NAMES.some((n) => nameBind[n] === o) || (richTempOn() && isRichTemp(o)));
+function richNote(o) {   // remember what they had before the endless coins
+  if (!o || richBack[o] !== undefined || !isRichTemp(o) || !richTempOn()) return;
+  const sv = players[o]; richBack[o] = sv && sv.coins < 4e8 ? sv.coins | 0 : (sv ? 0 : 120); saveGifts();
+}
+let richWasOn = richTempOn();
+setInterval(() => {   // the time is up: tell everyone online who had them
+  const on = richTempOn(); if (on === richWasOn) return; richWasOn = on;
+  for (const c of world.clients.values()) if (isRichTemp(c.owner)) richSend(c);
+  if (!on) console.log('temporary endless coins ended');
+}, 30000);
+function richSend(c) {
+  if (c.closed) return; richNote(c.owner);
+  const on = isRich(c.owner), m = { t: 'RRICH', on: on ? 1 : 0 };
+  if (!on && richBack[c.owner] !== undefined) m.back = richBack[c.owner];   // over: the client puts the old coins back (if it still shows endless ones)
+  c.send(JSON.stringify(m));
+}
 function giftSeed() {
-  for (const n of RICH_NAMES) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
-  for (const o in gifts) { const q = gifts[o].filter((x) => giftOk(x.id)); if (q.length !== gifts[o].length) { console.log('gift stopped for ' + o); saveGifts(); } if (q.length) gifts[o] = q; else delete gifts[o]; }
+  for (const n of RICH_NAMES.concat(richTempOn() ? RICH_TEMP_NAMES : [])) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
+  for (const o in gifts) { const q = gifts[o].filter((x) => giftOk(x.id, x.k)); if (q.length !== gifts[o].length) { console.log('gift stopped for ' + o); saveGifts(); } if (q.length) gifts[o] = q; else delete gifts[o]; }
   for (const g of GIFT_SEED) {
-    if (!giftOk(g[1])) continue;
     const key = g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : ''); if (giftDone[key]) continue;
     const o = boundOwner(g[0]); if (!o) continue;
     giftDone[key] = 1; (gifts[o] = gifts[o] || []).push({ id: g[1], n: Math.min(999, +g[2] | 0), k: key }); saveGifts();
@@ -568,7 +589,7 @@ function giftSeed() {
     for (const c of world.clients.values()) if (c.owner === o) setTimeout(() => giftSend(c), 1500);
   }
 }
-function giftSend(c) { if (gifts[c.owner]) { gifts[c.owner] = gifts[c.owner].filter((x) => giftOk(x.id)); if (!gifts[c.owner].length) delete gifts[c.owner]; } const q = gifts[c.owner]; const now = Date.now(); if (q && q.length && !c.closed && now - (c.gfT || 0) > 8000) { c.gfT = now; } else return; c.send(JSON.stringify({ t: 'RGF', g: q.map((x) => ({ id: x.id, n: x.n })) })); }
+function giftSend(c) { if (gifts[c.owner]) { gifts[c.owner] = gifts[c.owner].filter((x) => giftOk(x.id, x.k)); if (!gifts[c.owner].length) delete gifts[c.owner]; } const q = gifts[c.owner]; const now = Date.now(); if (q && q.length && !c.closed && now - (c.gfT || 0) > 8000) { c.gfT = now; } else return; c.send(JSON.stringify({ t: 'RGF', g: q.map((x) => ({ id: x.id, n: x.n })) })); }
 function worldGiftTook(c, m) {   // the player's game says how many fitted
   const q = gifts[c.owner]; if (!q) return;
   const it = q.find((x) => x.id === String(m.id)); if (!it) return;
@@ -647,14 +668,15 @@ const CAR_FILE = path.join(DATA_DIR, 'cars.json');
 let cars = new Map(), carSeed = '', carSeq = 1, carT = null;
 const VTY = (t) => (t === 'h' || t === 'b' || t === 'r' || t === 't') ? t : '';   // h helicopter, b rowboat, r RHIB, t tank (update 106)
 const carSeats = (ty) => ty === 'h' || ty === 'b' || ty === 't' ? [0, 0] : [0, 0, 0, 0];
-const TANK_CAP = 8;   // shells a tank holds; players load them from their backpacks   // a helicopter seats a pilot and one passenger
-try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)) }); }); } catch (e) {}
+const TANK_CAP = 8, TANK_HP = 1200, TANK_BACK = (+process.env.TANK_BACK_MIN || 20) * 60000;   // update 113: tank armour; a blown-up monument tank comes back after TANK_BACK
+const carGone = new Set();   // ids of built tanks that were blown up: a whole-island backup must not bring them back   // shells a tank holds; players load them from their backpacks   // a helicopter seats a pilot and one passenger
+try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)), hp: q.hp === undefined ? undefined : Math.max(1, Math.min(TANK_HP, +q.hp || TANK_HP)), dead: +q.dead || 0 }); }); (w.g || []).forEach((id) => carGone.add(String(id))); } catch (e) {}
 function saveCars() {
   if (carT) return;
-  carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '', am: q.am | 0 })) })); } catch (e) {} }, 3000);
+  carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '', am: q.am | 0, hp: q.hp, dead: q.dead || undefined })), g: [...carGone].slice(-2000) })); } catch (e) {} }, 3000);
 }
 function checkCarSeed() { const s = worldSeed(); if (carSeed !== s) { cars.clear(); carSeq = 1; carSeed = s; saveCars(); } }
-const carPub = (q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, seats: q.seats, by: q.by, ty: q.ty || '', am: q.am | 0 });
+const carPub = (q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, seats: q.seats, by: q.by, ty: q.ty || '', am: q.am | 0, hp: q.hp === undefined ? (q.ty === 't' ? TANK_HP : undefined) : Math.round(q.hp), dead: q.dead ? 1 : undefined });
 function carSeatOf(cid) { for (const q of cars.values()) { const i = q.seats.indexOf(cid); if (i >= 0) return [q, i]; } return null; }
 function carFree(cid) { const s = carSeatOf(cid); if (!s) return; s[0].seats[s[1]] = 0; if (s[1] === 0) s[0].sp = 0; worldAll(J({ t: 'RVs', car: carPub(s[0]) })); }
 function carXYZ(m) { const x = num(m.x, WORLD_SIZE + 60), y = num(m.y, 500), z = num(m.z, WORLD_SIZE + 60); return x === null || y === null || z === null ? null : [x, y, z]; }
@@ -666,6 +688,7 @@ function worldCarEnter(c, m) {
     const ty = VTY(m.ty) === 'h' ? '' : VTY(m.ty);   // monument boats arrive here the first time somebody gets in
     q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: '', ty, seats: carSeats(ty) }; cars.set(id, q);
   }
+  if (q.dead) return;   // update 113: blown up, waiting to come back
   if (id[0] === 'm' && /^m\d{1,3}_[89]$/.test(id) && q.ty !== 't' && VTY(m.ty) === 't' && !q.seats.some(Boolean)) { q.ty = 't'; q.seats = carSeats('t'); saveCars(); }   // update 110: a monument tank saved as a car by an older server is a tank again
   if (c.hasPos && Math.hypot(c.x - q.x, c.z - q.z) > 10) return;
   const had = carSeatOf(c.id); if (had && had[0] === q) return;
@@ -695,6 +718,28 @@ function worldTankFire(c, m) {   // the driver fires: one shell less, and everyb
   const v = (k) => Math.round((+m[k] || 0) * 1000) / 1000, shot = J({ t: 'RVsh', id: q.id, x: v('x'), y: v('y'), z: v('z'), dx: v('dx'), dy: v('dy'), dz: v('dz') });
   for (const o of world.clients.values()) if (o !== c) o.send(shot);
 }
+function worldTankHurt(c, m) {   // update 113: an explosion near a tank, reported by the game that caused it
+  const id = String(m.id || ''); if (!/^(m\d{1,3}_[89]|p\d{1,7})$/.test(id)) return;
+  let q = cars.get(id);
+  if (!q && id[0] === 'm') {   // a monument tank nobody has touched yet: it starts here
+    const p = carXYZ(m); if (!p) return;
+    q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: 0x4d5a3a, by: '', ty: 't', seats: carSeats('t'), am: 0 }; cars.set(id, q);
+  }
+  if (!q || q.ty !== 't' || q.dead) return;
+  if (c.hasPos && Math.hypot(c.x - q.x, c.z - q.z) > 220) return;
+  const now = Date.now(); c.tdh = (c.tdh || []).filter((t) => now - t < 1000); if (c.tdh.length >= 12) return; c.tdh.push(now);
+  const d = Math.max(0, Math.min(500, +m.d || 0)); if (!d) return;
+  q.hp = (q.hp === undefined ? TANK_HP : q.hp) - d;
+  if (q.hp > 0) { saveCars(); worldAll(J({ t: 'RVh', id, hp: Math.round(q.hp) })); return; }
+  const out = J({ t: 'RVx', id, x: q.x, y: q.y, z: q.z, by: c.id });
+  q.seats = carSeats('t'); q.sp = 0;
+  if (id[0] === 'm') { q.dead = now + TANK_BACK; q.hp = TANK_HP; q.am = 0; } else { cars.delete(id); carGone.add(id); }
+  saveCars(); worldAll(out); console.log('tank destroyed: ' + id);
+}
+setInterval(() => {   // blown-up monument tanks come back where they started
+  const now = Date.now();
+  for (const q of [...cars.values()]) if (q.dead && now > q.dead) { cars.delete(q.id); saveCars(); worldAll(J({ t: 'RVr', id: q.id })); }
+}, 15000);
 function worldCarMake(c, m) {
   const p = carXYZ(m); if (!p) return;
   if (c.hasPos && Math.hypot(c.x - p[0], c.z - p[2]) > 14) return;
@@ -797,7 +842,7 @@ const WB_KEY = crypto.createHash('sha256').update('world-backup|' + BK_KEY).dige
 const wbKnown = new Set(), wbCarKnown = new Set();
 function wbNote() { for (const a of builds.values()) wbKnown.add(a[7]); for (const id of cars.keys()) wbCarKnown.add(id); }
 function wbMake() {
-  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tid: teams.map((t) => t.id), tmeta: teamMeta, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, gfw: nameBind, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
+  const body = JSON.stringify({ v: 2, seed: worldSeed(), st: stats, gn: gnames, tm: teams, tid: teams.map((t) => t.id), tmeta: teamMeta, tsd: seedDone, tv: vice, gf: gifts, gfd: giftDone, gfw: nameBind, grb: richBack, b: [...builds.values()], cars: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '' })), cs: carSeq });
   const h = crypto.createHash('sha1').update(body).digest('hex');
   if (h === wbMake.h) return null;
   const zz = zlib.deflateRawSync(body.slice(0, -1) + ',"t":' + Date.now() + '}'); if (zz.length > 650000) { console.log('world backup too big to hand out (' + zz.length + ' bytes)'); return null; }
@@ -841,7 +886,7 @@ function wbRestore(c, str, ct) {
     const ps = 0;   // backpacks are not in it: each player's own copy brings theirs back
     let nc = 0;
     for (const q of Array.isArray(w.cars) ? w.cars.slice(0, 500) : []) {
-      if (!q || typeof q.id !== 'string' || !/^(m\d{1,3}_\d|p\d{1,7})$/.test(q.id) || cars.has(q.id) || wbCarKnown.has(q.id)) continue;
+      if (!q || typeof q.id !== 'string' || !/^(m\d{1,3}_\d|p\d{1,7})$/.test(q.id) || cars.has(q.id) || wbCarKnown.has(q.id) || carGone.has(q.id)) continue;
       const p = carXYZ(q); if (!p) continue;
       const car = { id: q.id, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)) };
       cars.set(q.id, car); wbCarKnown.add(q.id); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
@@ -866,8 +911,9 @@ function wbRestore(c, str, ct) {
     }
     if (w.gfd && typeof w.gfd === 'object') {   // gifts: never give one twice, finish one that was half given
       for (const q in w.gfd) giftDone[q] = 1;
+      if (w.grb && typeof w.grb === 'object') for (const q in w.grb) if (richBack[q] === undefined && /^[uk]:/.test(q)) richBack[q] = Math.max(0, Math.min(4e8, +w.grb[q] | 0));
       if (w.gfw && typeof w.gfw === 'object') for (const q in w.gfw) if (!nameBind[q] && /^[uk]:/.test(String(w.gfw[q]))) nameBind[q] = String(w.gfw[q]);
-      if (w.gf && typeof w.gf === 'object') for (const o in w.gf) if (!gifts[o] && Array.isArray(w.gf[o])) gifts[o] = w.gf[o].filter((g) => g && RWI_OK.test(String(g.id)) && g.n > 0 && giftOk(g.id)).map((g) => ({ id: String(g.id), n: Math.min(999, Math.floor(g.n)), k: String(g.k || '') }));
+      if (w.gf && typeof w.gf === 'object') for (const o in w.gf) if (!gifts[o] && Array.isArray(w.gf[o])) gifts[o] = w.gf[o].filter((g) => g && RWI_OK.test(String(g.id)) && g.n > 0 && giftOk(g.id, g.k)).map((g) => ({ id: String(g.id), n: Math.min(999, Math.floor(g.n)), k: String(g.k || '') }));
       saveGifts();
     }
     if (w.st && typeof w.st === 'object') { for (const o of Object.keys(w.st).slice(0, 5000)) statMerge(o, w.st[o]); saveStats(); }   // the leaderboard comes back too
@@ -1389,6 +1435,7 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Vc') { worldCarMake(c, m); return; }
   if (c.world && m.t === 'Vam') { worldTankLoad(c, m); return; }
   if (c.world && m.t === 'Vfi') { worldTankFire(c, m); return; }
+  if (c.world && m.t === 'Vdm') { worldTankHurt(c, m); return; }
   if (c.world && (m.t === 'Bq' || m.t === 'Bp' || m.t === 'Bt' || m.t === 'Bl' || m.t === 'Bc')) { worldCont(c, m); return; }
   const to = m.to; delete m.to;
   m.i = c.id;
