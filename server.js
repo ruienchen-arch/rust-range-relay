@@ -162,7 +162,7 @@ const HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // i
 const CONT = { bx: 18, lb: 30, fu: 4, cf: 4 };                               // containers and their slots
 const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm', 'aa']);
 const HP = { aa: 1500, at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
-const MAX_BUILDS = +process.env.MAX_BUILDS || 40000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || 5000;   // update 82: 5000 parts per player (was 1500)
+const MAX_BUILDS = +process.env.MAX_BUILDS || 1000000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || Infinity;   // update 130: no limit per player (MAX_PER_OWNER can set one again)
 const TC_RANGE = 25;
 const ITEM_RE = /^[a-z][a-z0-9_]{1,15}$/;   // update 121: any item id (a fixed list kept missing new items - scopes, tanks, tank shells, Stormfang - and the server copy of backpacks, boxes and bags silently lost them)
 const builds = new Map();
@@ -206,12 +206,13 @@ function checkPlayerSeed() {   // a new island starts everybody fresh, like a wi
 const int = (v, lo, hi) => (Number.isFinite(+v) ? Math.max(lo, Math.min(hi, Math.round(+v))) : lo);
 const num = (v, lim) => (Number.isFinite(+v) && Math.abs(+v) <= lim ? Math.round(+v * 100) / 100 : null);
 function cleanSave(s) {
-  if (!s || typeof s !== 'object' || !Array.isArray(s.inv) || s.inv.length !== 30) return null;
+  if (!s || typeof s !== 'object' || !Array.isArray(s.inv) || (s.inv.length !== 30 && s.inv.length !== 48)) return null;   // update 129: 48 with the bigger backpack
   const o = { v: 1, t: int(s.t, 0, 9e15), hot: int(s.hot, 0, 5), coins: int(s.coins, 0, 1e9), gr: int(s.gr, 0, 9), inv: [] };
   if (Array.isArray(s.mk)) o.mk = s.mk.filter((m) => Array.isArray(m) && num(m[0], WORLD_SIZE * 2) !== null && num(m[1], WORLD_SIZE * 2) !== null).slice(0, 6).map((m) => [Math.round(+m[0]), Math.round(+m[1])]);   // map markers
   for (const it of s.inv) o.inv.push(cleanSlot(it) || 0);
   if (s.wm) o.wm = 1;
   if (s.vit) o.vit = int(s.vit, 0, 3);
+  if (s.bx) o.bx = int(s.bx, 0, 18);   // update 129: extra backpack slots
   if (Array.isArray(s.sko)) o.sko = s.sko.filter((id) => typeof id === 'string' && /^[a-z0-9_]{2,40}$/.test(id) && !/^(ex|lim)_/.test(id)).slice(0, 400);   // update 122: skins you bought
   if (s.ske && typeof s.ske === 'object') { o.ske = {}; Object.keys(s.ske).slice(0, 40).forEach((k) => { if (/^[a-z0-9]{1,10}$/.test(k) && typeof s.ske[k] === 'string' && /^[a-z0-9_]{0,40}$/.test(s.ske[k])) o.ske[k] = s.ske[k]; }); }   // and which one is on each weapon   // Vitality used (max HP +20 each)
   if (Array.isArray(s.wl) && s.wl.length <= 24) o.wl = s.wl.map((v) => int(v, 1, 20));   // weapon upgrade levels
@@ -1029,7 +1030,7 @@ function worldBuild(c, m) {
   const no = (why, extra) => c.send(JSON.stringify(Object.assign({ t: 'Rr', k: BUILD_KINDS.has(k) ? k : '', why: why || '' }, extra || {})));
   const now = Date.now();
   c.bh = (c.bh || []).filter((t) => now - t < 10000);
-  if (c.bh.length >= 40) return no('fast');                        // at most 40 parts per 10 s
+  if (c.bh.length >= 90) return no('fast');                        // at most 90 parts per 10 s (update 127: the Rapid Planner places whole rows)
   if (!BUILD_KINDS.has(k) || ![x, y, z].every(Number.isFinite) || Math.abs(x) > WORLD_SIZE || Math.abs(z) > WORLD_SIZE || y < -40 || y > 400) return no('bad');
   if (builds.size >= MAX_BUILDS) return no('full');
   for (const a of builds.values()) if (a[1] === 'tc' && Math.hypot(a[2] - x, a[4] - z) < TC_RANGE && a[10].a.indexOf(c.owner) < 0) return no('tc', { by: ownerName(a[7]), at: [a[2], a[4]], p: pub(a) });   // somebody else's tool cupboard (sent along, in case this browser does not show it)
