@@ -49,7 +49,7 @@ function seasonNow(now) {
   const i = Math.max(0, Math.floor((now - SEASON_START) / SEASON_MS));
   return { i: i + 1, start: SEASON_START + i * SEASON_MS, end: SEASON_START + (i + 1) * SEASON_MS, days: SEASON_DAYS };
 }
-const MAP_VER = 'm2';   // terrain version: bumping it gives everybody a fresh map (update 35: hills, mountains, biomes)
+const MAP_VER = 'm3';   // terrain version: bumping it gives everybody a fresh map (update 35: hills, mountains, biomes; update 134: a new island, everything cleared but the teams)
 function worldSeed() { return (process.env.WORLD_SEED || 'rr') + (SEASON_MS ? '-s' + seasonNow().i : '') + '-' + MAP_VER; }
 const AUTH_QUIET = 4000;   // the authority's game must send its position at least this often (it sends ~20 times a second while playing; a hidden or frozen tab stops)
 function electAuthority() {
@@ -548,32 +548,39 @@ const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;rya
 const GIFT_STOP = (process.env.GIFT_STOP === undefined ? 'atur;tank;heli' : process.env.GIFT_STOP).split(/[;,+]/).map((x) => x.trim()).filter(Boolean);
 const giftOk = (id, k) => !GIFT_STOP.includes(String(id)) || (!!k && GIFT_SEED.some((g) => (g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : '')) === k));   // update 115: a stopped item is still given when this very line is in GIFT_SEED (Ryan's 10 turrets)
 // RICH_NAMES="ryan" - these players have endless coins
-const RICH_NAMES = (process.env.RICH_NAMES === undefined ? 'ryan' : process.env.RICH_NAMES).split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean);
+// update 135: endless coins are off for everybody (RICH_NAMES / RICH_TEMP on Render can still switch them on)
+const RICH_NAMES = (process.env.RICH_NAMES === undefined ? '' : process.env.RICH_NAMES).split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean);
 let gifts = {}, giftDone = {}, giftT = null, nameBind = {};   // nameBind: name -> the ONE player (key) it was given to, fixed the first time, so somebody who later calls himself the same gets nothing
 try { const o = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')); gifts = o.g || {}; giftDone = o.d || {}; nameBind = o.w || {}; } catch (e) {}
-function saveGifts() { if (giftT) return; giftT = setTimeout(() => { giftT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(GIFT_FILE, JSON.stringify({ g: gifts, d: giftDone, w: nameBind, rb: richBack })); } catch (e) {} }, 1000); }
+function saveGifts() { if (giftT) return; giftT = setTimeout(() => { giftT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(GIFT_FILE, JSON.stringify({ g: gifts, d: giftDone, w: nameBind, rb: richBack, rs: worldSeed() })); } catch (e) {} }, 1000); }
 function boundOwner(n) {   // the player a name means for gifts and coins: chosen once (the one in a team, else whoever played last), then never changes
   const low = n.toLowerCase(); if (nameBind[low]) return nameBind[low];
   const L = ownersByName(low); const o = L.find((q) => teamOf(q)) || L[0]; if (!o) return '';
   nameBind[low] = o; saveGifts(); console.log('name bound: ' + low + ' -> ' + o); return o;
 }
-// update 115: RICH_TEMP="name,name@2026-11-20T05:15:00Z" - endless coins until that time; afterwards they get back the coins they had before
-const RICH_TEMP = (process.env.RICH_TEMP === undefined ? 'masonton,tanyol@2026-11-20T05:15:00Z' : process.env.RICH_TEMP).split('@');
-const RICH_TEMP_NAMES = RICH_TEMP[0].split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean), RICH_TEMP_END = Date.parse(RICH_TEMP[1] || '') || 0;
+// update 115/132: RICH_TEMP="name,name@2026-11-20T05:15:00Z;name@2026-11-21T10:28:00Z" - groups, each with its own end time:
+// endless coins until then; afterwards they get back the coins they had before
+const RICH_TEMP_G = (process.env.RICH_TEMP === undefined ? '' : process.env.RICH_TEMP).split(';').map((g) => {
+  const p = g.split('@'); return { names: (p[0] || '').split(/[,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean), end: Date.parse(p[1] || '') || 0 };
+}).filter((g) => g.names.length && g.end);
+const RICH_TEMP_NAMES = [].concat(...RICH_TEMP_G.map((g) => g.names));
 let richBack = {};   // player key -> coins they had when the endless coins started
-try { richBack = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')).rb || {}; } catch (e) {}
-const richTempOn = () => Date.now() < RICH_TEMP_END;
+try { const o = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')); richBack = o.rs === worldSeed() ? o.rb || {} : {}; } catch (e) {}   // update 134: coins from before a new island are not given back
+const richTempOn = () => RICH_TEMP_G.some((g) => Date.now() < g.end);
 const isRichTemp = (o) => !!o && RICH_TEMP_NAMES.some((n) => nameBind[n] === o);
-const isRich = (o) => !!o && (RICH_NAMES.some((n) => nameBind[n] === o) || (richTempOn() && isRichTemp(o)));
+const richTempActive = (o) => !!o && RICH_TEMP_G.some((g) => Date.now() < g.end && g.names.some((n) => nameBind[n] === o));
+const isRich = (o) => !!o && (RICH_NAMES.some((n) => nameBind[n] === o) || richTempActive(o));
 function richNote(o) {   // remember what they had before the endless coins
-  if (!o || richBack[o] !== undefined || !isRichTemp(o) || !richTempOn()) return;
+  if (!o || richBack[o] !== undefined || !richTempActive(o)) return;
   const sv = players[o]; richBack[o] = sv && sv.coins < 4e8 ? sv.coins | 0 : (sv ? 0 : 120); saveGifts();
 }
-let richWasOn = richTempOn();
-setInterval(() => {   // the time is up: tell everyone online who had them
-  const on = richTempOn(); if (on === richWasOn) return; richWasOn = on;
-  for (const c of world.clients.values()) if (isRichTemp(c.owner)) richSend(c);
-  if (!on) console.log('temporary endless coins ended');
+let richWasOn = RICH_TEMP_G.map((g) => Date.now() < g.end);
+setInterval(() => {   // a group's time is up: tell everyone online in it
+  RICH_TEMP_G.forEach((g, i) => {
+    const on = Date.now() < g.end; if (on === richWasOn[i]) return; richWasOn[i] = on;
+    for (const c of world.clients.values()) if (g.names.some((n) => nameBind[n] === c.owner)) richSend(c);
+    if (!on) console.log('temporary endless coins ended for ' + g.names.join(','));
+  });
 }, 30000);
 // update 122: Limited / Exclusive skins (ids starting lim_ / ex_) and who has them: SKIN_GRANTS="ex_stormfang:ryan;lim_s1_g1:name+name"
 const SKIN_GRANTS = {};
@@ -584,11 +591,11 @@ function skinSend(c) { if (!c.closed && c.owner) c.send(JSON.stringify({ t: 'RSK
 function richSend(c) {
   if (c.closed) return; richNote(c.owner);
   const on = isRich(c.owner), m = { t: 'RRICH', on: on ? 1 : 0 };
-  if (!on && richBack[c.owner] !== undefined) m.back = richBack[c.owner];   // over: the client puts the old coins back (if it still shows endless ones)
+  if (!on) m.back = richBack[c.owner] !== undefined ? richBack[c.owner] : 120;   // over: the client puts the old coins back if it still shows endless ones (update 135: 120 for anybody without a record, e.g. when endless coins are switched off)
   c.send(JSON.stringify(m));
 }
 function giftSeed() {
-  for (const n of RICH_NAMES.concat(richTempOn() ? RICH_TEMP_NAMES : [])) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
+  for (const n of RICH_NAMES.concat(RICH_TEMP_G.filter((g) => Date.now() < g.end).map((g) => g.names).flat())) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
   for (const id in SKIN_GRANTS) for (const n of SKIN_GRANTS[id]) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) skinSend(c); }   // update 122
   for (const o in gifts) { const q = gifts[o].filter((x) => giftOk(x.id, x.k)); if (q.length !== gifts[o].length) { console.log('gift stopped for ' + o); saveGifts(); } if (q.length) gifts[o] = q; else delete gifts[o]; }
   for (const g of GIFT_SEED) {
@@ -888,7 +895,8 @@ wbNote();   // whatever survived on disk is known: never overwritten by old copi
 setInterval(() => wbSendAll(false), 30000).unref();
 function wbRestore(c, str, ct) {
   try {
-    const w = wbOpen(str); if (!w || w.v !== 2 || w.seed !== worldSeed()) return;
+    const w = wbOpen(str); if (!w || w.v !== 2) return;
+    if (w.seed !== worldSeed()) { wbRestoreKeep(w); return; }   // update 134: a copy from the old island only brings back teams and names
     const wt = +w.t || Math.min(Date.now(), +ct || 0);   // how old this copy is (older copies made before update 73: the time the browser got it)
     const byOwner = new Map();
     for (const r of Array.isArray(w.b) ? w.b : []) { if (!Array.isArray(r) || typeof r[7] !== 'string' || r[7][0] === 'c') continue; if (!byOwner.has(r[7])) byOwner.set(r[7], []); byOwner.get(r[7]).push(r); }
@@ -922,6 +930,20 @@ function wbRestore(c, str, ct) {
       cars.set(nid, car); wbCarKnown.add(nid); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
     }
     if ((+w.cs | 0) > carSeq) carSeq = +w.cs | 0;
+    wbRestoreKeep(w, true);
+    if (w.gfd && typeof w.gfd === 'object') {   // gifts: never give one twice, finish one that was half given
+      if (w.grb && typeof w.grb === 'object') for (const q in w.grb) if (richBack[q] === undefined && /^[uk]:/.test(q)) richBack[q] = Math.max(0, Math.min(4e8, +w.grb[q] | 0));
+      if (w.gf && typeof w.gf === 'object') for (const o in w.gf) if (!gifts[o] && Array.isArray(w.gf[o])) gifts[o] = w.gf[o].filter((g) => g && RWI_OK.test(String(g.id)) && g.n > 0 && giftOk(g.id, g.k)).map((g) => ({ id: String(g.id), n: Math.min(999, Math.floor(g.n)), k: String(g.k || '') }));
+      saveGifts();
+    }
+    if (w.st && typeof w.st === 'object') { for (const o of Object.keys(w.st).slice(0, 5000)) statMerge(o, w.st[o]); saveStats(); }   // the leaderboard comes back too
+    if (nc) saveCars();
+    if (n || nc) console.log('world backup from ' + (c.name || c.owner) + ': ' + n + ' parts for ' + who + ' players, ' + nc + ' cars put back');
+  } catch (e) { console.error('world backup refused:', e.message); }
+}
+// update 134: what survives a new island - teams (with their channels), the names people picked, and which gifts were already given
+function wbRestoreKeep(w, same) {
+  try {
     if (w.gn && typeof w.gn === 'object') {   // names people picked come back (a name somebody uses now wins)
       let k = 0; const used = new Set(Object.values(gnames).map((v) => String(v).toLowerCase())); for (const c2 of world.clients.values()) used.add(String(c2.name || '').toLowerCase());
       for (const o of Object.keys(w.gn).slice(0, 20000)) { const v = String(w.gn[o] || '').slice(0, 16); if (!/^k:[a-f0-9]{16}$/.test(o) || gnames[o] || !v || used.has(v.toLowerCase())) continue; gnames[o] = v; used.add(v.toLowerCase()); k++; }
@@ -939,17 +961,12 @@ function wbRestore(c, str, ct) {
       if (k && w.tv && typeof w.tv === 'object') for (const q in w.tv) if (teamOf(q)) vice[q] = 1;
       if (k) saveTeams();
     }
-    if (w.gfd && typeof w.gfd === 'object') {   // gifts: never give one twice, finish one that was half given
+    if (w.gfd && typeof w.gfd === 'object') {   // gifts already given stay given; who is who for gifts and endless coins
       for (const q in w.gfd) giftDone[q] = 1;
-      if (w.grb && typeof w.grb === 'object') for (const q in w.grb) if (richBack[q] === undefined && /^[uk]:/.test(q)) richBack[q] = Math.max(0, Math.min(4e8, +w.grb[q] | 0));
       if (w.gfw && typeof w.gfw === 'object') for (const q in w.gfw) if (!nameBind[q] && /^[uk]:/.test(String(w.gfw[q]))) nameBind[q] = String(w.gfw[q]);
-      if (w.gf && typeof w.gf === 'object') for (const o in w.gf) if (!gifts[o] && Array.isArray(w.gf[o])) gifts[o] = w.gf[o].filter((g) => g && RWI_OK.test(String(g.id)) && g.n > 0 && giftOk(g.id, g.k)).map((g) => ({ id: String(g.id), n: Math.min(999, Math.floor(g.n)), k: String(g.k || '') }));
       saveGifts();
     }
-    if (w.st && typeof w.st === 'object') { for (const o of Object.keys(w.st).slice(0, 5000)) statMerge(o, w.st[o]); saveStats(); }   // the leaderboard comes back too
-    if (nc) saveCars();
-    if (n || nc) console.log('world backup from ' + (c.name || c.owner) + ': ' + n + ' parts for ' + who + ' players, ' + nc + ' cars put back');
-  } catch (e) { console.error('world backup refused:', e.message); }
+  } catch (e) { console.error('world backup (teams) refused:', e.message); }
 }
 
 // ---- things on the ground: dropped items and the bags people leave when they die ----
