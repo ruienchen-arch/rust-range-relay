@@ -12294,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 142;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 144;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -18213,6 +18213,277 @@ Object.assign(EN, {
     var s = RW.inv[RW_HOT0 + RW.hot];
     if (s && s.id === 'dock' && CAR.mine && (CAR.mine.ty === 'b' || CAR.mine.ty === 'r')) return true;
     return carWeaponOkK();
+  };
+  /* ---- update 143 ----
+     1. Stairs: you can walk up them from the ground too. Their first step is half a metre above the foundation,
+        so from the ground beside a foundation it was more than you can step (0.65 m) and you just bumped into it.
+        Near stairs you now step up to 1.1 m.
+     2. Climbing out of the sea: swimming up to a dock (its ladder or any side), a sea foundation, or a boat and
+        pressing Space (or swimming forward into it) climbs you up onto it. Before, the deck was 1.8 m above the
+        waves and there was no way up.
+     3. Boats can be stood on without getting in: jump onto one (from a dock, a base or the water) and you stand on
+        its floor; when somebody drives it, you ride along. E still gets you into a seat. */
+
+  // ---------- 1. stairs ----------
+  function stNear() {
+    for (var i = 0; i < RW.plist.length; i++) {
+      var p = RW.plist[i];
+      if ((p.k === 'st' || p.k === 'ss') && Math.abs(P.x - p.x) < 2.1 && Math.abs(P.z - p.z) < 2.1 && P.y > p.y - 1.3 && P.y < p.y + 3.2) return true;
+    }
+    return false;
+  }
+  var resolveCircleS = resolveCircle;
+  resolveCircle = function (q, r, y) {
+    if (!(RW.on && q === P && !CAR.mine && stNear())) return resolveCircleS(q, r, y);
+    resolveCircleS(q, r, y + 0.45);
+    var up = groundAt(P.x, P.z, P.y + 1.1);
+    if (up > P.y + 0.01 && up <= P.y + 1.1 && P.vy <= 0.5) { P.y = up; P.vy = 0; P.ground = true; }
+  };
+
+  // ---------- 3. standing on boats ----------
+  var BOAT_DECK = { b: { h: 0.02, w: 0.62, l: 1.75 }, r: { h: 0.05, w: 0.95, l: 2.7 } };
+  function boatDeckAt(x, z, yTop) {   // the floor of a boat under x,z (below yTop), or -1e9
+    var g = -1e9;
+    for (var k in CAR.list) {
+      var c = CAR.list[k], D = BOAT_DECK[c.ty]; if (!D) continue;
+      var dx = x - c.x, dz = z - c.z; if (dx * dx + dz * dz > 16) continue;
+      var sy = Math.sin(c.yaw), cy = Math.cos(c.yaw), along = -dx * sy - dz * cy, side = dx * cy - dz * sy;
+      if (Math.abs(along) > D.l || Math.abs(side) > D.w * (1 - Math.max(0, Math.abs(along) - D.l * 0.6) / D.l)) continue;   // narrower toward bow and stern
+      var h = c.y + D.h; if (yTop >= h - 0.05 && h > g) { g = h; BS.cand = c; }
+    }
+    return g;
+  }
+  var BS = { on: null, cand: null, last: {} };
+  var groundAtB = groundAt;
+  groundAt = function (x, z, y) {
+    var g = groundAtB(x, z, y);
+    if (RW.on && x === P.x && z === P.z && !CAR.mine) {   // only the player's own feet stand on boats
+      BS.cand = null; var b = boatDeckAt(x, z, y);
+      if (b > g) { g = b; BS.under = BS.cand; } else BS.under = null;
+    }
+    return g;
+  };
+  function boatRideTick() {   // standing on a boat that moves: move with it
+    var on = !CAR.mine && P.ground && BS.under ? BS.under : null;
+    for (var k in CAR.list) {
+      var c = CAR.list[k]; if (!BOAT_DECK[c.ty]) continue;
+      var L = BS.last[k];
+      if (on === c && L && BS.on === c) {
+        var dy = c.yaw - L.yaw, dx = P.x - L.x, dz = P.z - L.z, s = Math.sin(dy), co = Math.cos(dy);
+        P.x = c.x + dx * co + dz * s; P.z = c.z - dx * s + dz * co; P.yaw += dy;
+        P.y = Math.max(P.y, c.y + BOAT_DECK[c.ty].h); RW.px = P.x; RW.pz = P.z;
+      }
+      BS.last[k] = { x: c.x, z: c.z, yaw: c.yaw };
+    }
+    BS.on = on;
+  }
+
+  // ---------- 2. climbing out of the water ----------
+  var CLB = { t: 0 };
+  function climbTick(dt) {
+    CLB.t -= dt;
+    if (!RW.on || !RW.swim || CAR.mine || RW.dead || CLB.t > 0 || state !== 'playing') return;
+    var up = keys[KB.jump] || keys.TouchJump, fw = keys[KB.forward] || (stick && stick.y < -0.5);
+    if (!up && !fw) return;
+    if (P.y < RW_SEA - 2.2) return;   // only from the surface
+    var fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), best = null;
+    for (var d = 0.6; d <= 1.4 && !best; d += 0.4) {
+      var ax = P.x + fx * d, az = P.z + fz * d;
+      var top = Math.max(groundAtB(ax, az, RW_SEA + 3), boatDeckAt(ax, az, RW_SEA + 3));
+      if (top < RW_SEA - 0.3 || top - P.y > 3.9) continue;   // nothing above the water there, or too high
+      if (rwH(ax, az) >= top - 0.05) continue;                 // that is the shore: you walk out there anyway
+      if (insideBox(ax, top + 0.5, az) || insideBox(ax, top + 1.5, az)) continue;   // a wall in the way
+      best = [ax, top, az];
+    }
+    if (!best) return;
+    P.x = best[0]; P.y = best[1]; P.z = best[2]; P.vy = 0; P.ground = true; RW.swim = false; RW.px = P.x; RW.pz = P.z;
+    CLB.t = 0.6; sfx('land', { v: 0.5 });
+  }
+  var renderFrameC = renderFrame;
+  renderFrame = function () {
+    try { climbTick(RDT); boatRideTick(); } catch (e) {}
+    return renderFrameC();
+  };
+  // boats are solid from the side, but once your feet are at or above a boat's floor you may walk on it
+  rwCarBlock = function (p, r) {
+    if (CAR.mine) return;
+    for (var k in CAR.list) {
+      var c = CAR.list[k], B = VEH_BOX[c.ty] || VEH_BOX[''];
+      var dx = p.x - c.x, dz = p.z - c.z; if (dx * dx + dz * dz > 30) continue;
+      if (p.y > c.y + B[3] - 0.3 || p.y + 1.8 < c.y - 0.6) continue;
+      if (p === P && BOAT_DECK[c.ty] && p.y >= c.y + BOAT_DECK[c.ty].h - 0.12) continue;   // standing in the boat
+      var cs = Math.cos(c.yaw), sn = Math.sin(c.yaw), lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
+      var cx = Math.max(-B[0], Math.min(B[0], lx)), cz = Math.max(B[1], Math.min(B[2], lz)), ex = lx - cx, ez = lz - cz, d2 = ex * ex + ez * ez;
+      if (d2 >= r * r) continue;
+      if (d2 > 1e-6) { var d = Math.sqrt(d2); lx = cx + ex / d * r; lz = cz + ez / d * r; }
+      else {
+        var m = [B[0] - lx, lx + B[0], B[2] - lz, lz - B[1]], mi = 0; for (var j = 1; j < 4; j++) if (m[j] < m[mi]) mi = j;
+        if (mi === 0) lx = B[0] + r; else if (mi === 1) lx = -B[0] - r; else if (mi === 2) lz = B[2] + r; else lz = B[1] - r;
+      }
+      p.x = c.x + lx * cs + lz * sn; p.z = c.z - lx * sn + lz * cs;
+    }
+  };
+  /* ---- update 144: better building models ----
+     Walls, doorways, windows, wall frames, half and low walls, foundations and floors get real construction detail,
+     different for each grade, built into the piece's own mesh (no extra draw calls; slightly darker or lighter
+     shades come from vertex colours on the same textures):
+       wood  - timber frame: corner posts, sill and top beams, a middle rail, X braces, framed openings, window sills
+       stone - plinth, cornice, alternating corner quoins, block jambs, a lintel with a keystone
+       metal - steel corner posts, top and bottom angle strips with rivets, vertical ribs, welded opening frames
+     Foundations get edge beams / a base course / steel edging, floors get beams under their edges. The collision
+     boxes do not change. */
+  var BD = { mats: {} };
+  function bdEmit(A, cx, cy, cz, w, h, d, col, rot, axis, ou, ov) {   // one box straight into the arrays; rot turns it round x (axis 'x') or z
+    var hw = w / 2, hh = h / 2, hd = d / 2, F = [
+      [[1, 0, 0], [[hw, -hh, hd], [hw, -hh, -hd], [hw, hh, -hd], [hw, hh, hd]], d, h],
+      [[-1, 0, 0], [[-hw, -hh, -hd], [-hw, -hh, hd], [-hw, hh, hd], [-hw, hh, -hd]], d, h],
+      [[0, 1, 0], [[-hw, hh, hd], [hw, hh, hd], [hw, hh, -hd], [-hw, hh, -hd]], w, d],
+      [[0, -1, 0], [[-hw, -hh, -hd], [hw, -hh, -hd], [hw, -hh, hd], [-hw, -hh, hd]], w, d],
+      [[0, 0, 1], [[-hw, -hh, hd], [hw, -hh, hd], [hw, hh, hd], [-hw, hh, hd]], w, h],
+      [[0, 0, -1], [[hw, -hh, -hd], [-hw, -hh, -hd], [-hw, hh, -hd], [hw, hh, -hd]], w, h]];
+    var c = rot ? Math.cos(rot) : 1, s = rot ? Math.sin(rot) : 0;
+    function R(v) {
+      if (!rot) return v;
+      return axis === 'x' ? [v[0], v[1] * c - v[2] * s, v[1] * s + v[2] * c] : [v[0] * c - v[1] * s, v[0] * s + v[1] * c, v[2]];
+    }
+    var UV = [[0, 0], [1, 0], [1, 1], [0, 1]], ORD = [0, 1, 2, 0, 2, 3];
+    for (var f = 0; f < 6; f++) {
+      var n = R(F[f][0]), V = F[f][1], su = F[f][2] / RW_TILE, sv = F[f][3] / RW_TILE;
+      for (var t = 0; t < 6; t++) {
+        var q = R(V[ORD[t]]), uv = UV[ORD[t]];
+        A.p.push(q[0] + cx, q[1] + cy, q[2] + cz); A.n.push(n[0], n[1], n[2]); A.u.push(uv[0] * su + ou, uv[1] * sv + ov); if (col.length) A.c.push(col[0], col[1], col[2]); else A.c.push(col, col, col);
+      }
+    }
+  }
+  function bdWall(A, r, g, H, open, kind, ou, ov) {   // details of a wall along its u axis (r odd: along z), openings [{u0,u1,y0,y1}]
+    function B(u, y, n, lu, h, ln, col, rot) {   // a box in the wall's own frame (u along, y up, n through)
+      if (r & 1) bdEmit(A, -n, y, u, ln, h, lu, col, rot ? -rot : 0, 'x', ou, ov);
+      else bdEmit(A, u, y, n, lu, h, ln, col, rot, 'z', ou, ov);
+    }
+    function segs(a, b, y0, y1) {   // pieces of [a, b] along u not cut by an opening between heights y0..y1
+      var L = [[a, b]];
+      open.forEach(function (o) { if (o.y0 < y1 && o.y1 > y0) L = L.reduce(function (acc, s) { if (o.u1 <= s[0] || o.u0 >= s[1]) acc.push(s); else { if (o.u0 > s[0]) acc.push([s[0], o.u0]); if (o.u1 < s[1]) acc.push([o.u1, s[1]]); } return acc; }, []); });
+      return L.filter(function (s) { return s[1] - s[0] > 0.05; });
+    }
+    function beam(y0, y1, a, b, ln, col) { segs(a, b, y0, y1).forEach(function (s) { B((s[0] + s[1]) / 2, (y0 + y1) / 2, 0, s[1] - s[0], y1 - y0, ln, col); }); }
+    var full = kind === 'wl' || kind === 'hw' || kind === 'lw', i;
+    if (g === 0) {   // ---- wood: a timber frame ----
+      [-1, 1].forEach(function (e) { B(e * 1.39, H / 2, 0, 0.26, H, 0.3, [0.52, 0.45, 0.4]); });            // corner posts
+      beam(0, 0.18, -1.26, 1.26, 0.28, 0.62);                                                    // sill
+      beam(H - 0.18, H, -1.26, 1.26, 0.28, 0.62);                                                // top beam
+      if (H >= 2.5) beam(1.42, 1.56, -1.26, 1.26, 0.25, 0.68);                                   // middle rail
+      if (full && H >= 2.5) [[0.18, 1.42], [1.56, H - 0.18]].forEach(function (b) {               // X braces between the posts
+        var h = b[1] - b[0], L = Math.hypot(2.52, h), a = Math.atan2(h, 2.52);
+        B(0, (b[0] + b[1]) / 2, 0, L, 0.12, 0.24, 0.7, a); B(0, (b[0] + b[1]) / 2, 0, L, 0.12, 0.235, 0.7, -a);
+      });
+      open.forEach(function (o) {
+        [o.u0 - 0.07, o.u1 + 0.07].forEach(function (u) { B(u, (o.y0 + o.y1) / 2, 0, 0.14, o.y1 - o.y0, 0.32, 0.55); });   // jambs
+        B((o.u0 + o.u1) / 2, o.y1 + 0.09, 0, o.u1 - o.u0 + 0.28, 0.18, 0.32, 0.55);                                     // lintel
+        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.05, 0, o.u1 - o.u0 + 0.36, 0.1, 0.42, 0.58);                   // window sill
+      });
+    } else if (g === 1) {   // ---- stone: plinth, cornice, quoins, keystone ----
+      var SQ = [1.32, 1.2, 0.98], SL = [1.22, 1.12, 0.96];   // warm dressed stone against the grey wall
+      beam(0, 0.32, -1.49, 1.49, 0.32, 0.7);
+      if (H >= 1.2) beam(H - 0.2, H, -1.49, 1.49, 0.3, SL);
+      [-1, 1].forEach(function (e) {   // corner quoins, long and short in turn
+        for (var y = 0.32, k = 0; y < H - 0.25; y += 0.45, k++) { var lu = k % 2 ? 0.28 : 0.46, hh = Math.min(0.42, H - 0.2 - y - 0.03); if (hh < 0.12) break; B(e * (1.52 - lu / 2), y + hh / 2 + 0.015, 0, lu, hh, 0.27, SQ); }
+      });
+      open.forEach(function (o) {
+        [o.u0 - 0.1, o.u1 + 0.1].forEach(function (u, side) {   // block jambs
+          for (var y = o.y0, k = 0; y < o.y1 - 0.1; y += 0.42, k++) { var hh = Math.min(0.38, o.y1 - y); var lu = k % 2 ? 0.2 : 0.3; B(u + (side ? 1 : -1) * (lu - 0.2) / 2, y + hh / 2 + 0.02, 0, lu, hh, 0.27, SL); }
+        });
+        B((o.u0 + o.u1) / 2, o.y1 + 0.15, 0, o.u1 - o.u0 + 0.5, 0.3, 0.3, SL);   // lintel
+        B((o.u0 + o.u1) / 2, o.y1 + 0.2, 0, 0.26, 0.42, 0.34, SQ);               // keystone
+        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.06, 0, o.u1 - o.u0 + 0.4, 0.12, 0.44, 0.95);
+      });
+    } else {   // ---- metal: steel posts, angle strips with rivets, ribs ----
+      [-1, 1].forEach(function (e) { B(e * 1.44, H / 2, 0, 0.16, H, 0.3, 0.5); });
+      beam(0, 0.14, -1.36, 1.36, 0.28, 0.55);
+      beam(H - 0.14, H, -1.36, 1.36, 0.28, 0.55);
+      for (i = -3; i <= 3; i++) {   // ribs, cut round the openings
+        var u = i * 0.375;
+        var ys = [[0.14, H - 0.14]];
+        open.forEach(function (o) { if (u > o.u0 - 0.06 && u < o.u1 + 0.06) ys = ys.reduce(function (acc, s) { if (o.y1 <= s[0] || o.y0 >= s[1]) acc.push(s); else { if (o.y0 > s[0]) acc.push([s[0], o.y0]); if (o.y1 < s[1]) acc.push([o.y1, s[1]]); } return acc; }, []); });
+        ys.forEach(function (s) { if (s[1] - s[0] > 0.1) B(u, (s[0] + s[1]) / 2, 0, 0.05, s[1] - s[0], 0.25, 0.86); });
+      }
+      [0.07, H - 0.07].forEach(function (y, top) {   // rivets on both faces of the strips
+        segs(-1.3, 1.3, top ? H - 0.14 : 0, top ? H : 0.14).forEach(function (s) {
+          for (var u2 = s[0] + 0.1; u2 < s[1] - 0.05; u2 += 0.3) { B(u2, y, 0.148, 0.045, 0.045, 0.02, 0.38); B(u2, y, -0.148, 0.045, 0.045, 0.02, 0.38); }
+        });
+      });
+      open.forEach(function (o) {
+        [o.u0 - 0.05, o.u1 + 0.05].forEach(function (u) { B(u, (o.y0 + o.y1) / 2, 0, 0.1, o.y1 - o.y0, 0.3, 0.45); });
+        B((o.u0 + o.u1) / 2, o.y1 + 0.06, 0, o.u1 - o.u0 + 0.2, 0.12, 0.3, 0.45);
+        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.05, 0, o.u1 - o.u0 + 0.2, 0.1, 0.4, 0.5);
+      });
+    }
+  }
+  function bdFoundation(A, g, dep, ou, ov) {
+    var e = [[0, 1.5], [0, -1.5], [1.5, 0], [-1.5, 0]];
+    if (g === 0) {
+      e.forEach(function (q) { if (q[0]) bdEmit(A, q[0] * 1.01, -0.17, 0, 0.22, 0.3, 3.08, 0.62, 0, 'z', ou, ov); else bdEmit(A, 0, -0.17, q[1] * 1.01, 3.08, 0.3, 0.22, 0.62, 0, 'z', ou, ov); });
+      [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (c) { bdEmit(A, c[0] * 1.42, -dep / 2 - 0.1, c[1] * 1.42, 0.3, dep, 0.3, 0.58, 0, 'z', ou, ov); });
+    } else if (g === 1) {
+      e.forEach(function (q) { if (q[0]) bdEmit(A, q[0] * 1.012, -0.2, 0, 0.12, 0.26, 3.1, 0.84, 0, 'z', ou, ov); else bdEmit(A, 0, -0.2, q[1] * 1.012, 3.1, 0.26, 0.12, 0.84, 0, 'z', ou, ov); });
+      [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (c) { for (var y = -0.4, k = 0; y > -dep; y -= 0.45, k++) { var s = k % 2 ? 0.36 : 0.5; bdEmit(A, c[0] * (1.52 - s / 2), y - 0.2, c[1] * (1.52 - s / 2), s, 0.4, s, [1.3, 1.18, 0.97], 0, 'z', ou, ov); } });
+    } else {
+      e.forEach(function (q) {
+        if (q[0]) { bdEmit(A, q[0] * 1.007, -0.16, 0, 0.06, 0.3, 3.06, 0.5, 0, 'z', ou, ov); for (var z = -1.3; z <= 1.31; z += 0.325) bdEmit(A, q[0] * 1.03, -0.16, z, 0.02, 0.05, 0.05, 0.38, 0, 'z', ou, ov); }
+        else { bdEmit(A, 0, -0.16, q[1] * 1.007, 3.06, 0.3, 0.06, 0.5, 0, 'z', ou, ov); for (var x = -1.3; x <= 1.31; x += 0.325) bdEmit(A, x, -0.16, q[1] * 1.03, 0.05, 0.05, 0.02, 0.38, 0, 'z', ou, ov); }
+      });
+    }
+  }
+  function bdFloor(A, g, ou, ov) {
+    var col = g === 0 ? 0.62 : g === 1 ? 0.85 : 0.5;
+    bdEmit(A, 0, -0.31, 1.38, 3, 0.22, 0.22, col, 0, 'z', ou, ov); bdEmit(A, 0, -0.31, -1.38, 3, 0.22, 0.22, col, 0, 'z', ou, ov);
+    bdEmit(A, 1.38, -0.31, 0, 0.22, 0.22, 2.54, col, 0, 'z', ou, ov); bdEmit(A, -1.38, -0.31, 0, 0.22, 0.22, 2.54, col, 0, 'z', ou, ov);
+    if (g === 0) bdEmit(A, 0, -0.29, 0, 0.18, 0.18, 2.54, col * 1.05, 0, 'z', ou, ov);   // a joist across the middle
+  }
+  var BD_KIND = { wl: 1, hw: 1, lw: 1, dw: 1, wn: 1, wf: 1, dd: 1, fd: 1, fl: 1 };
+  function bdOk(p) { return BD_KIND[p.k] && !(p.k === 'fd' && p.dep >= 1000); }
+  function rwPieceGeoD(k, r, dep, seed, g) {
+    var A = { p: [], n: [], u: [], c: [] }, ou = seed ? rwHash(seed, 3, 11) : 0, ov = seed ? rwHash(seed, 5, 13) : 0;
+    rwPieceParts(k, r, dep).forEach(function (q) { if (!q[7]) bdEmit(A, q[0], q[1], q[2], q[3], q[4], q[5], 1, 0, 'z', ou, ov); });
+    if (k === 'fd') bdFoundation(A, g, dep, ou, ov);
+    else if (k === 'fl') bdFloor(A, g, ou, ov);
+    else {
+      var H = k === 'hw' ? 1.5 : k === 'lw' ? 1.0 : 3, open = [];
+      if (k === 'dw') open = [{ u0: -0.6, u1: 0.6, y0: 0, y1: 2.2 }];
+      else if (k === 'wn') open = [{ u0: -0.6, u1: 0.6, y0: 1.0, y1: 2.0 }];
+      else if (k === 'wf') open = [{ u0: -1.3, u1: 1.3, y0: 0, y1: 2.6 }];
+      else if (k === 'dd') open = [{ u0: -1.1, u1: 1.1, y0: 0, y1: 2.3 }];
+      bdWall(A, r & 1, g, H, open, k, ou, ov);
+    }
+    var G = new THREE.BufferGeometry();
+    G.setAttribute('position', new THREE.Float32BufferAttribute(A.p, 3));
+    G.setAttribute('normal', new THREE.Float32BufferAttribute(A.n, 3));
+    G.setAttribute('uv', new THREE.Float32BufferAttribute(A.u, 2));
+    G.setAttribute('color', new THREE.Float32BufferAttribute(A.c, 3));
+    G.computeBoundingSphere();
+    return G;
+  }
+  var rwPieceMatD = rwPieceMat;
+  rwPieceMat = function (p) {
+    var m = rwPieceMatD(p); if (!p.vc) return m;
+    return BD.mats[m.uuid] || (BD.mats[m.uuid] = (function () { var v = m.clone(); v.vertexColors = true; return v; })());
+  };
+  function bdApply(p) {
+    if (!p || !p.m || !p.m.isMesh || !bdOk(p)) return;
+    p.vc = 1;
+    var old = p.m.geometry; p.m.geometry = rwPieceGeoD(p.k, p.r, p.dep, p.id, p.g); if (old) old.dispose();
+    p.m.material = rwPieceMat(p);
+  }
+  var rwPieceAddD = rwPieceAdd;
+  rwPieceAdd = function (a) {
+    var r = rwPieceAddD.apply(this, arguments);
+    try { var id = a && (a[0] | 0); if (id && RW.pieces[id]) bdApply(RW.pieces[id]); } catch (e) {}
+    return r;
+  };
+  var rwPieceGradeD = rwPieceGrade;
+  rwPieceGrade = function (id, g) {
+    var r = rwPieceGradeD.apply(this, arguments);
+    try { var p = RW.pieces[id]; if (p && p.vc) bdApply(p); } catch (e) {}
+    return r;
   };
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
