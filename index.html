@@ -12294,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 141;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 142;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -18128,10 +18128,17 @@ Object.assign(EN, {
   rwDepCand = function (k) {
     if (k !== 'dk') return rwDepCandK(k);
     var o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    var deck = RW_SEA + 1.8;
-    if (dir.y > -0.02) return null;
-    var t = (deck - o.y) / dir.y; if (t < 0 || t > 14) return null;
-    var ax = o.x + dir.x * t, az = o.z + dir.z * t, best = null, bd = 3.2;
+    var deck = RW_SEA + 1.8, ax, az, best = null, bd = 3.2;
+    // update 142: aim at the water surface itself, so it also works from a boat or swimming (your eyes are below the deck there)
+    var py = o.y > deck + 0.2 ? deck : RW_SEA;
+    if (o.y > py + 0.05 && dir.y < -0.02) {
+      var t = (py - o.y) / dir.y; if (t > 14) t = 14;
+      ax = o.x + dir.x * t; az = o.z + dir.z * t;
+    } else {   // under water, or looking up: 5 m in front of you
+      var fl = Math.hypot(dir.x, dir.z) || 1; ax = o.x + dir.x / fl * 5; az = o.z + dir.z / fl * 5;
+    }
+    var hd = Math.hypot(ax - o.x, az - o.z), hf = Math.hypot(dir.x, dir.z) || 1;
+    if (hd < 4.5) { ax = o.x + dir.x / hf * 4.5; az = o.z + dir.z / hf * 4.5; }   // with your eyes just above the waves: not on top of you
     dkSeaFds().forEach(function (f) {   // stick out from the side of a sea foundation you aim near
       for (var r = 0; r < 4; r++) {
         var a = dkAxis(r), cx = f.x + a[0] * (1.5 + DK_LEN / 2), cz = f.z + a[1] * (1.5 + DK_LEN / 2), d = Math.hypot(cx - ax, cz - az);
@@ -18199,6 +18206,13 @@ Object.assign(EN, {
       }
     }
     return rwCarUseK.apply(this, arguments);
+  };
+  // update 142: a dock may be held and placed from a boat (you put it down from the water)
+  var carWeaponOkK = carWeaponOk;
+  carWeaponOk = function () {
+    var s = RW.inv[RW_HOT0 + RW.hot];
+    if (s && s.id === 'dock' && CAR.mine && (CAR.mine.ty === 'b' || CAR.mine.ty === 'r')) return true;
+    return carWeaponOkK();
   };
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
