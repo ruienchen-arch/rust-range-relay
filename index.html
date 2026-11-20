@@ -3343,6 +3343,7 @@ Object.assign(EN, {
       seg('fps', zt('帧率上限', 'FPS limit'), [[30, '30'], [60, '60'], [90, '90'], [120, '120'], [144, '144'], [0, zt('不限制', 'Unlimited')]], SET.fps) +
       seg('res', zt('分辨率', 'Resolution'), [[0, zt('低（最流畅）', 'Low')], [1, zt('中', 'Medium')], [2, zt('高（原生）', 'High')]], SET.res) +
       seg('showFps', zt('显示帧率', 'Show FPS'), [[0, zt('关', 'Off')], [1, zt('开', 'On')]], SET.showFps ? 1 : 0) +
+      seg('gq', zt('画质', 'Graphics'), [[0, zt('标准（最流畅）', 'Standard')], [1, zt('高（阴影）', 'High (shadows)')], [2, zt('极高', 'Ultra')]], gqLv()) +
       seg('skfx', zt('皮肤特效', 'Skin effects'), [[0, zt('关（最流畅）', 'Off (smoothest)')], [1, zt('开', 'On')]], SET.skfx === undefined || SET.skfx ? 1 : 0) + '</div>';   // update 131
     if (!isTouch) {
       h += '<div class="sgroup"><h2>' + zt('按键设置', 'KEY BINDINGS') + '</h2><div class="keygrid">' + KB_ACTIONS.map(function (a) {
@@ -3368,6 +3369,7 @@ Object.assign(EN, {
           if (name === 'invertY') SET.invertY = !!v;
           else if (name === 'showFps') { SET.showFps = !!v; applyShowFps(); }
           else if (name === 'fps') SET.fps = v;
+          else if (name === 'gq') { SET.gq = v; gqApply(); }
           else if (name === 'skfx') { SET.skfx = v; try { skRefreshAll(); var T = VM.tools.hatchet; if (T && T.userData.ryan) { T.remove(T.userData.ryan); T.userData.ryan = null; } } catch (e) {} }
           else if (name === 'res') { SET.res = v; renderer.setPixelRatio(pixelRatioFor()); resize(); }
           Array.prototype.forEach.call(g.querySelectorAll('button'), function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
@@ -12292,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 137;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 139;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -17937,6 +17939,109 @@ Object.assign(EN, {
         ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.fillStyle = '#bfe2ff'; ctx.strokeText(q.n, x, z - r - 4); ctx.fillText(q.n, x, z - r - 4);
       }
     });
+  };
+  /* ---- update 138: foundations on the sea ----
+     A foundation whose footprint reaches the water or the beach (it used to say "not in the water or on the beach")
+     now stands on four wooden stilts down to the sea floor, with its deck a little above the waves. Walls, floors,
+     doors, the Rapid Planner and everything else build on it like on any foundation. At most 40 m of water under it.
+     The kind stays 'fd' (the server and every other system see a normal foundation); a depth of 1000 + n means
+     "stilts n metres long" for the drawing and the collision boxes. */
+  var SEA_DECK = RW_SEA + 1.8, SEA_MAX = 40;
+  function rwSeaFd(tmin) { return tmin < 0.25; }
+  var rwFdDepthS = rwFdDepth;
+  rwFdDepth = function (x, z, top) {   // a placed foundation: stilts when the water or the beach reaches under it
+    var mn = 1e9;
+    for (var a = -1; a <= 1; a += 2) for (var b = -1; b <= 1; b += 2) mn = Math.min(mn, rwH(x + a * 1.45, z + b * 1.45));
+    mn = Math.min(mn, rwH(x, z));
+    if (rwSeaFd(mn)) return 1000 + Math.max(1, top - mn + 0.3);
+    return rwFdDepthS(x, z, top);
+  };
+  var rwPieceParts2S = rwPieceParts2;
+  rwPieceParts2 = function (k, r, dep) {
+    if (k === 'fd' && dep >= 1000) {
+      var d = Math.max(1, dep - 1000), L = [], s = 1.22, pw = 0.36;
+      L.push([0, -0.2, 0, 3, 0.4, 3, 1]);                       // the deck
+      L.push([0, -0.06, 0, 3.04, 0.12, 3.04, 0]);                // its top edge, like a normal foundation
+      L.push([0, -0.48, 1.3, 3, 0.16, 0.24, 0], [0, -0.48, -1.3, 3, 0.16, 0.24, 0], [1.3, -0.48, 0, 0.24, 0.16, 3, 0], [-1.3, -0.48, 0, 0.24, 0.16, 3, 0]);   // beams under the deck
+      [[s, s], [s, -s], [-s, s], [-s, -s]].forEach(function (q) { L.push([q[0], -(0.4 + d) / 2, q[1], pw, Math.max(0.2, d - 0.4), pw, 1]); });   // the stilts
+      if (d > 3) [0.45, 0.75].forEach(function (f) {   // cross beams lower down, so it looks built and not balanced
+        var y = -d * f;
+        L.push([0, y, s, 2.4, 0.14, 0.14, 0], [0, y, -s, 2.4, 0.14, 0.14, 0], [s, y, 0, 0.14, 0.14, 2.4, 0], [-s, y, 0, 0.14, 0.14, 2.4, 0]);
+      });
+      return L;
+    }
+    return rwPieceParts2S(k, r, dep);
+  };
+  var rwBuildWhyS = rwBuildWhy;
+  rwBuildWhy = function (c) {
+    if (!c || c.k !== 'fd' || c.tmin === undefined || !rwSeaFd(c.tmin)) return rwBuildWhyS(c);
+    if (c.y < SEA_DECK) c.y = SEA_DECK;                            // the deck sits above the waves
+    if (c.y < c.tmax + 0.15) c.y = c.tmax + 0.15;                  // and above any sand that pokes up under it
+    var depth = c.y - c.tmin;
+    c.dep = 1000 + Math.max(1, depth + 0.3);
+    if (depth > SEA_MAX) return zt('这里的海太深了（最多 ' + SEA_MAX + ' 米）', 'The water is too deep here (' + SEA_MAX + ' m at most)');
+    var keep = [c.tmin, c.tmax, c.dep];
+    c.tmin = Math.max(0.3, c.y - 1); c.tmax = c.y - 0.5; c.dep = 1;   // pass the land checks (water, beach, steepness)
+    var why = rwBuildWhyS(c);
+    c.tmin = keep[0]; c.tmax = keep[1]; c.dep = keep[2];
+    return why;
+  };
+  /* ---- update 139: graphics quality (Settings → 画质 / Graphics) ----
+     标准 Standard: as before.  高 High (default): real sun shadows from trees, rocks, houses, players and vehicles
+     (2048 shadow map, 40 m round you) and a little further to see.  极高 Ultra: sharper shadows over 60 m, hills cast
+     shadows too, and even further to see. The resolution setting stays separate. */
+  function gqLv() { return SET.gq === undefined ? 1 : SET.gq | 0; }
+  function gqView(l) { return l >= 2 ? 9 : l >= 1 ? 7 : 6; }
+  RW_VIEW = gqView(gqLv());
+  var GQ = { on: false, size: 0, t: 0, half: 40, dir: new THREE.Vector3(60, 100, 40).normalize(), leafD: null };
+  scene.add(sun.target);
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  function gqApply() {   // the setting changed, or you went in or out of the island
+    var l = gqLv(), want = RW.on && l >= 1;
+    var size = l >= 2 ? Math.min(4096, renderer.capabilities.maxTextureSize || 4096) : 2048, half = l >= 2 ? 60 : 40;
+    if (want !== GQ.on || size !== GQ.size || half !== GQ.half) {
+      renderer.shadowMap.enabled = want; sun.castShadow = want;
+      if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+      sun.shadow.mapSize.set(size, size);
+      var C = sun.shadow.camera; C.left = -half; C.right = half; C.top = half; C.bottom = -half; C.near = 1; C.far = 420; C.updateProjectionMatrix();
+      sun.shadow.bias = -0.0004; sun.shadow.normalBias = l >= 2 ? 0.03 : 0.05;
+      scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { m.needsUpdate = true; }); });   // every material learns about shadows
+      GQ.on = want; GQ.size = size; GQ.half = half; GQ.t = 0;
+    }
+    if (RW_VIEW !== gqView(l)) { RW_VIEW = gqView(l); if (RW.on && WX.base) WX.base.fogFar = RW_VIEW * RW_CH * 0.95; }
+  }
+  function gqLeafDepth() {   // leaves throw leaf-shaped shadows, not squares
+    if (!GQ.leafD && RW.matL) GQ.leafD = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: RW.matL.map, alphaTest: 0.4, side: THREE.DoubleSide });
+    return GQ.leafD;
+  }
+  function gqMark() {   // what throws a shadow and what catches one
+    var l = gqLv(), cam = camera;
+    scene.traverse(function (o) {
+      if (!o.isMesh || o.isSprite) return;
+      var m = Array.isArray(o.material) ? o.material[0] : o.material; if (!m) return;
+      var see = !m.transparent && m.visible !== false && m.colorWrite !== false;
+      var isT = m === RW.matT, isW = o === RW.water || (GRASS && m === GRASS.mat);
+      var inCam = false; for (var p = o.parent; p; p = p.parent) if (p === cam) { inCam = true; break; }
+      o.receiveShadow = see && !isW && !inCam;
+      o.castShadow = see && !isW && !inCam && (!isT || l >= 2) && !(o.userData && o.userData.noShadow);
+      if (m === RW.matL && o.castShadow) o.customDepthMaterial = gqLeafDepth();
+    });
+  }
+  function gqTick(dt) {
+    if (RW.on !== GQ.on && (RW.on ? gqLv() >= 1 : true)) gqApply();
+    if (!GQ.on) return;
+    GQ.t -= dt; if (GQ.t <= 0) { GQ.t = 1.5; gqMark(); }
+    var tx = KC.on ? camera.position.x : P.x, tz = KC.on ? camera.position.z : P.z, ty = KC.on ? camera.position.y : P.y;
+    var step = GQ.half * 2 / GQ.size * 4; tx = Math.round(tx / step) * step; tz = Math.round(tz / step) * step;   // whole texels: edges do not crawl as you walk
+    sun.target.position.set(tx, ty, tz); sun.target.updateMatrixWorld();
+    sun.position.set(tx + GQ.dir.x * 160, ty + GQ.dir.y * 160, tz + GQ.dir.z * 160);
+  }
+  var renderFrameG = renderFrame;
+  renderFrame = function () {
+    try { gqTick(RDT); } catch (e) {}
+    if (GQ.on) renderer.shadowMap.needsUpdate = true;   // once a frame (the hands are drawn in a second pass that must not redo it)
+    return renderFrameG();
   };
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
