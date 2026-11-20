@@ -12294,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 139;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 141;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -18042,6 +18042,163 @@ Object.assign(EN, {
     try { gqTick(RDT); } catch (e) {}
     if (GQ.on) renderer.shadowMap.needsUpdate = true;   // once a frame (the hands are drawn in a second pass that must not redo it)
     return renderFrameG();
+  };
+  /* ---- update 140: fitting a scope no longer needs the gun in your hands at that moment ----
+     Selecting the scope on the belt and clicking it put the SCOPE in your hands, so the game said "hold the gun
+     first" and nothing was fitted. Now the scope goes onto the gun you held last (or the first gun on your belt,
+     then in your backpack), and that gun comes back into your hands with the scope on. Holstered counts too. */
+  RW.lastGun = -1;
+  function scIsGun(s) { return !!(s && RWI[s.id] && RWI[s.id].gun !== undefined && canScope(RWI[s.id].gun) && WDEF[RWI[s.id].gun].cls !== 'bow' && WDEF[RWI[s.id].gun].cls !== 'xbow'); }
+  function scFindGun() {
+    if (RW.lastGun >= 0 && scIsGun(RW.inv[RW.lastGun])) return RW.lastGun;
+    for (var k = 0; k < 6; k++) if (scIsGun(RW.inv[RW_HOT0 + k])) return RW_HOT0 + k;
+    for (var i = 0; i < RW_HOT0; i++) if (rwSlotOpen(i) && scIsGun(RW.inv[i])) return i;
+    return -1;
+  }
+  var rwHeldSwitchedSc = rwHeldSwitched;
+  rwHeldSwitched = function () {
+    var r = rwHeldSwitchedSc.apply(this, arguments);
+    var i = RW_HOT0 + RW.hot; if (scIsGun(RW.inv[i])) RW.lastGun = i;
+    return r;
+  };
+  var rwScopeFitSc = rwScopeFit;
+  rwScopeFit = function (si) {
+    if (RW.on && rwHeldGun() < 0) {
+      var j = scFindGun();
+      if (j < 0) { sfx('deny'); banner(zt('你身上没有能装倍镜的枪', 'You have no gun that takes a scope'), 1500); return false; }
+      rwHoldSlot(j);   // that gun into your hands (from the backpack it moves onto the belt)
+    }
+    return rwScopeFitSc(si);
+  };
+  /* ---- update 141: the dock (码头) - park your boat at your sea base and step straight onto it ----
+     - A new placeable "Dock": a 3 x 6 m wooden jetty on stilts with four mooring posts and a ladder, its deck level
+       with a sea foundation. Hold it and aim at the water: next to a sea foundation it snaps to that side and sticks
+       out from it; anywhere else on the water it goes where you aim, pointing the way you look.
+     - Getting out of a boat now steps onto any deck or floor right beside the boat (sea foundations, docks), not
+       only onto land; before, you always dropped into the water next to your sea base.
+     - Getting out of a boat you steer within 7 m of a dock parks it: the boat lines up along the dock's side and
+       stays there (everyone sees it there), and you step onto the dock.
+     Craft it (Build tab) or buy it in the Materials tab of the shop. */
+  RWI.dock = { n: ['码头', 'Dock'], st: 3, dep: 'dk', d: ['3×6 米的木码头，带系船桩和梯子。拿在手上对着海面放：靠近海上地基会自动接在它旁边。开船靠过来下船，船会停在码头边，你直接站到码头上。',
+    'A 3 x 6 m wooden jetty with mooring posts and a ladder. Hold it and aim at the sea: next to a sea foundation it attaches to it. Bring a boat alongside and get out: the boat is parked by the dock and you step onto it.'] };
+  RWD.dk = 'dock'; RWB.dk = { c: {}, n: RWI.dock.n }; RW_HP.dk = 600;
+  RW_CRAFT.push(['dock', { wood: 400, frags: 60 }]); CR_OF.dock = 'build';
+  RW_MAT_SHOP.push(['dock', 1, 900]);
+  RWICO2.dock = function (x) {
+    x.fillStyle = '#2f6f9a'; x.fillRect(0, 40, 64, 24);                                   // water
+    x.fillStyle = '#5a3c22'; [10, 26, 38, 54].forEach(function (px) { x.fillRect(px - 2, 30, 4, 30); });   // stilts
+    x.fillStyle = '#9a7044'; x.fillRect(4, 24, 56, 9);                                      // deck
+    x.fillStyle = '#7b5531'; for (var i = 0; i < 7; i++) x.fillRect(6 + i * 8, 24, 1, 9);
+    x.fillStyle = '#3a3a3a'; x.fillRect(8, 16, 5, 8); x.fillRect(51, 16, 5, 8);              // mooring posts
+    x.strokeStyle = '#e8d8a8'; x.lineWidth = 2; x.beginPath(); x.moveTo(10, 18); x.quadraticCurveTo(20, 30, 30, 44); x.stroke();   // a rope
+  };
+  var DK_LEN = 6, DK_W = 3, DK_STILT = 14;
+  var rwDepParts2K = rwDepParts2;
+  rwDepParts2 = function (k, r) {
+    if (k !== 'dk') return rwDepParts2K(k, r);
+    var s = (r & 1) === 1, w = s ? DK_LEN : DK_W, d = s ? DK_W : DK_LEN;
+    // the deck is solid (you walk on it); stilts, posts and the ladder are only drawn, so boats slide past them
+    return [[0, -0.15, 0, w, 0.3, d, 1]];
+  };
+  var rwDepMesh2K = rwDepMesh2;
+  rwDepMesh2 = function (p, B, M, inner) {
+    if (p.k !== 'dk') return rwDepMesh2K(p, B, M, inner);
+    // drawn along local z (inner is turned by p.r)
+    var hw = DK_W / 2, hl = DK_LEN / 2, i;
+    B(DK_W, 0.12, DK_LEN, M.wood, 0, -0.06, 0);                                         // planks
+    for (i = 0; i < 12; i++) B(DK_W + 0.02, 0.125, 0.03, M.trim, 0, -0.06, -hl + 0.25 + i * 0.5);   // gaps between planks
+    [-hw + 0.12, hw - 0.12].forEach(function (x) { B(0.2, 0.22, DK_LEN, M.trim, x, -0.22, 0); });   // the two side beams
+    [-hl + 0.2, 0, hl - 0.2].forEach(function (z) { B(DK_W, 0.2, 0.2, M.trim, 0, -0.3, z); });      // cross beams
+    [[-hw + 0.2, -hl + 0.2], [hw - 0.2, -hl + 0.2], [-hw + 0.2, 0], [hw - 0.2, 0], [-hw + 0.2, hl - 0.2], [hw - 0.2, hl - 0.2]].forEach(function (q) {
+      B(0.28, DK_STILT, 0.28, M.trim, q[0], -DK_STILT / 2 - 0.2, q[1]);                // stilts into the sea floor
+    });
+    [[-hw + 0.18, -hl + 1], [hw - 0.18, -hl + 1], [-hw + 0.18, hl - 1], [hw - 0.18, hl - 1]].forEach(function (q) {   // mooring posts
+      var m = new THREE.Mesh(rwCyl(0.11, 0.13, 0.5, 10), M.metal); m.position.set(q[0], 0.25, q[1]); inner.add(m);
+      var t = new THREE.Mesh(rwCyl(0.16, 0.11, 0.08, 10), M.metal); t.position.set(q[0], 0.52, q[1]); inner.add(t);
+    });
+    for (i = 0; i < 5; i++) B(0.6, 0.05, 0.05, M.metal, 0, -0.45 - i * 0.4, hl + 0.06);   // ladder at the far end
+    [-0.3, 0.3].forEach(function (x) { B(0.05, 2.2, 0.05, M.metal, x, -1.1, hl + 0.06); });
+    var lamp = new THREE.Mesh(rwCyl(0.05, 0.05, 1.4, 6), M.trim); lamp.position.set(hw - 0.18, 0.7, hl - 0.25); inner.add(lamp);
+    var bulb = new THREE.Mesh(rwCyl(0.1, 0.1, 0.16, 8), new THREE.MeshBasicMaterial({ color: 0xffd27a })); bulb.position.set(hw - 0.18, 1.45, hl - 0.25); inner.add(bulb);
+    return true;
+  };
+  function dkSeaFds() { return RW.plist.filter(function (q) { return q.k === 'fd' && q.dep >= 1000; }); }
+  function dkAxis(r) { return [[0, 1], [-1, 0], [0, -1], [1, 0]][r & 3]; }   // which way a dock with turn r points (its local +z, the ladder end)
+  var rwDepCandK = rwDepCand;
+  rwDepCand = function (k) {
+    if (k !== 'dk') return rwDepCandK(k);
+    var o = camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    var deck = RW_SEA + 1.8;
+    if (dir.y > -0.02) return null;
+    var t = (deck - o.y) / dir.y; if (t < 0 || t > 14) return null;
+    var ax = o.x + dir.x * t, az = o.z + dir.z * t, best = null, bd = 3.2;
+    dkSeaFds().forEach(function (f) {   // stick out from the side of a sea foundation you aim near
+      for (var r = 0; r < 4; r++) {
+        var a = dkAxis(r), cx = f.x + a[0] * (1.5 + DK_LEN / 2), cz = f.z + a[1] * (1.5 + DK_LEN / 2), d = Math.hypot(cx - ax, cz - az);
+        if (d < bd) { bd = d; best = { x: cx, y: f.y, z: cz, r: r }; }
+      }
+    });
+    var c;
+    if (best) c = { k: k, x: best.x, y: best.y, z: best.z, r: best.r, dep: 0, onWall: false, snap: true };
+    else {
+      var r2 = ((Math.round((Math.PI - P.yaw) / (Math.PI / 2)) % 4) + 4) % 4;   // point the way you look
+      c = { k: k, x: ax, y: deck, z: az, r: r2, dep: 0, onWall: false };
+    }
+    c.why = dkWhy(c);
+    return c;
+  };
+  function dkWhy(c) {
+    if (Math.hypot(c.x - P.x, c.z - P.z) > 16) return zt('太远了', 'Too far away');
+    var a = dkAxis(c.r), wet = 0;
+    for (var s = -1; s <= 1; s++) { var x = c.x + a[0] * s * (DK_LEN / 2 - 0.4), z = c.z + a[1] * s * (DK_LEN / 2 - 0.4); if (rwH(x, z) < RW_SEA - 0.2) wet++; }
+    if (wet < 2) return zt('码头要放在海上', 'A dock goes on the sea');
+    if (RW.plist.some(function (q) { return q.k === 'dk' && Math.abs(q.x - c.x) < 2.9 && Math.abs(q.z - c.z) < 2.9; })) return zt('这里已经有码头了', 'There is a dock here already');
+    return rwDepWhy(c);
+  }
+  // ---- getting out of a boat: onto a deck beside it ----
+  function dkDeckBeside(c) {   // the nearest place to stand on beside the boat: land, a sea foundation, a dock, a floor
+    var best = null, bd = 1e9;
+    for (var rad = 2.2; rad <= 4.6; rad += 0.6) for (var k = 0; k < 16; k++) {
+      var a = k * Math.PI / 8, x = c.x + Math.cos(a) * rad, z = c.z + Math.sin(a) * rad;
+      var gy = groundAt(x, z, RW_SEA + 3.5);
+      if (gy < RW_SEA + 0.1 || insideBox(x, gy + 0.5, z) || insideBox(x, gy + 1.5, z)) continue;
+      if (rad < bd) { bd = rad; best = [x, gy, z]; }
+    }
+    return best;
+  }
+  var boatLeftK = boatLeft;
+  boatLeft = function (c) {
+    var s = dkDeckBeside(c);
+    if (s) { P.x = s[0]; P.y = s[1]; P.z = s[2]; P.vy = 0; P.ground = true; RW.px = P.x; RW.pz = P.z; return; }
+    return boatLeftK(c);
+  };
+  function dkNear(c) {   // the dock nearest to a boat, within 7 m of its side
+    var best = null, bd = 7;
+    RW.plist.forEach(function (q) {
+      if (q.k !== 'dk') return;
+      var a = dkAxis(q.r), dx = c.x - q.x, dz = c.z - q.z, along = dx * a[0] + dz * a[1], side = dx * a[1] - dz * a[0];
+      if (Math.abs(along) > DK_LEN / 2 + 2) return;
+      var d = Math.abs(side) - DK_W / 2; if (d < bd) { bd = d; best = { q: q, a: a, along: along, sgn: side >= 0 ? 1 : -1 }; }
+    });
+    return best;
+  }
+  var rwCarUseK = rwCarUse;
+  rwCarUse = function () {
+    var c = CAR.mine;
+    if (c && CAR.cool <= 0 && CAR.seat === 0 && (c.ty === 'b' || c.ty === 'r')) {
+      var n = dkNear(c);
+      if (n) {   // park alongside the dock, bow along it
+        var V = BOAT_V[c.ty], off = DK_W / 2 + V.rad * 0.75 + 0.25, al = Math.max(-DK_LEN / 2 + 1, Math.min(DK_LEN / 2 - 1, n.along));
+        var nx = n.q.x + n.a[0] * al + n.a[1] * off * n.sgn, nz = n.q.z + n.a[1] * al - n.a[0] * off * n.sgn;
+        if (boatWaterOk(nx, nz)) {
+          var yA = Math.atan2(-n.a[0], -n.a[1]), yB = yA + Math.PI, dA = Math.abs(Math.atan2(Math.sin(yA - c.yaw), Math.cos(yA - c.yaw))), dB = Math.abs(Math.atan2(Math.sin(yB - c.yaw), Math.cos(yB - c.yaw)));
+          c.x = nx; c.z = nz; c.yaw = dA <= dB ? yA : yB; c.sp = 0; carPlace(c);
+          dSend({ t: 'Vm', id: c.id, x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, z: Math.round(c.z * 100) / 100, yaw: Math.round(c.yaw * 1000) / 1000, sp: 0, p: 0, r: 0, st: 0 });
+          banner(zt('船停在码头边了', 'Boat parked at the dock'), 1300);
+        }
+      }
+    }
+    return rwCarUseK.apply(this, arguments);
   };
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable

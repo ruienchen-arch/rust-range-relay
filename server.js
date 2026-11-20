@@ -156,12 +156,12 @@ saveDb();   // writes the secret on first start
 // Same disk caveat as accounts.json.
 const BUILD_FILE = path.join(DATA_DIR, 'world.json');
 const BUILD_KINDS = new Set(['fd', 'wl', 'dw', 'wn', 'fl', 'st', 'ss', 'dr', 'bx', 'fu', 'tc', 'sb',
-  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm', 'aa']);
+  'hw', 'lw', 'wf', 'dd', 'rf', 'ft', 'wb', 'sd', 'd2', 'gd', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm', 'aa', 'dk']);   // update 141: dk = dock
 const DOORS = new Set(['dr', 'sd', 'd2', 'gd', 'xg']);                       // open and close, take a code lock
 const HOST = { dr: 'dw', sd: 'dw', d2: 'dd', gd: 'wf', wb: 'wn' };          // inserts and the wall they sit in
 const CONT = { bx: 18, lb: 30, fu: 4, cf: 4 };                               // containers and their slots
-const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm', 'aa']);
-const HP = { aa: 1500, at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
+const NO_UP = new Set(['dr', 'sd', 'd2', 'gd', 'wb', 'bx', 'fu', 'tc', 'sb', 'xw', 'xs', 'xg', 'wk', 'cf', 'lb', 'bc', 'sk', 'lm', 'bt', 'ln', 'ch', 'tb', 'rg', 'ct', 'cu', 'sg', 'at', 'gt', 'cm', 'aa', 'dk']);
+const HP = { dk: 600, aa: 1500, at: 700, gt: 300, cm: 80, dr: 200, sd: 500, d2: 300, gd: 600, wb: 150, xg: 500, xw: 500, xs: 1500, bx: 150, lb: 300, fu: 300, tc: 300, wk: 300, cf: 100, sb: 60, bc: 300, sk: 250, lm: 50, bt: 100, ln: 100, ch: 100, tb: 100, rg: 50 };
 const MAX_BUILDS = +process.env.MAX_BUILDS || 1000000, MAX_PER_OWNER = +process.env.MAX_PER_OWNER || Infinity;   // update 130: no limit per player (MAX_PER_OWNER can set one again)
 const TC_RANGE = 25;
 const ITEM_RE = /^[a-z][a-z0-9_]{1,15}$/;   // update 121: any item id (a fixed list kept missing new items - scopes, tanks, tank shells, Stormfang - and the server copy of backpacks, boxes and bags silently lost them)
@@ -552,7 +552,7 @@ function worldTeam(c, m) {
 // ---- gifts (update 65): items handed to a player by name; whatever does not fit in the backpack waits until there is room
 const GIFT_FILE = path.join(DATA_DIR, 'gifts.json'), RWI_OK = /^[a-z0-9_]{2,16}$/;
 // GIFT_SEED="name:item:count[:batch];..." - each line is given once. A new batch name gives the same thing again.
-const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:atur:10:b6;ryan:rhatchet:1:b7;ryan:rhatchet:1:b8' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
+const GIFT_SEED = (process.env.GIFT_SEED === undefined ? 'ryan:hswall:100:b3;ryan:hswall:20:b4;ryan:atur:10:b6;ryan:rhatchet:1:b7;ryan:rhatchet:1:b8;gabbyton:bagx:3:b9;gabbyton:vital:3:b10' : process.env.GIFT_SEED).split(';').map((g) => g.split(':').map((x) => x.trim())).filter((g) => (g.length === 3 || g.length === 4) && g[0] && RWI_OK.test(g[1]) && +g[2] > 0);
 // GIFT_STOP="atur" - items that are no longer given: anything of these still waiting to be handed out is dropped
 const GIFT_STOP = (process.env.GIFT_STOP === undefined ? 'atur;tank;heli' : process.env.GIFT_STOP).split(/[;,+]/).map((x) => x.trim()).filter(Boolean);
 const giftOk = (id, k) => !GIFT_STOP.includes(String(id)) || (!!k && GIFT_SEED.some((g) => (g[0].toLowerCase() + '|' + g[1] + '|' + g[2] + (g[3] ? '|' + g[3] : '')) === k));   // update 115: a stopped item is still given when this very line is in GIFT_SEED (Ryan's 10 turrets)
