@@ -104,7 +104,7 @@ function worldChat(c, m) {
 function worldDeath(c, m) {   // the victim reports who or what killed them
   const now = Date.now(); if (now - (c.dt || 0) < 3000) return; c.dt = now;
   const k = world.clients.get(m.a | 0), w = String(m.w || ''), by = String(m.by || '');
-  { const sv = statOf(c); if (sv) sv.d++; if (k && k !== c) { const sk = statOf(k); if (sk) sk.pk++; } saveStats(); }   // leaderboard
+  { const sv = statOf(c); if (sv) sv.d++; if (k && k !== c) { const sk = statOf(k); if (sk) { sk.pk++; if (m.h) sk.hk = (sk.hk | 0) + 1; } } saveStats(); }   // leaderboard (update 136: headshot kills, as the victim saw them)
   chatPush({ t: 'RK', v: c.name, a: k && k !== c ? k.name : '', w: /^(g[0-9]{1,2}|rock|hatchet|pickaxe|hammer|hands)$/.test(w) ? w : '', h: m.h ? 1 : 0, by: /^[a-z]{2,8}$/.test(by) ? by : '' });
 }
 function worldGather(c, m) {
@@ -343,6 +343,15 @@ function teamSend(o, say, arg) {
   const msg = JSON.stringify({ t: 'RTM', tid: t ? t.id : '', m: (t || []).map((q, i) => ({ o: q, n: ownerName(q), id: on.get(q) || 0, r: roleOf(q, t) })), inv: inv && Date.now() < inv.exp ? { n: inv.n } : null, say: say || '', a: arg || '', p: t ? profOf(t) : null, apps: lead ? M.apps.map((x) => ({ o: x.o, n: x.n, m: x.m, t: x.t, on: on.has(x.o) ? 1 : 0 })) : [], max: TEAM_MAX });
   for (const c of world.clients.values()) if (c.owner === o) c.send(msg);
 }
+// update 137: teammates see each other on the map, wherever they are on the island
+setInterval(() => {
+  const at = new Map(); for (const c of world.clients.values()) if (c.owner && c.hasPos && !c.closed) at.set(c.owner, c);
+  for (const t of teams) {
+    const on = t.map((o) => at.get(o)).filter(Boolean); if (on.length < 2) continue;
+    const L = on.map((c) => [c.owner, Math.round(c.x), Math.round(c.z), c.name || ownerName(c.owner), c.id]);
+    for (const c of on) { try { c.send(JSON.stringify({ t: 'RTP', p: L.filter((q) => q[0] !== c.owner) })); } catch (e) {} }
+  }
+}, 2000).unref();
 function teamSendAll(t, say, arg) { for (const o of t || []) teamSend(o, say, arg); teamBoard(); }
 const roleOf = (o, t) => (t && t[0] === o ? 'L' : vice[o] ? 'V' : '');
 let boardT = null;
@@ -550,6 +559,8 @@ const giftOk = (id, k) => !GIFT_STOP.includes(String(id)) || (!!k && GIFT_SEED.s
 // RICH_NAMES="ryan" - these players have endless coins
 // update 135: endless coins are off for everybody (RICH_NAMES / RICH_TEMP on Render can still switch them on)
 const RICH_NAMES = (process.env.RICH_NAMES === undefined ? '' : process.env.RICH_NAMES).split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean);
+// update 137: RICH_HIDE="ryan" - endless coins that do not show: the backpack, shop and screen show a normal amount that never goes down when spent
+const RICH_HIDE = (process.env.RICH_HIDE === undefined ? 'ryan' : process.env.RICH_HIDE).split(/[;,+]/).map((n) => n.trim().toLowerCase()).filter(Boolean);
 let gifts = {}, giftDone = {}, giftT = null, nameBind = {};   // nameBind: name -> the ONE player (key) it was given to, fixed the first time, so somebody who later calls himself the same gets nothing
 try { const o = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')); gifts = o.g || {}; giftDone = o.d || {}; nameBind = o.w || {}; } catch (e) {}
 function saveGifts() { if (giftT) return; giftT = setTimeout(() => { giftT = null; try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(GIFT_FILE, JSON.stringify({ g: gifts, d: giftDone, w: nameBind, rb: richBack, rs: worldSeed() })); } catch (e) {} }, 1000); }
@@ -569,7 +580,8 @@ try { const o = JSON.parse(fs.readFileSync(GIFT_FILE, 'utf8')); richBack = o.rs 
 const richTempOn = () => RICH_TEMP_G.some((g) => Date.now() < g.end);
 const isRichTemp = (o) => !!o && RICH_TEMP_NAMES.some((n) => nameBind[n] === o);
 const richTempActive = (o) => !!o && RICH_TEMP_G.some((g) => Date.now() < g.end && g.names.some((n) => nameBind[n] === o));
-const isRich = (o) => !!o && (RICH_NAMES.some((n) => nameBind[n] === o) || richTempActive(o));
+const isRichHide = (o) => !!o && RICH_HIDE.some((n) => nameBind[n] === o);
+const isRich = (o) => !!o && (RICH_NAMES.some((n) => nameBind[n] === o) || richTempActive(o) || isRichHide(o));
 function richNote(o) {   // remember what they had before the endless coins
   if (!o || richBack[o] !== undefined || !richTempActive(o)) return;
   const sv = players[o]; richBack[o] = sv && sv.coins < 4e8 ? sv.coins | 0 : (sv ? 0 : 120); saveGifts();
@@ -591,11 +603,12 @@ function skinSend(c) { if (!c.closed && c.owner) c.send(JSON.stringify({ t: 'RSK
 function richSend(c) {
   if (c.closed) return; richNote(c.owner);
   const on = isRich(c.owner), m = { t: 'RRICH', on: on ? 1 : 0 };
+  if (on && isRichHide(c.owner) && !RICH_NAMES.some((n) => nameBind[n] === c.owner) && !richTempActive(c.owner)) m.hide = 1;
   if (!on) m.back = richBack[c.owner] !== undefined ? richBack[c.owner] : 120;   // over: the client puts the old coins back if it still shows endless ones (update 135: 120 for anybody without a record, e.g. when endless coins are switched off)
   c.send(JSON.stringify(m));
 }
 function giftSeed() {
-  for (const n of RICH_NAMES.concat(RICH_TEMP_G.filter((g) => Date.now() < g.end).map((g) => g.names).flat())) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
+  for (const n of RICH_NAMES.concat(RICH_HIDE, RICH_TEMP_G.filter((g) => Date.now() < g.end).map((g) => g.names).flat())) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) richSend(c); }
   for (const id in SKIN_GRANTS) for (const n of SKIN_GRANTS[id]) { const o = boundOwner(n); if (o) for (const c of world.clients.values()) if (c.owner === o) skinSend(c); }   // update 122
   for (const o in gifts) { const q = gifts[o].filter((x) => giftOk(x.id, x.k)); if (q.length !== gifts[o].length) { console.log('gift stopped for ' + o); saveGifts(); } if (q.length) gifts[o] = q; else delete gifts[o]; }
   for (const g of GIFT_SEED) {
@@ -667,11 +680,19 @@ function statMerge(o, q) {   // from a backup: keep the larger numbers
   if (typeof o !== 'string' || !q || typeof q !== 'object') return;
   const s = stats[o] || (stats[o] = { n: '', pk: 0, nk: 0, ak: 0, d: 0, t: 0 });
   if (!s.n && typeof q.n === 'string') s.n = q.n.slice(0, 24);
-  ['pk', 'nk', 'ak', 'd', 't'].forEach((k) => { const v = Math.max(0, Math.min(1e13, +q[k] || 0)); if (v > (s[k] || 0)) s[k] = Math.floor(v); });
+  ['pk', 'nk', 'ak', 'd', 't', 'hk', 'fs', 'fa', 'fp', 'fh'].forEach((k) => { const v = Math.max(0, Math.min(1e13, +q[k] || 0)); if (v > (s[k] || 0)) s[k] = Math.floor(v); });
 }
 function statList(me) {
   const on = new Set(); for (const o of world.clients.values()) if (o.owner) on.add(o.owner);
-  return Object.keys(stats).map((o) => { const s = stats[o]; return { n: s.n || '?', pk: s.pk | 0, nk: s.nk | 0, ak: s.ak | 0, d: s.d | 0, on: on.has(o) ? 1 : 0, t: s.t || 0, me: o === me ? 1 : 0 }; });
+  return Object.keys(stats).map((o) => { const s = stats[o]; return { n: s.n || '?', pk: s.pk | 0, nk: s.nk | 0, ak: s.ak | 0, d: s.d | 0, hk: s.hk | 0, fs: s.fs | 0, fa: s.fa | 0, fp: s.fp | 0, fh: s.fh | 0, on: on.has(o) ? 1 : 0, t: s.t || 0, me: o === me ? 1 : 0 }; });
+}
+function worldStatShots(c, m) {   // update 136: a player's own game reports its gun shots: fired, hit anything, hit a player, hit a player's head
+  const now = Date.now(); if (now - (c.acT || 0) < 2000) return; c.acT = now;
+  const s = statOf(c); if (!s) return;
+  const n = Math.max(0, Math.min(400, m.s | 0)); if (!n) return;
+  const a = Math.max(0, Math.min(n, m.a | 0)), p = Math.max(0, Math.min(n, m.p | 0)), h = Math.max(0, Math.min(p, m.h | 0));
+  s.fs = (s.fs | 0) + n; s.fa = (s.fa | 0) + a; s.fp = (s.fp | 0) + p; s.fh = (s.fh | 0) + h;
+  saveStats();
 }
 function worldStatKill(c, m) {   // a player's own game reports an enemy or animal they killed (rate limited)
   const now = Date.now(); c.sk = (c.sk || []).filter((t) => now - t < 10000); if (c.sk.length >= 25) return; c.sk.push(now);
@@ -1472,6 +1493,7 @@ function onMessage(c, text) {
   if (c.world && m.t === 'Rs') { worldSave(c, m); return; }
   if (c.world && m.t === 'Ve') { worldCarEnter(c, m); return; }
   if (c.world && m.t === 'Rkc') { worldStatKill(c, m); return; }
+  if (c.world && m.t === 'Rac') { worldStatShots(c, m); return; }
   if (c.world && m.t === 'Rnm') { worldRename(c, m); return; }
   if (c.world && m.t === 'Rvo') { worldVaultOpen(c, m); return; }
   if (c.world && m.t === 'Rhk') { worldHack(c, m); return; }
