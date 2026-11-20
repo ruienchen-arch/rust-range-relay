@@ -12294,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 144;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 145;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -18033,9 +18033,13 @@ Object.assign(EN, {
     if (!GQ.on) return;
     GQ.t -= dt; if (GQ.t <= 0) { GQ.t = 1.5; gqMark(); }
     var tx = KC.on ? camera.position.x : P.x, tz = KC.on ? camera.position.z : P.z, ty = KC.on ? camera.position.y : P.y;
-    var step = GQ.half * 2 / GQ.size * 4; tx = Math.round(tx / step) * step; tz = Math.round(tz / step) * step;   // whole texels: edges do not crawl as you walk
+    // update 145: snap to whole shadow texels in the light's own view (snapping world x/z was not enough: edges shimmered as you walked)
+    var d = GQ.dir, rt = GQ.rt || (GQ.rt = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), d).normalize()), up = GQ.up || (GQ.up = new THREE.Vector3().crossVectors(d, rt).normalize());
+    var tex = GQ.half * 2 / GQ.size, a = tx * rt.x + ty * rt.y + tz * rt.z, b = tx * up.x + ty * up.y + tz * up.z, c = tx * d.x + ty * d.y + tz * d.z;
+    a = Math.round(a / tex) * tex; b = Math.round(b / tex) * tex;
+    tx = rt.x * a + up.x * b + d.x * c; ty = rt.y * a + up.y * b + d.y * c; tz = rt.z * a + up.z * b + d.z * c;
     sun.target.position.set(tx, ty, tz); sun.target.updateMatrixWorld();
-    sun.position.set(tx + GQ.dir.x * 160, ty + GQ.dir.y * 160, tz + GQ.dir.z * 160);
+    sun.position.set(tx + d.x * 160, ty + d.y * 160, tz + d.z * 160);
   }
   var renderFrameG = renderFrame;
   renderFrame = function () {
@@ -18366,70 +18370,75 @@ Object.assign(EN, {
       return L.filter(function (s) { return s[1] - s[0] > 0.05; });
     }
     function beam(y0, y1, a, b, ln, col) { segs(a, b, y0, y1).forEach(function (s) { B((s[0] + s[1]) / 2, (y0 + y1) / 2, 0, s[1] - s[0], y1 - y0, ln, col); }); }
-    var full = kind === 'wl' || kind === 'hw' || kind === 'lw', i;
+    var full = kind === 'wl' || kind === 'hw' || kind === 'lw', i, T = H - (r & 1 ? 0.012 : 0.006);   // update 145: tops just under the wall top
     if (g === 0) {   // ---- wood: a timber frame ----
-      [-1, 1].forEach(function (e) { B(e * 1.39, H / 2, 0, 0.26, H, 0.3, [0.52, 0.45, 0.4]); });            // corner posts
+      [-1, 1].forEach(function (e) { B(e * 1.38, T / 2, 0, 0.24, T, 0.3, [0.52, 0.45, 0.4]); });            // corner posts
       beam(0, 0.18, -1.26, 1.26, 0.28, 0.62);                                                    // sill
-      beam(H - 0.18, H, -1.26, 1.26, 0.28, 0.62);                                                // top beam
+      beam(T - 0.18, T, -1.26, 1.26, 0.28, 0.62);                                                // top beam
       if (H >= 2.5) beam(1.42, 1.56, -1.26, 1.26, 0.25, 0.68);                                   // middle rail
-      if (full && H >= 2.5) [[0.18, 1.42], [1.56, H - 0.18]].forEach(function (b) {               // X braces between the posts
+      if (full && H >= 2.5) [[0.18, 1.42], [1.56, T - 0.18]].forEach(function (b) {               // X braces between the posts
         var h = b[1] - b[0], L = Math.hypot(2.52, h), a = Math.atan2(h, 2.52);
-        B(0, (b[0] + b[1]) / 2, 0, L, 0.12, 0.24, 0.7, a); B(0, (b[0] + b[1]) / 2, 0, L, 0.12, 0.235, 0.7, -a);
+        B(0, (b[0] + b[1]) / 2, 0, L, 0.12, 0.24, 0.7, a); B(0, (b[0] + b[1]) / 2, 0, L, 0.12, 0.22, 0.7, -a);
       });
       open.forEach(function (o) {
-        [o.u0 - 0.07, o.u1 + 0.07].forEach(function (u) { B(u, (o.y0 + o.y1) / 2, 0, 0.14, o.y1 - o.y0, 0.32, 0.55); });   // jambs
-        B((o.u0 + o.u1) / 2, o.y1 + 0.09, 0, o.u1 - o.u0 + 0.28, 0.18, 0.32, 0.55);                                     // lintel
-        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.05, 0, o.u1 - o.u0 + 0.36, 0.1, 0.42, 0.58);                   // window sill
+        [o.u0 - 0.06, o.u1 + 0.06].forEach(function (u) { B(u, (o.y0 + o.y1) / 2, 0, 0.14, o.y1 - o.y0, 0.32, 0.55); });   // jambs
+        B((o.u0 + o.u1) / 2, o.y1 + 0.08, 0, o.u1 - o.u0 + 0.28, 0.18, 0.34, 0.55);                                     // lintel
+        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.04, 0, o.u1 - o.u0 + 0.36, 0.1, 0.42, 0.58);                   // window sill
       });
     } else if (g === 1) {   // ---- stone: plinth, cornice, quoins, keystone ----
       var SQ = [1.32, 1.2, 0.98], SL = [1.22, 1.12, 0.96];   // warm dressed stone against the grey wall
-      beam(0, 0.32, -1.49, 1.49, 0.32, 0.7);
-      if (H >= 1.2) beam(H - 0.2, H, -1.49, 1.49, 0.3, SL);
+      beam(0, 0.32, -1.5, 1.5, 0.32, 0.7);
+      if (H >= 1.2) beam(T - 0.2, T, -1.5, 1.5, 0.3, SL);
       [-1, 1].forEach(function (e) {   // corner quoins, long and short in turn
-        for (var y = 0.32, k = 0; y < H - 0.25; y += 0.45, k++) { var lu = k % 2 ? 0.28 : 0.46, hh = Math.min(0.42, H - 0.2 - y - 0.03); if (hh < 0.12) break; B(e * (1.52 - lu / 2), y + hh / 2 + 0.015, 0, lu, hh, 0.27, SQ); }
+        for (var y = 0.32, k = 0; y < H - 0.25; y += 0.45, k++) { var lu = k % 2 ? 0.28 : 0.46, hh = Math.min(0.42, H - 0.2 - y - 0.03); if (hh < 0.12) break; B(e * (1.5 - lu / 2), y + hh / 2 + 0.015, 0, lu, hh, 0.27, SQ); }
       });
       open.forEach(function (o) {
-        [o.u0 - 0.1, o.u1 + 0.1].forEach(function (u, side) {   // block jambs
+        [o.u0 - 0.09, o.u1 + 0.09].forEach(function (u, side) {   // block jambs
           for (var y = o.y0, k = 0; y < o.y1 - 0.1; y += 0.42, k++) { var hh = Math.min(0.38, o.y1 - y); var lu = k % 2 ? 0.2 : 0.3; B(u + (side ? 1 : -1) * (lu - 0.2) / 2, y + hh / 2 + 0.02, 0, lu, hh, 0.27, SL); }
         });
-        B((o.u0 + o.u1) / 2, o.y1 + 0.15, 0, o.u1 - o.u0 + 0.5, 0.3, 0.3, SL);   // lintel
+        B((o.u0 + o.u1) / 2, o.y1 + 0.14, 0, o.u1 - o.u0 + 0.5, 0.3, 0.3, SL);   // lintel
         B((o.u0 + o.u1) / 2, o.y1 + 0.2, 0, 0.26, 0.42, 0.34, SQ);               // keystone
-        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.06, 0, o.u1 - o.u0 + 0.4, 0.12, 0.44, 0.95);
+        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.05, 0, o.u1 - o.u0 + 0.4, 0.12, 0.44, 0.95);
       });
     } else {   // ---- metal: steel posts, angle strips with rivets, ribs ----
-      [-1, 1].forEach(function (e) { B(e * 1.44, H / 2, 0, 0.16, H, 0.3, 0.5); });
-      beam(0, 0.14, -1.36, 1.36, 0.28, 0.55);
-      beam(H - 0.14, H, -1.36, 1.36, 0.28, 0.55);
+      [-1, 1].forEach(function (e) { B(e * 1.42, T / 2, 0, 0.16, T, 0.3, 0.5); });
+      beam(0, 0.14, -1.34, 1.34, 0.28, 0.55);
+      beam(T - 0.14, T, -1.34, 1.34, 0.28, 0.55);
       for (i = -3; i <= 3; i++) {   // ribs, cut round the openings
         var u = i * 0.375;
-        var ys = [[0.14, H - 0.14]];
+        var ys = [[0.14, T - 0.14]];
         open.forEach(function (o) { if (u > o.u0 - 0.06 && u < o.u1 + 0.06) ys = ys.reduce(function (acc, s) { if (o.y1 <= s[0] || o.y0 >= s[1]) acc.push(s); else { if (o.y0 > s[0]) acc.push([s[0], o.y0]); if (o.y1 < s[1]) acc.push([o.y1, s[1]]); } return acc; }, []); });
         ys.forEach(function (s) { if (s[1] - s[0] > 0.1) B(u, (s[0] + s[1]) / 2, 0, 0.05, s[1] - s[0], 0.25, 0.86); });
       }
-      [0.07, H - 0.07].forEach(function (y, top) {   // rivets on both faces of the strips
-        segs(-1.3, 1.3, top ? H - 0.14 : 0, top ? H : 0.14).forEach(function (s) {
+      [0.07, T - 0.07].forEach(function (y, top) {   // rivets on both faces of the strips
+        segs(-1.3, 1.3, top ? T - 0.14 : 0, top ? T : 0.14).forEach(function (s) {
           for (var u2 = s[0] + 0.1; u2 < s[1] - 0.05; u2 += 0.3) { B(u2, y, 0.148, 0.045, 0.045, 0.02, 0.38); B(u2, y, -0.148, 0.045, 0.045, 0.02, 0.38); }
         });
       });
       open.forEach(function (o) {
-        [o.u0 - 0.05, o.u1 + 0.05].forEach(function (u) { B(u, (o.y0 + o.y1) / 2, 0, 0.1, o.y1 - o.y0, 0.3, 0.45); });
-        B((o.u0 + o.u1) / 2, o.y1 + 0.06, 0, o.u1 - o.u0 + 0.2, 0.12, 0.3, 0.45);
-        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.05, 0, o.u1 - o.u0 + 0.2, 0.1, 0.4, 0.5);
+        [o.u0 - 0.04, o.u1 + 0.04].forEach(function (u) { B(u, (o.y0 + o.y1) / 2, 0, 0.1, o.y1 - o.y0, 0.3, 0.45); });
+        B((o.u0 + o.u1) / 2, o.y1 + 0.05, 0, o.u1 - o.u0 + 0.2, 0.12, 0.31, 0.45);
+        if (o.y0 > 0.05) B((o.u0 + o.u1) / 2, o.y0 - 0.04, 0, o.u1 - o.u0 + 0.2, 0.1, 0.4, 0.5);
       });
     }
   }
-  function bdFoundation(A, g, dep, ou, ov) {
-    var e = [[0, 1.5], [0, -1.5], [1.5, 0], [-1.5, 0]];
+  function bdFoundation(A, g, dep, ou, ov) {   // update 145: all inside the 3 x 3 footprint and under the top trim, so neighbours never overlap
+    function edges(th, y0, y1, col, inset) {   // a band round the four sides: outer face at 1.5 - inset, the x sides fitted between the z sides
+      var c = 1.5 - inset - th / 2, h = y1 - y0, y = (y0 + y1) / 2, L2 = 3 - 2 * inset, L1 = L2 - 2 * th;
+      bdEmit(A, 0, y, c, L2, h, th, col, 0, 'z', ou, ov); bdEmit(A, 0, y, -c, L2, h, th, col, 0, 'z', ou, ov);
+      bdEmit(A, c, y, 0, th, h, L1, col, 0, 'z', ou, ov); bdEmit(A, -c, y, 0, th, h, L1, col, 0, 'z', ou, ov);
+    }
+    var C = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
     if (g === 0) {
-      e.forEach(function (q) { if (q[0]) bdEmit(A, q[0] * 1.01, -0.17, 0, 0.22, 0.3, 3.08, 0.62, 0, 'z', ou, ov); else bdEmit(A, 0, -0.17, q[1] * 1.01, 3.08, 0.3, 0.22, 0.62, 0, 'z', ou, ov); });
-      [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (c) { bdEmit(A, c[0] * 1.42, -dep / 2 - 0.1, c[1] * 1.42, 0.3, dep, 0.3, 0.58, 0, 'z', ou, ov); });
+      edges(0.22, -0.42, -0.125, 0.62, 0);
+      C.forEach(function (c) { bdEmit(A, c[0] * 1.355, -dep / 2 - 0.25, c[1] * 1.355, 0.27, Math.max(0.1, dep - 0.25), 0.27, 0.58, 0, 'z', ou, ov); });
     } else if (g === 1) {
-      e.forEach(function (q) { if (q[0]) bdEmit(A, q[0] * 1.012, -0.2, 0, 0.12, 0.26, 3.1, 0.84, 0, 'z', ou, ov); else bdEmit(A, 0, -0.2, q[1] * 1.012, 3.1, 0.26, 0.12, 0.84, 0, 'z', ou, ov); });
-      [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (c) { for (var y = -0.4, k = 0; y > -dep; y -= 0.45, k++) { var s = k % 2 ? 0.36 : 0.5; bdEmit(A, c[0] * (1.52 - s / 2), y - 0.2, c[1] * (1.52 - s / 2), s, 0.4, s, [1.3, 1.18, 0.97], 0, 'z', ou, ov); } });
+      edges(0.12, -0.38, -0.125, 0.84, 0);
+      C.forEach(function (c) { for (var y = -0.4, k = 0; y > -dep; y -= 0.45, k++) { var s = k % 2 ? 0.36 : 0.5; bdEmit(A, c[0] * (1.495 - s / 2), y - 0.2, c[1] * (1.495 - s / 2), s, 0.4, s, [1.3, 1.18, 0.97], 0, 'z', ou, ov); } });
     } else {
-      e.forEach(function (q) {
-        if (q[0]) { bdEmit(A, q[0] * 1.007, -0.16, 0, 0.06, 0.3, 3.06, 0.5, 0, 'z', ou, ov); for (var z = -1.3; z <= 1.31; z += 0.325) bdEmit(A, q[0] * 1.03, -0.16, z, 0.02, 0.05, 0.05, 0.38, 0, 'z', ou, ov); }
-        else { bdEmit(A, 0, -0.16, q[1] * 1.007, 3.06, 0.3, 0.06, 0.5, 0, 'z', ou, ov); for (var x = -1.3; x <= 1.31; x += 0.325) bdEmit(A, x, -0.16, q[1] * 1.03, 0.05, 0.05, 0.02, 0.38, 0, 'z', ou, ov); }
+      edges(0.06, -0.42, -0.125, 0.5, 0);
+      [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(function (q) {   // rivets
+        for (var t = -1.3; t <= 1.31; t += 0.325) { if (q[0]) bdEmit(A, q[0] * 1.505, -0.27, t, 0.02, 0.05, 0.05, 0.38, 0, 'z', ou, ov); else bdEmit(A, t, -0.27, q[1] * 1.505, 0.05, 0.05, 0.02, 0.38, 0, 'z', ou, ov); }
       });
     }
   }
@@ -18443,7 +18452,20 @@ Object.assign(EN, {
   function bdOk(p) { return BD_KIND[p.k] && !(p.k === 'fd' && p.dep >= 1000); }
   function rwPieceGeoD(k, r, dep, seed, g) {
     var A = { p: [], n: [], u: [], c: [] }, ou = seed ? rwHash(seed, 3, 11) : 0, ov = seed ? rwHash(seed, 5, 13) : 0;
-    rwPieceParts(k, r, dep).forEach(function (q) { if (!q[7]) bdEmit(A, q[0], q[1], q[2], q[3], q[4], q[5], 1, 0, 'z', ou, ov); });
+    var isWall = k !== 'fd' && k !== 'fl', ax = (r & 1) ? 2 : 0;
+    rwPieceParts(k, r, dep).forEach(function (q) {
+      if (q[7]) return;
+      q = q.slice();
+      if (isWall) {   // update 145: end faces 1 cm inside the piece's end, so they never sit on the end post or the next wall
+        var di = ax === 0 ? 3 : 5, a0 = q[ax] - q[di] / 2, a1 = q[ax] + q[di] / 2;
+        if (a0 < -1.499) a0 = -1.49; if (a1 > 1.499) a1 = 1.49; q[ax] = (a0 + a1) / 2; q[di] = a1 - a0;
+        var top = q[1] + q[4] / 2; if (top > 0.99 && Math.abs(top - Math.round(top * 2) / 2) < 0.001) { q[4] -= 0.01; q[1] -= 0.005; }   // and its top 1 cm down
+      } else if (k === 'fd') {
+        if (q[4] > 0.2) { q[3] = Math.min(q[3], 2.96); q[5] = Math.min(q[5], 2.96); q[4] -= 0.01; q[1] -= 0.005; }   // the body: 2 cm in, its top 1 cm under the trim's
+        else { q[3] = Math.min(q[3], 3); q[5] = Math.min(q[5], 3); }                   // the top trim, exactly the footprint
+      }
+      bdEmit(A, q[0], q[1], q[2], q[3], q[4], q[5], 1, 0, 'z', ou, ov);
+    });
     if (k === 'fd') bdFoundation(A, g, dep, ou, ov);
     else if (k === 'fl') bdFloor(A, g, ou, ov);
     else {
@@ -18462,10 +18484,20 @@ Object.assign(EN, {
     G.computeBoundingSphere();
     return G;
   }
+  // update 145: neighbouring pieces share planes (a floor's edge and the wall under it, two walls in a row, two
+  // foundations side by side). Each kind and each checkerboard square draws with its own small depth offset, so where
+  // two faces lie in the same plane one always wins instead of the two flickering.
+  function bdLayer(p) {
+    var px = Math.round(p.x / 3) & 1, pz = Math.round(p.z / 3) & 1;
+    if (p.k === 'fd') return 1 + (px ^ pz);
+    if (p.k === 'fl') return 3 + (px ^ pz);
+    return (p.r & 1) ? 7 + pz : 5 + px;
+  }
   var rwPieceMatD = rwPieceMat;
   rwPieceMat = function (p) {
     var m = rwPieceMatD(p); if (!p.vc) return m;
-    return BD.mats[m.uuid] || (BD.mats[m.uuid] = (function () { var v = m.clone(); v.vertexColors = true; return v; })());
+    var L = bdLayer(p), key = m.uuid + ':' + L;
+    return BD.mats[key] || (BD.mats[key] = (function () { var v = m.clone(); v.vertexColors = true; v.polygonOffset = true; v.polygonOffsetFactor = -0.25 * L; v.polygonOffsetUnits = -2 * L; return v; })());
   };
   function bdApply(p) {
     if (!p || !p.m || !p.m.isMesh || !bdOk(p)) return;
