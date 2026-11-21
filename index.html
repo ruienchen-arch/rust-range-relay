@@ -7648,7 +7648,7 @@ Object.assign(EN, {
       var dp = !txt ? rwDropTarget() : null; if (dp) pick = dp;
       if (!txt && !dp) txt = rwMonPrompt();
       if (!txt && !dp) { var hmp = rwFindNode(function (q) { return q.kind === 'hemp'; }); if (hmp) txt = KE() + ' ' + zt('采集麻（布 ×10）', 'Pick hemp (cloth ×10)'); }
-      if (!txt && !dp) { var cr = rwFindNode(function (q) { return q.kind === 'crate'; }); if (cr) txt = KE() + ' ' + zt('打开补给箱', 'Open the crate'); }
+      if (!txt && !dp) { var cr = rwFindNode(function (q) { return q.kind === 'crate'; }); if (cr) txt = KE() + ' ' + rwCrateTxt(cr); }
       if (!txt && hk === 'dep') { var dc = RW.bc, ds = rwHeldSlot(); txt = (ds ? rwIN(ds.id) : '') + ' · ' + (dc ? (dc.why || KL1() + zt(' 放下', ' place')) : zt('对着地面', 'aim at the ground')); }
       if (!txt && hk === 'lock') txt = pc && rwIsDoor(pc.k) && pc.o === RW.me ? KL1() + zt(' 给这扇门设密码', ' set a code on this door') : zt('对着自己的门或大门', 'Aim at your own door or gate');
       if (!txt && hk === 'bomb') txt = KL1() + zt(' 扔出去，粘住后几秒爆炸，快跑开！', ' throw: it sticks and blows after a few seconds. Run!');
@@ -12294,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 155;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 157;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -19069,6 +19069,453 @@ Object.assign(EN, {
   }
   var renderFrameLT = renderFrame;
   renderFrame = function () { try { ltTick(RDT); } catch (e) {} return renderFrameLT(); };
+  /* ---- update 156 (streets: 157): bigger monuments, better houses, furniture you can search ----
+     - Every monument gets many more buildings (the ghost towns +12, villages +8, harbor, Radtown, outpost +6 ...),
+       placed on free ground inside the monument, facing its middle, never on roads or props.
+     - Houses look better: trim bands between floors and under the roof, drainpipes, a lamp by the door, ceiling
+       lights and rugs inside.
+     - Inside, wardrobes, chests of drawers and tool cabinets stand against the walls (never in front of a window or
+       a door, never over the stairs), with boxes and loose loot lying on the floor. Search each one with the Use key:
+       wardrobes give cloth, armour and bandages; drawers give bullets, bandages, sometimes a green card; tool
+       cabinets give metal and gun parts; boxes give resources; loose loot is a little of anything.
+       They are shared crates: once someone searched one it is empty for everybody and refills after 15 minutes. */
+  var FN = { rec: false };
+  RW.fspots = RW.fspots || [];
+  var FN_EXTRA = {
+    town: [12, ['cottage', 'bungalow', 'townhouse', 'villa', 'apartment', 'cottage', 'bungalow', 'townhouse']],
+    village: [8, ['cottage', 'bungalow', 'cottage', 'barn', 'bungalow']],
+    farm: [4, ['cottage', 'barn', 'bungalow']],
+    outpost: [6, ['bungalow', 'cottage', 'townhouse', 'garage']],
+    military: [6, ['bunker', 'warehouse', 'garage', 'bunker']],
+    airfield: [5, ['garage', 'bunker', 'warehouse', 'bungalow']],
+    harbor: [6, ['warehouse', 'garage', 'bungalow', 'townhouse']],
+    radtown: [6, ['apartment', 'townhouse', 'bungalow', 'garage']],
+    gas: [3, ['bungalow', 'cottage', 'garage']],
+    quarry: [3, ['garage', 'bungalow', 'warehouse']],
+    supermarket: [3, ['bungalow', 'garage', 'cottage']], lighthouse: [2, ['cottage', 'bungalow']],
+    powerplant: [5, ['warehouse', 'garage', 'bunker', 'bungalow']], trainyard: [5, ['warehouse', 'garage', 'bungalow', 'townhouse']],
+    satellite: [3, ['bunker', 'bungalow', 'garage']], junkyard: [4, ['garage', 'bungalow', 'warehouse']],
+    mining: [3, ['garage', 'bungalow', 'barn']], water: [4, ['warehouse', 'bungalow', 'garage', 'townhouse']],
+    dome: [3, ['bungalow', 'garage', 'bunker']], bandit: [5, ['cottage', 'bungalow', 'barn', 'garage']]
+  };
+  var FN_SIZE = { cottage: [10, 8], villa: [13, 11], townhouse: [9, 11], bungalow: [12, 9], garage: [10, 8], apartment: [15, 11], warehouse: [20, 12], barn: [14, 10], bunker: [9, 7] };
+  var FN_HOUSE = { cottage: 1, bungalow: 1, townhouse: 1, villa: 1, apartment: 1 };
+
+  // ---------- more buildings in every monument ----------
+  function fnRectHit(x0, x1, z0, z1, list, pad) {
+    for (var i = 0; i < list.length; i++) { var p = list[i]; if (x1 > p.x0 - pad && x0 < p.x1 + pad && z1 > p.z0 - pad && z0 < p.z1 + pad) return true; }
+    return false;
+  }
+  /* update 157: the new buildings stand along streets. Each monument gets a grid of streets (a main cross if it had
+     no roads, plus parallel streets on both sides), cut wherever a prop or an older building is in the way. The
+     streets have pavements with kerbs, dashed centre lines and street lamps; the houses stand in rows on both sides
+     with their doors to the street and a paved path to the pavement. */
+  var FN_ROADC = 0x2a2a29, FN_WALKC = 0x8a8780, FN_KERBC = 0xa8a49a, FN_LINEC = 0xd8d2b8;
+  function fnExtra(m) {
+    var E = FN_EXTRA[m.k]; if (!E || m.sea) return;
+    var rg = seeded(hashStr('rwx' + m.k + Math.round(m.x) + '_' + Math.round(m.z) + RW.seed)), near = [], roads = [], lamps = [], loot = [];
+    var R = m.r + 12;
+    boxes.forEach(function (b) { if (Math.abs((b.minX + b.maxX) / 2 - m.x) < R && Math.abs((b.minZ + b.maxZ) / 2 - m.z) < R) near.push({ x0: b.minX, x1: b.maxX, z0: b.minZ, z1: b.maxZ }); });
+    roadList.forEach(function (r) { if (Math.abs(r.x - m.x) < R + r.w && Math.abs(r.z - m.z) < R + r.d) roads.push({ x0: r.x - r.w / 2, x1: r.x + r.w / 2, z0: r.z - r.d / 2, z1: r.z + r.d / 2 }); });
+    (LT.lamps || []).forEach(function (l) { if (Math.abs(l.x - m.x) < R && Math.abs(l.z - m.z) < R) lamps.push({ x0: l.x, x1: l.x, z0: l.z, z1: l.z }); });
+    (RW_MONLOOT[m.k] || []).forEach(function (c) { var px = m.x + c[0] * (m.fx || 1), pz = m.z + c[1] * (m.fz || 1); loot.push({ x0: px, x1: px, z0: pz, z1: pz }); });
+    var W = m.r >= 70 ? 7 : 6, SW = 1.8;   // street and pavement widths
+
+    // ---- the street plan: lines through the monument ----
+    var lines = [], hadRoads = roads.length > 0;
+    function line(ax, off) { lines.push({ ax: ax, off: off }); }   // ax 'x': runs along x at z = m.z + off
+    if (!hadRoads) { line('x', 0); line('z', 0); }
+    var o1 = Math.round(m.r * 0.5);
+    [-1, 1].forEach(function (sg) { line('x', sg * o1); line('z', sg * o1); });
+    // cut each line into pieces that cross nothing, kept only where long enough
+    var segs = [];
+    lines.forEach(function (Ln) {
+      var half = Math.sqrt(Math.max(0, (m.r - 6) * (m.r - 6) - Ln.off * Ln.off)), step = 3, run = null;
+      for (var a = -half; a <= half + 0.01; a += step) {
+        var cx = Ln.ax === 'x' ? m.x + a : m.x + Ln.off, cz = Ln.ax === 'x' ? m.z + Ln.off : m.z + a;
+        var hw = W / 2 + SW + 0.5, x0 = Ln.ax === 'x' ? cx - step / 2 : cx - hw, x1 = Ln.ax === 'x' ? cx + step / 2 : cx + hw, z0 = Ln.ax === 'x' ? cz - hw : cz - step / 2, z1 = Ln.ax === 'x' ? cz + hw : cz + step / 2;
+        var hp = fnRectHit(x0, x1, z0, z1, placed, 0.5), hn = fnRectHit(x0, x1, z0, z1, near, 0.5), hl = fnRectHit(x0, x1, z0, z1, loot, 1), ok = !hp && !hn && !hl;
+        if (ok) { if (!run) run = { a0: a, a1: a }; else run.a1 = a; }
+        if ((!ok || a + step > half + 0.01) && run) { if (run.a1 - run.a0 >= 18) segs.push({ ax: Ln.ax, off: Ln.off, a0: run.a0 - step / 2, a1: run.a1 + step / 2 }); run = null; }
+      }
+    });
+    if (!segs.length) return;
+    function segRect(sg, pad) {
+      var hw = W / 2 + pad;
+      return sg.ax === 'x' ? { x0: m.x + sg.a0, x1: m.x + sg.a1, z0: m.z + sg.off - hw, z1: m.z + sg.off + hw } : { x0: m.x + sg.off - hw, x1: m.x + sg.off + hw, z0: m.z + sg.a0, z1: m.z + sg.a1 };
+    }
+    // where other streets (new and old) cross this one: no pavement or centre line there
+    var allRoads = roads.slice(); segs.forEach(function (sg) { allRoads.push(segRect(sg, 0)); });
+    function crossings(sg) {
+      var out = [], me = segRect(sg, 0);
+      allRoads.forEach(function (r) {
+        if (r === me) return;
+        var rw = sg.ax === 'x' ? r.x1 - r.x0 : r.z1 - r.z0, rl = sg.ax === 'x' ? r.z1 - r.z0 : r.x1 - r.x0; if (rl < rw) return;   // only roads running across
+        var across = sg.ax === 'x' ? (r.z0 < me.z1 && r.z1 > me.z0 - SW * 2 - 1 || r.z0 < me.z1 + SW * 2 + 1 && r.z1 > me.z0) : (r.x0 < me.x1 + SW * 2 + 1 && r.x1 > me.x0 - SW * 2 - 1);
+        if (!across) return;
+        var c0 = sg.ax === 'x' ? r.x0 - m.x : r.z0 - m.z, c1 = sg.ax === 'x' ? r.x1 - m.x : r.z1 - m.z;
+        if (c1 < sg.a0 - SW || c0 > sg.a1 + SW) return;
+        out.push([c0 - SW - 0.6, c1 + SW + 0.6]);
+      });
+      return out;
+    }
+    function pieces(sg, cuts) {   // the parts of [a0, a1] outside every cut
+      var res = [[sg.a0, sg.a1]];
+      cuts.forEach(function (c) { var nx = []; res.forEach(function (p) { if (c[1] <= p[0] || c[0] >= p[1]) nx.push(p); else { if (c[0] > p[0]) nx.push([p[0], c[0]]); if (c[1] < p[1]) nx.push([c[1], p[1]]); } }); res = nx; });
+      return res.filter(function (p) { return p[1] - p[0] > 0.5; });
+    }
+    function strip(sg, a0, a1, across, wd, y, h, col, opt) {   // a box along the street, 'across' metres off its centre line
+      var L = a1 - a0, mid = (a0 + a1) / 2;
+      if (sg.ax === 'x') bb(m.x + mid, y, m.z + sg.off + across, L, h, wd, col, opt || {});
+      else bb(m.x + sg.off + across, y, m.z + mid, wd, h, L, col, opt || {});
+    }
+    // ---- draw the streets ----
+    var streets = [];
+    segs.forEach(function (sg) {
+      var r = segRect(sg, 0); road((r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2, r.x1 - r.x0, r.z1 - r.z0, FN_ROADC);
+      var cuts = crossings(sg);
+      pieces(sg, cuts).forEach(function (p) {
+        [-1, 1].forEach(function (s) {
+          strip(sg, p[0], p[1], s * (W / 2 + SW / 2), SW, 0.07, 0.1, FN_WALKC);               // pavement
+          strip(sg, p[0], p[1], s * (W / 2 + 0.08), 0.16, 0.08, 0.14, FN_KERBC);              // kerb
+        });
+        for (var a = p[0] + 1; a + 2 < p[1]; a += 5) strip(sg, a, a + 2.4, 0, 0.18, 0.045, 0.012, FN_LINEC, { basic: false });   // dashed centre line
+      });
+      // street lamps on alternate sides every 24 m
+      var k = 0;
+      for (var a = sg.a0 + 8; a < sg.a1 - 6; a += 24, k++) {
+        var hit = cuts.some(function (c) { return a > c[0] - 1 && a < c[1] + 1; }); if (hit) continue;
+        var s = k % 2 ? 1 : -1, ac = s * (W / 2 + SW - 0.35);
+        var lx = sg.ax === 'x' ? m.x + a : m.x + sg.off + ac, lz = sg.ax === 'x' ? m.z + sg.off + ac : m.z + a;
+        lamp(lx, lz);
+      }
+      streets.push(segRect(sg, SW + 0.6));   // nothing else stands on the street
+    });
+
+    // ---- houses in rows along both sides ----
+    var built = 0, lots = [];
+    segs.forEach(function (sg) {
+      [-1, 1].forEach(function (s) {
+        for (var a = sg.a0 + 4; a < sg.a1 - 4; a += 2) lots.push({ sg: sg, s: s, a: a });
+      });
+    });
+    for (var i = lots.length - 1; i > 0; i--) { var j = Math.floor(rg() * (i + 1)), tmp = lots[i]; lots[i] = lots[j]; lots[j] = tmp; }
+    for (var li = 0; li < lots.length && built < E[0] + 4; li++) {
+      var lt = lots[li], sg = lt.sg, s = lt.s, kd = E[1][Math.floor(rg() * E[1].length)], sz = FN_SIZE[kd];
+      // the front (width sz[0]) faces the street
+      var door = sg.ax === 'x' ? (s > 0 ? 'n' : 's') : (s > 0 ? 'w' : 'e');
+      var swap = door === 'e' || door === 'w', fw = swap ? sz[1] : sz[0], fd = swap ? sz[0] : sz[1];
+      var back = W / 2 + SW + 2.5 + sz[1] / 2;
+      var x = sg.ax === 'x' ? m.x + lt.a : m.x + sg.off + s * back, z = sg.ax === 'x' ? m.z + sg.off + s * back : m.z + lt.a;
+      var along = sg.ax === 'x' ? fw : fd; if (lt.a - along / 2 < sg.a0 + 1 || lt.a + along / 2 > sg.a1 - 1) continue;   // the whole front on the street
+      var x0 = x - fw / 2, x1 = x + fw / 2, z0 = z - fd / 2, z1 = z + fd / 2;
+      if (Math.hypot(Math.abs(x - m.x) + fw / 2, Math.abs(z - m.z) + fd / 2) > m.r - 2) continue;
+      if (fnRectHit(x0, x1, z0, z1, streets, 0.5) || fnRectHit(x0, x1, z0, z1, placed, 2.2) || fnRectHit(x0, x1, z0, z1, near, 2.5) || fnRectHit(x0, x1, z0, z1, roads, 1.5) || fnRectHit(x0, x1, z0, z1, lamps, 1.5) || fnRectHit(x0, x1, z0, z1, loot, 2.5)) continue;
+      if (RW.safe && m.k === 'outpost' && Math.hypot(x - m.x, z - m.z) < 14) continue;
+      put(kd, x, z, sz[0], sz[1], door);
+      // a paved path from the door to the pavement
+      var pl = 2.5, px = sg.ax === 'x' ? x : x - s * (fw / 2 + pl / 2), pz = sg.ax === 'x' ? z - s * (fd / 2 + pl / 2) : z;
+      bb(px, 0.05, pz, sg.ax === 'x' ? 1.6 : pl + 0.4, 0.06, sg.ax === 'x' ? pl + 0.4 : 1.6, 0x77736a, {});
+      built++;
+    }
+    streets.forEach(function (r) { placed.push(r); });
+  }
+  var rwBuildMonumentFN = rwBuildMonument;
+  rwBuildMonument = function (m) {
+    var r = rwBuildMonumentFN.apply(this, arguments);
+    try { fnExtra(m); } catch (e) { console.warn('fnExtra', e); }
+    return r;
+  };
+  var rwBuildMonumentsFN = rwBuildMonuments;
+  rwBuildMonuments = function () {
+    RW.fspots = []; FN.rec = true;
+    try { return rwBuildMonumentsFN.apply(this, arguments); } finally { FN.rec = false; }
+  };
+
+  // ---------- house details and furniture ----------
+  var buildingFN = building;
+  building = function (sp) {
+    var r = buildingFN.apply(this, arguments);
+    if (FN.rec && BK[sp.kind] && sp.kind !== 'shop') { try { fnHouse(sp); } catch (e) { console.warn('fnHouse', e); } }
+    return r;
+  };
+  function fnHouse(sp) {
+    var K = BK[sp.kind], cx = sp.x, cz = sp.z, w = sp.w, d = sp.d, door = sp.door || 's', kind = sp.kind;
+    var floors = sp.floors || K.floors, WH = K.wh, FHk = WH + 0.2, t = 0.4, swap = door === 'e' || door === 'w';
+    var rg = seeded(hashStr('rwf' + Math.round(cx * 10) + '_' + Math.round(cz * 10) + kind + RW.seed));
+    function L(u, v) { if (door === 's') return [cx + u, cz + v]; if (door === 'n') return [cx - u, cz - v]; if (door === 'e') return [cx + v, cz - u]; return [cx - v, cz + u]; }
+    function S(lu, lv) { return swap ? [lv, lu] : [lu, lv]; }
+    function ld(u, y, v, lu, h, lv, c, opt) { var p = L(u, v), s = S(lu, lv); bb(p[0], y, p[1], s[0], h, s[1], c, opt || {}); }
+    function ls(u, v, lu, lv, y0, y1, c) { var p = L(u, v), s = S(lu, lv); solid(p[0], p[1], s[0], s[1], y0, y1, c); }
+    var trim = 0x3a342d, light = 0xd8d0be, house = !!FN_HOUSE[kind];
+
+    // ---- outside: trim bands, cornice, drainpipes, a lamp by the door ----
+    var bandC = house ? light : 0x55585a;
+    for (var f = 1; f <= floors; f++) {
+      var by = f === floors ? f * FHk - 0.12 : f * FHk - 0.1, bh = f === floors ? 0.24 : 0.16;
+      ld(0, by, d / 2 + 0.25, w - 0.5, bh, 0.1, bandC); ld(0, by, -d / 2 - 0.25, w - 0.5, bh, 0.1, bandC);
+      ld(-w / 2 - 0.25, by, 0, 0.1, bh, d - 0.5, bandC); ld(w / 2 + 0.25, by, 0, 0.1, bh, d - 0.5, bandC);
+    }
+    var tot = floors * FHk;
+    [-1, 1].forEach(function (s) {
+      ld(s * (w / 2 - 0.55), tot / 2, -d / 2 - 0.32, 0.12, tot, 0.12, 0x4a4d50);   // downpipe
+      ld(s * (w / 2 - 0.55), 0.12, -d / 2 - 0.45, 0.22, 0.12, 0.3, 0x4a4d50);       // its shoe
+    });
+    var du = sp.du || 0, dw = K.doorW, dh = K.doorH || 2.4;
+    if (house) {
+      ld(du + dw / 2 + 0.45, dh + 0.25, d / 2 + 0.28, 0.16, 0.26, 0.12, 0x2a2a2a); ld(du + dw / 2 + 0.45, dh + 0.25, d / 2 + 0.35, 0.1, 0.16, 0.04, 0xffe2a8, { basic: true });
+      ld(du, 0.1, d / 2 + 0.55, dw + 0.6, 0.2, 0.7, 0x6a645a);   // door step
+    }
+
+    // ---- inside: what is where (replicates the building's windows and doors) ----
+    function opsFor(side, f) {
+      var len = (side === 'f' || side === 'b') ? w : d, ops = [];
+      var hasDoor = (f === 0 && side === 'f') || (f === 0 && side === 'b' && K.both) || (f === 1 && side === 'f' && K.balcony);
+      if (hasDoor) ops.push({ c: (side === 'f' && f === 0) ? du : 0, w: f === 1 ? 1.5 : K.doorW, k: 'door' });
+      var spacing = K.winSpacing || 3.6, n = Math.floor((len - 1.4) / spacing);
+      for (var i = 0; i < n; i++) {
+        var c = -len / 2 + len * (i + 0.5) / n, ok = Math.abs(c) < len / 2 - 1.2;
+        for (var j = 0; j < ops.length; j++) if (Math.abs(c - ops[j].c) < (K.winW + ops[j].w) / 2 + 0.6) ok = false;
+        if (ok) ops.push({ c: c, w: K.winW, k: 'win' });
+      }
+      return ops;
+    }
+    var flen = Math.ceil(FHk / 0.5) * 0.6;
+    function holeAt(f) {   // where furniture must not go on floor f: the stair opening (and the step-off beside it) and the foot of the flight going up
+      var out = [], vLow = -d / 2 + t / 2 + 0.05 + flen;
+      if (floors > 1 && f >= 1) {
+        var lf = (f - 1) % 2 === 0, us = lf ? -w / 2 + t / 2 + 0.1 : w / 2 - t / 2 - 0.1 - 1.6;
+        out.push({ u0: us - 0.1 - (lf ? 0 : 1.5), u1: us + 1.7 + (lf ? 1.5 : 0), v0: -d / 2, v1: vLow + 0.3 });
+      }
+      if (f < floors - 1) {
+        var lu = f % 2 === 0, us2 = lu ? -w / 2 + t / 2 + 0.1 : w / 2 - t / 2 - 0.1 - 1.6;
+        out.push({ u0: us2 - 0.1, u1: us2 + 1.7, v0: -d / 2, v1: vLow + 1.5 });
+      }
+      return out;
+    }
+    function inHole(f, u0, u1, v0, v1) { return holeAt(f).some(function (h) { return u1 > h.u0 && u0 < h.u1 && v1 > h.v0 && v0 < h.v1; }); }
+    function boxFree(u0, u1, v0, v1, y0, y1) {   // nothing solid there (walls, stairs, beds, tables ...)
+      var a = L(u0, v0), b = L(u1, v1), x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), z0 = Math.min(a[1], b[1]), z1 = Math.max(a[1], b[1]);
+      for (var i = boxes.length - 1; i >= 0 && i > boxes.length - 900; i--) {
+        var q = boxes[i], qy0 = q.y0 === undefined ? 0 : q.y0, qy1 = q.h === undefined ? 99 : q.h;
+        if (qy1 <= y0 + 0.01 || qy0 >= y1 - 0.01) continue;
+        if (x1 > q.minX + 0.01 && x0 < q.maxX - 0.01 && z1 > q.minZ + 0.01 && z0 < q.maxZ - 0.01) return false;
+      }
+      return true;
+    }
+    var walls = [
+      { s: 'l', len: d, fixed: -w / 2 + t / 2, fu: 1, fv: 0 }, { s: 'r', len: d, fixed: w / 2 - t / 2, fu: -1, fv: 0 },
+      { s: 'f', len: w, fixed: d / 2 - t / 2, fu: 0, fv: -1 }, { s: 'b', len: w, fixed: -d / 2 + t / 2, fu: 0, fv: 1 }
+    ];
+    // a piece of furniture standing against wall W at position c along it, on floor f
+    function tryPlace(Wl, f, c, wa, wb, h) {
+      var y0 = f * FHk + (f ? 0 : 0.06), alongU = Wl.s === 'f' || Wl.s === 'b';
+      if (Math.abs(c) + wa / 2 > Wl.len / 2 - t / 2 - 0.35) return null;   // clear of the corners
+      var ops = opsFor(Wl.s, f);
+      for (var i = 0; i < ops.length; i++) {
+        var o = ops[i], gap = o.k === 'door' ? 0.9 : 0.1;
+        if (o.k === 'win' && h <= K.sill - 0.05) continue;
+        if (Math.abs(c - o.c) < (wa + o.w) / 2 + gap) return null;
+      }
+      var inner = Wl.fixed + (Wl.fu || Wl.fv) * (t / 2 + 0.03), mid = inner + (Wl.fu || Wl.fv) * wb / 2;
+      var u = alongU ? c : mid, v = alongU ? mid : c, lu = alongU ? wa : wb, lv = alongU ? wb : wa;
+      var u0 = u - lu / 2, u1 = u + lu / 2, v0 = v - lv / 2, v1 = v + lv / 2;
+      if (inHole(f, u0, u1, v0, v1)) return null;
+      if (!boxFree(u0 - 0.05, u1 + 0.05, v0 - 0.05, v1 + 0.05, y0, y0 + h)) return null;
+      if (Wl.s === 'f' && f === 0 && Math.abs(u - du) < dw / 2 + 1.2) return null;
+      return { u: u, v: v, y: y0, fu: Wl.fu, fv: Wl.fv, wa: wa, wb: wb, h: h };
+    }
+    function spot(q, tier) {
+      var p = L(q.u, q.v);
+      RW.fspots.push({ x: p[0], z: p[1], y: q.y, tier: tier, mil: kind === 'bunker' || kind === 'warehouse' });
+    }
+    // furniture models, in the piece's own frame: a runs along the wall, b points into the room
+    function FB(q, a, b, y, wa, wb, h, c, isSolid, opt) {
+      var au = q.fv, av = -q.fu;   // along the wall
+      var u = q.u + au * a + q.fu * b, v = q.v + av * a + q.fv * b;
+      var lu = au ? wa : wb, lv = au ? wb : wa;
+      if (isSolid) ls(u, v, lu, lv, q.y + y, q.y + y + h, c);
+      else ld(u, q.y + y + h / 2, v, lu, h, lv, c, opt);
+    }
+    var WOOD = [0x6a4a30, 0x7a5a3a, 0x5a3e2a, 0x8a6a48][Math.floor(rg() * 4)], WOODL = 0x9a7a52, METAL = 0x8a8d90, KNOB = 0xc8b070;
+    function wardrobe(q) {
+      FB(q, 0, 0, 0, q.wa, q.wb, q.h, WOOD, true);
+      FB(q, 0, 0, q.h, q.wa + 0.06, q.wb + 0.06, 0.06, 0x3e2c1e);              // cornice
+      FB(q, 0, 0, 0, q.wa + 0.02, q.wb + 0.02, 0.1, 0x3e2c1e);                  // plinth
+      [-1, 1].forEach(function (s) {
+        FB(q, s * q.wa / 4, q.wb / 2 + 0.01, 0.16, q.wa / 2 - 0.06, 0.02, q.h - 0.3, WOODL);   // doors
+        FB(q, s * 0.06, q.wb / 2 + 0.03, q.h * 0.5, 0.03, 0.03, 0.22, KNOB);                    // handles
+      });
+      FB(q, 0, q.wb / 2 + 0.015, 0.16, 0.02, 0.025, q.h - 0.3, 0x2e2016);       // the gap between the doors
+    }
+    function drawers(q) {
+      FB(q, 0, 0, 0, q.wa, q.wb, q.h - 0.04, WOOD, true);
+      FB(q, 0, 0.02, q.h - 0.04, q.wa + 0.06, q.wb + 0.06, 0.05, 0x3e2c1e);   // top
+      for (var i = 0; i < 3; i++) {
+        var yy = 0.08 + i * 0.26;
+        FB(q, 0, q.wb / 2 + 0.01, yy, q.wa - 0.1, 0.02, 0.22, WOODL);
+        FB(q, -q.wa / 4, q.wb / 2 + 0.03, yy + 0.09, 0.08, 0.025, 0.035, KNOB); FB(q, q.wa / 4, q.wb / 2 + 0.03, yy + 0.09, 0.08, 0.025, 0.035, KNOB);
+      }
+      if (rg() < 0.5) { FB(q, -q.wa / 4, 0, q.h + 0.01, 0.14, 0.14, 0.3, 0x4a4a4a); FB(q, -q.wa / 4, 0, q.h + 0.31, 0.26, 0.26, 0.16, 0xe8dcb0); }   // a little lamp
+      else { FB(q, q.wa / 5, 0, q.h + 0.01, 0.3, 0.2, 0.06, 0x7a3b2a); FB(q, q.wa / 5, 0, q.h + 0.07, 0.28, 0.19, 0.05, 0x35527a); }   // books
+    }
+    function cabinet(q) {   // a red tool chest or a grey filing cabinet
+      var col = rg() < 0.5 ? 0x9a2e26 : 0x6a6e72;
+      FB(q, 0, 0, 0, q.wa, q.wb, q.h, col, true);
+      for (var i = 0; i < 4; i++) {
+        var yy = 0.08 + i * (q.h - 0.12) / 4;
+        FB(q, 0, q.wb / 2 + 0.01, yy, q.wa - 0.08, 0.02, (q.h - 0.12) / 4 - 0.04, col === 0x9a2e26 ? 0xb03a30 : 0x7a7e82);
+        FB(q, 0, q.wb / 2 + 0.03, yy + (q.h - 0.12) / 8 - 0.02, q.wa * 0.5, 0.025, 0.03, METAL);
+      }
+      FB(q, 0, 0, q.h, q.wa + 0.02, q.wb + 0.02, 0.03, 0x2a2a2a);
+    }
+    function place(list, f) {   // list: [tier, wa, wb, h] in the order they should be tried
+      list.forEach(function (it) {
+        var ws = walls.slice().sort(function () { return rg() - 0.5; });
+        for (var wi = 0; wi < ws.length; wi++) {
+          var Wl = ws[wi], tries = 10;
+          for (var k = 0; k < tries; k++) {
+            var c = (rg() * 2 - 1) * (Wl.len / 2 - it[1] / 2 - 0.5);
+            var q = tryPlace(Wl, f, c, it[1], it[2], it[3]);
+            if (!q) continue;
+            if (it[0] === 'wd') wardrobe(q); else if (it[0] === 'dr') drawers(q); else if (it[0] === 'cb') cabinet(q);
+            else { spot(q, it[0]); return; }                       // boxes: only the shared crate is drawn
+            var p = L(q.u, q.v); RW.fspots.push({ x: p[0], z: p[1], y: q.y, tier: it[0], mil: kind === 'bunker' || kind === 'warehouse' });
+            return;
+          }
+        }
+      });
+    }
+    function floorLoot(f, n) {   // loose loot on the open floor
+      var y0 = f * FHk + (f ? 0 : 0.06);
+      for (var i = 0, k = 0; i < n && k < 30; k++) {
+        var u = (rg() * 2 - 1) * (w / 2 - 1.2), v = (rg() * 2 - 1) * (d / 2 - 1.2);
+        if (f === 0 && Math.abs(u - du) < dw / 2 + 0.6 && v > d / 2 - 2.6) continue;
+        if (inHole(f, u - 0.6, u + 0.6, v - 0.6, v + 0.6)) continue;
+        if (!boxFree(u - 0.5, u + 0.5, v - 0.5, v + 0.5, y0, y0 + 1.2)) continue;
+        var p = L(u, v); RW.fspots.push({ x: p[0], z: p[1], y: y0, tier: 'pl', mil: kind === 'bunker' }); i++;
+      }
+    }
+    for (f = 0; f < floors; f++) {
+      var y0f = f * FHk;
+      if (house) {
+        // ceiling light and a rug
+        ld(rg() < 0.5 ? -w / 6 : w / 6, y0f + WH - 0.05, d / 6, 0.5, 0.08, 0.5, 0xfff1c8, { basic: true });
+        ld(rg() * 1 - 0.5, y0f + (f ? 0.016 : 0.076), 0.2, Math.min(3.2, w - 3), 0.03, 2.0, [0x7a3b3b, 0x35527a, 0x6a5a3a, 0x4a5a3a][Math.floor(rg() * 4)]);
+        var list = [['wd', 1.1, 0.6, 2.0], ['dr', 1.0, 0.5, 0.86], ['dr', 1.0, 0.5, 0.86]];
+        if (rg() < 0.6) list.push(['bx', 0.7, 0.6, 0.55]);
+        if (kind === 'apartment' && f === 2) list.push(['cb', 0.6, 0.6, 1.3]);
+        place(list, f);
+        floorLoot(f, rg() < 0.7 ? 1 : 2);
+      } else if (kind === 'warehouse') {
+        [-1, 1].forEach(function (s) { ld(s * w / 4, y0f + WH - 0.4, 0, 0.8, 0.12, 0.4, 0xfff1c8, { basic: true }); ld(s * w / 4, y0f + WH - 0.2, 0, 0.04, 0.3, 0.04, 0x2a2a2a); });
+        place([['cb', 0.8, 0.6, 1.3], ['cb', 0.8, 0.6, 1.3], ['bx', 0.8, 0.7, 0.6], ['bx', 0.8, 0.7, 0.6], ['bx', 0.8, 0.7, 0.6]], f);
+        floorLoot(f, 2);
+      } else if (kind === 'garage') {
+        place([['cb', 0.9, 0.6, 1.1], ['bx', 0.7, 0.6, 0.55]], f); floorLoot(f, 1);
+      } else if (kind === 'bunker') {
+        place([['cb', 0.6, 0.6, 1.3], ['bx', 0.8, 0.7, 0.6]], f); floorLoot(f, 1);
+      } else if (kind === 'barn') {
+        place([['bx', 0.8, 0.7, 0.6], ['bx', 0.8, 0.7, 0.6], ['cb', 0.9, 0.6, 1.1]], f); floorLoot(f, 1);
+      }
+    }
+  }
+
+  // ---------- the searchable spots are shared crates (ids 2000+ in their chunk) ----------
+  var rwGenNodesFN = rwGenNodes;
+  rwGenNodes = function (cx, cz) {
+    var out = rwGenNodesFN.apply(this, arguments);
+    try {
+      var S = RW_CH;
+      (RW.fspots || []).forEach(function (s, i) {
+        if (Math.floor(s.x / S) !== cx || Math.floor(s.z / S) !== cz) return;
+        var big = s.tier === 'wd' || s.tier === 'dr' || s.tier === 'cb';
+        out.push({ id: cx + '_' + cz + '_' + (2000 + i), kind: 'crate', tier: s.tier, fn: 1, mil: s.mil, x: s.x, z: s.z, y: s.y, r: big ? 0.45 : 0.35, max: 1, sc: 1, v: (i * 0.618) % 1 });
+      });
+    } catch (e) {}
+    return out;
+  };
+  var rwBuildNodeFN = rwBuildNode;
+  rwBuildNode = function (B, n, dead) {
+    if (!n.fn) return rwBuildNodeFN.apply(this, arguments);
+    if (dead) return;
+    if (n.tier === 'bx') { fnBoxB(B, n); return; }
+    if (n.tier === 'pl') { fnPileB(B, n); return; }
+    // wardrobes, drawers and cabinets are part of the house; a faint mark says it has not been searched yet
+  };
+  function fnBoxB(B, n) {   // a taped cardboard box, sometimes with a second one on top
+    var x = n.x, y = n.y, z = n.z, cb = [0.62, 0.47, 0.3], tp = [0.78, 0.7, 0.5];
+    rwBoxB(B, x, y, z, 0.7, 0.5, 0.55, cb);
+    rwBoxB(B, x, y + 0.5, z, 0.71, 0.012, 0.12, tp); rwBoxB(B, x, y + 0.25, z + 0.28, 0.12, 0.3, 0.01, tp);
+    rwBoxB(B, x - 0.2, y + 0.32, z + 0.281, 0.2, 0.1, 0.004, [0.2, 0.18, 0.15]);
+    if (n.v > 0.45) { rwBoxB(B, x + 0.05, y + 0.51, z - 0.03, 0.5, 0.36, 0.42, rwSh(cb, 0.9)); rwBoxB(B, x + 0.05, y + 0.875, z - 0.03, 0.51, 0.012, 0.1, tp); }
+  }
+  function fnPileB(B, n) {   // a sack, a tin or two and some rags lying on the floor
+    var x = n.x, y = n.y, z = n.z, rg = seeded(hashStr(n.id));
+    rwBlobB(B, x, y + 0.2, z, 0.32, 0.22, 0.26, [0.48, 0.4, 0.26], rg, 0.25);
+    rwBoxB(B, x + 0.05, y + 0.4, z, 0.09, 0.06, 0.09, [0.3, 0.24, 0.14]);
+    rwBoxB(B, x + 0.38, y, z + 0.1, 0.11, 0.15, 0.11, [0.7, 0.72, 0.74]); rwBoxB(B, x + 0.38, y + 0.15, z + 0.1, 0.115, 0.01, 0.115, [0.8, 0.25, 0.2]);
+    if (rg() < 0.6) rwBoxB(B, x - 0.3, y, z + 0.25, 0.11, 0.15, 0.11, [0.72, 0.7, 0.66]);
+    rwBoxB(B, x - 0.15, y, z - 0.32, 0.45, 0.03, 0.3, [0.35, 0.38, 0.45]);
+  }
+  var FN_NAME = { wd: ['衣柜', 'Wardrobe'], dr: ['抽屉柜', 'Chest of drawers'], cb: ['工具柜', 'Tool cabinet'], bx: ['纸箱', 'Box'], pl: ['地上的东西', 'Loose loot'] };
+  function rwCrateTxt(n) {
+    if (n && n.fn && FN_NAME[n.tier]) return zt('搜索' + FN_NAME[n.tier][0], 'Search the ' + FN_NAME[n.tier][1].toLowerCase());
+    return zt('打开补给箱', 'Open the crate');
+  }
+  var rwLootFN = rwLoot;
+  rwLoot = function (n) {
+    if (!n || !n.fn) return rwLootFN.apply(this, arguments);
+    function rnd(a, b) { return Math.round(a + Math.random() * (b - a)); }
+    function ch(p) { return Math.random() < p * mul; }
+    var mul = n.mil ? 1.4 : 1, items = [], c = 0, t = n.tier;
+    if (t === 'wd') {
+      items.push({ id: 'cloth', n: rnd(6, 18) });
+      if (ch(0.3)) items.push({ id: 'armor', n: 1 });
+      if (ch(0.3)) items.push({ id: 'bandage', n: rnd(1, 3) });
+      if (ch(0.08)) items.push({ id: 'medkit', n: 1 });
+      c = rnd(12, 30);
+    } else if (t === 'dr') {
+      items.push({ id: 'frags', n: rnd(8, 30) });
+      if (ch(0.4)) items.push({ id: 'apis', n: rnd(4, 10) });
+      if (ch(0.2)) items.push({ id: 'ashot', n: rnd(3, 6) });
+      if (ch(0.25)) items.push({ id: 'bandage', n: rnd(1, 2) });
+      if (ch(0.1)) items.push({ id: 'kcg', n: 1 });
+      if (ch(0.06)) items.push({ id: 'parts', n: 1 });
+      c = rnd(10, 28);
+    } else if (t === 'cb') {
+      items.push({ id: 'frags', n: rnd(20, 60) }, { id: 'metal', n: rnd(10, 30) });
+      if (ch(0.3)) items.push({ id: 'parts', n: rnd(1, 2) });
+      if (ch(0.2)) items.push({ id: 'arif', n: rnd(5, 10) });
+      if (ch(0.08)) items.push({ id: 'kcg', n: 1 });
+      if (ch(0.04)) items.push({ id: 'satchel', n: 1 });
+      c = rnd(18, 40);
+    } else if (t === 'bx') {
+      items.push({ id: Math.random() < 0.5 ? 'wood' : 'stone', n: rnd(30, 80) });
+      if (ch(0.5)) items.push({ id: 'cloth', n: rnd(3, 10) });
+      if (ch(0.35)) items.push({ id: 'frags', n: rnd(10, 25) });
+      if (ch(0.1)) items.push({ id: 'lantern', n: 1 });
+      c = rnd(8, 20);
+    } else {
+      var opts = [['cooked', 1, 2], ['bandage', 1, 2], ['apis', 3, 6], ['frags', 8, 20], ['cloth', 4, 8], ['ashot', 2, 4], ['metal', 8, 20]];
+      var o = opts[Math.floor(Math.random() * opts.length)]; items.push({ id: o[0], n: rnd(o[1], o[2]) });
+      if (ch(0.15)) { o = opts[Math.floor(Math.random() * opts.length)]; items.push({ id: o[0], n: rnd(o[1], o[2]) }); }
+      c = rnd(4, 12);
+    }
+    items = items.filter(function (it) { return RWI[it.id]; });
+    coins += c;
+    var dx = P.x - n.x, dz = P.z - n.z, dl = Math.hypot(dx, dz) || 1;
+    rwDropAdd(items, n.x + dx / dl * 0.8, n.z + dz / dl * 0.8, null, 420, (n.y || 0) + 0.2);
+    banner(zt(FN_NAME[t][0] + '搜到了东西：金币 +' + c + '，物品掉在旁边', FN_NAME[t][1] + ' searched: +' + c + ' coins, the loot is next to you'), 1500);
+    sfx('loot');
+  };
+  // a crate on another floor of the same house is not in reach
+  var rwFindNodeFN = rwFindNode;
+  rwFindNode = function (filter) {
+    return rwFindNodeFN.call(this, function (q) { if (q.fn && Math.abs(q.y - P.y) > 1.8) return false; return filter ? filter(q) : true; });
+  };
+  var rwNodeTopFN = rwNodeTop;
+  rwNodeTop = function (n) { if (n.fn) return n.y + (n.tier === 'pl' ? 0.3 : n.tier === 'bx' ? 0.6 : 1.0); return rwNodeTopFN(n); };
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
      (AK selector lever and slant brake, MP5 cocking tube and sight ring, Python vent rib, 870 corn-cob pump,
