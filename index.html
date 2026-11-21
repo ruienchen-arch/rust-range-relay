@@ -5783,7 +5783,7 @@ Object.assign(EN, {
     var dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'], hd = Math.atan2(-Math.sin(P.yaw), -Math.cos(P.yaw)), di = ((Math.round(hd / (Math.PI / 4)) % 8) + 8) % 8;
     var near = null, nd = 1e9;
     RW.mons.forEach(function (m) { var d = Math.hypot(P.x - m.x, P.z - m.z); if (d < nd) { nd = d; near = m; } });
-    $('rwInfo').textContent = dirs[di] + '  ' + Math.round(P.x) + ', ' + Math.round(P.z) + '\n' + zt('在线 ', 'Online ') + RW.online + (WX.cur ? '\n' + zt(WX.cur.name[0], WX.cur.name[1]) + ' · ' + rwBioName(P.x, P.z) : '') + (near ? '\n' + zt(RW_NAMES[near.k][0], RW_NAMES[near.k][1]) + ' ' + Math.round(nd) + 'm' : '') + (rwSafe(P.x, P.z) ? '\n' + zt('安全区', 'Safe zone') : '');
+    $('rwInfo').textContent = dirs[di] + '  ' + Math.round(P.x) + ', ' + Math.round(P.z) + '\n' + zt('在线 ', 'Online ') + RW.online + (WX.cur ? '\n' + dnName() + ' · ' + zt(WX.cur.name[0], WX.cur.name[1]) + ' · ' + rwBioName(P.x, P.z) : '') + (near ? '\n' + zt(RW_NAMES[near.k][0], RW_NAMES[near.k][1]) + ' ' + Math.round(nd) + 'm' : '') + (rwSafe(P.x, P.z) ? '\n' + zt('安全区', 'Safe zone') : '');
   }
 
   /* ---- entering the world ---- */
@@ -12294,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 145;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 150;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -14126,7 +14126,10 @@ Object.assign(EN, {
       pants: S(0x45412f, 0.9), boots: S(0x2b2219, 0.75), belt: S(0x241c14, 0.6, 0.1), buckle: S(0xa89a6a, 0.35, 0.7), hair: S(0x2e2118, 0.95),
       pack: S(0x5a4a33, 0.9), strap: S(0x3a2f22, 0.8), eye: new THREE.MeshBasicMaterial({ color: 0x1a1410 }), brow: S(0x2a1d14, 0.9),
       gun: S(0x26272a, 0.45, 0.6), wood: S(0x6b4a2c, 0.7), metal: S(0x8a8f94, 0.4, 0.7), glove: S(0x2f2a24, 0.85),
-      hit: new THREE.MeshBasicMaterial({ visible: false })
+      hit: new THREE.MeshBasicMaterial({ visible: false }),
+      // update 148: more detail
+      pad: S(0x2c2a26, 0.8), lace: S(0xb8a888, 0.9), zip: S(0x9a9a92, 0.4, 0.6), white: S(0xf1ece2, 0.5), roll: S(0x4e5a3c, 0.95),
+      cap: new THREE.MeshStandardMaterial({ color: shirt.clone ? shirt.clone().multiplyScalar(0.6) : shirt, roughness: 0.85 }), beanie: S(0x3a3a3c, 0.95), stitch: S(0x1f1a14, 0.9)
     };
     HUM.mats[col] = M; return M;
   }
@@ -14210,6 +14213,10 @@ Object.assign(EN, {
       mesh(G.cyl(0.064, 0.052, 0.33), M.pants, 0, 0, 0, knee);
       var boot = mesh(G.box(0.12, 0.1, 0.25), M.boots, 0, -0.34, 0.035, knee);
       mesh(G.box(0.125, 0.03, 0.26), M.belt, 0, -0.39, 0.035, knee);      // sole
+      mesh(G.box(0.1, 0.11, 0.03), M.pad, 0, -0.01, 0.062, knee);          // update 148: knee pad
+      var toe = mesh(G.sph(0.061, 10, 8), M.boots, 0, -0.355, 0.125, knee); toe.scale.set(1, 0.72, 1.05);   // rounded toe cap
+      mesh(G.cylc(0.066, 0.066, 0.07, 10), M.boots, 0, -0.27, 0.01, knee); // boot cuff
+      mesh(G.box(0.05, 0.012, 0.12), M.lace, 0, -0.287, 0.06, knee);       // laces
       legs.push({ hip: hip, knee: knee, boot: boot });
     });
     // ---- upper body: leans with the aim
@@ -14222,8 +14229,16 @@ Object.assign(EN, {
     mesh(G.box(0.36, 0.035, 0.29), M.shirtD, 0, 0.13, 0, waist);           // shirt hem
     mesh(G.box(0.08, 0.07, 0.02), M.shirtD, -0.08, 0.42, 0.135, waist);     // chest pockets
     mesh(G.box(0.08, 0.07, 0.02), M.shirtD, 0.08, 0.42, 0.135, waist);
+    mesh(G.cylc(0.078, 0.095, 0.07, 12), M.shirtD, 0, 0.6, 0, waist);       // update 148: jacket collar
+    mesh(G.box(0.014, 0.42, 0.012), M.zip, 0, 0.33, 0.142, waist);         // zipper
+    [-1, 1].forEach(function (s) { mesh(G.box(0.05, 0.08, 0.09), M.belt, s * 0.175, 0.03, 0.03, waist); mesh(G.box(0.052, 0.02, 0.092), M.pack, s * 0.175, 0.075, 0.03, waist); });   // belt pouches
     // backpack and straps
     mesh(G.box(0.3, 0.36, 0.13), M.pack, 0, 0.34, -0.19, waist);
+    var ptop = mesh(G.cylc(0.065, 0.065, 0.3, 12), M.pack, 0, 0.52, -0.19, waist); ptop.rotation.z = Math.PI / 2;   // update 148: rounded top
+    var roll = mesh(G.cylc(0.062, 0.062, 0.36, 12), M.roll, 0, 0.6, -0.17, waist); roll.rotation.z = Math.PI / 2;   // bedroll
+    [-0.11, 0.11].forEach(function (x) { mesh(G.box(0.025, 0.13, 0.13), M.strap, x, 0.6, -0.17, waist); });
+    [-1, 1].forEach(function (s) { mesh(G.box(0.05, 0.17, 0.1), M.strap, s * 0.175, 0.3, -0.19, waist); });   // side pockets
+    mesh(G.box(0.2, 0.13, 0.035), M.strap, 0, 0.4, -0.27, waist);         // front pocket
     mesh(G.box(0.26, 0.12, 0.05), M.strap, 0, 0.22, -0.27, waist);
     mesh(G.box(0.05, 0.42, 0.02), M.strap, -0.1, 0.36, 0.13, waist);
     mesh(G.box(0.05, 0.42, 0.02), M.strap, 0.1, 0.36, 0.13, waist);
@@ -14234,9 +14249,21 @@ Object.assign(EN, {
     var skull = mesh(G.sph(0.115, 14, 12), M.skin, 0, 0, 0, head); skull.scale.set(0.92, 1.08, 1);
     var jaw = mesh(G.sph(0.09, 12, 8), M.skin, 0, -0.055, 0.02, head); jaw.scale.set(0.95, 0.8, 0.95);
     var hair = mesh(G.hair, M.hair, 0, 0.012, -0.006, head); hair.scale.set(0.95, 1.05, 1.05); hair.rotation.x = -0.18;
-    mesh(G.box(0.02, 0.03, 0.02), M.eye, -0.04, 0.01, 0.104, head); mesh(G.box(0.02, 0.03, 0.02), M.eye, 0.04, 0.01, 0.104, head);
+    var sty = ((col >>> 0) * 2654435761 >>> 0) % 3;   // update 148: a cap, a beanie or just hair
+    [-1, 1].forEach(function (s) { mesh(G.box(0.012, 0.045, 0.03), M.hair, s * 0.105, -0.01, 0.03, head); });   // sideburns
+    if (sty === 0) {
+      var capd = mesh(G.hair, M.cap, 0, 0.02, -0.004, head); capd.scale.set(1.0, 0.95, 1.08); capd.rotation.x = -0.12;
+      var bill = mesh(G.box(0.17, 0.014, 0.11), M.cap, 0, 0.058, 0.13, head); bill.rotation.x = 0.12;
+    } else if (sty === 1) {
+      var bea = mesh(G.hair, M.beanie, 0, 0.03, -0.006, head); bea.scale.set(1.02, 1.18, 1.08); bea.rotation.x = -0.15;
+      mesh(G.cylc(0.118, 0.12, 0.04, 14), M.beanie, 0, 0.035, 0.0, head);
+    }
+    [-1, 1].forEach(function (s) {   // update 148: eyes with whites and pupils
+      var ew = mesh(G.sph(0.021, 10, 8), M.white, s * 0.04, 0.012, 0.094, head); ew.scale.set(1, 0.8, 0.6);
+      mesh(G.sph(0.011, 8, 6), M.eye, s * 0.04, 0.012, 0.106, head);
+    });
     mesh(G.box(0.045, 0.012, 0.02), M.brow, -0.04, 0.04, 0.104, head); mesh(G.box(0.045, 0.012, 0.02), M.brow, 0.04, 0.04, 0.104, head);
-    mesh(G.box(0.024, 0.045, 0.03), M.skin, 0, -0.012, 0.118, head);      // nose
+    var nose = mesh(G.sph(0.022, 8, 6), M.skin, 0, -0.018, 0.118, head); nose.scale.set(0.9, 1.3, 1);   // update 148: rounder nose
     mesh(G.box(0.05, 0.01, 0.01), M.brow, 0, -0.06, 0.105, head);          // mouth
     mesh(G.sph(0.024, 8, 6), M.skin, -0.108, 0, 0, head); mesh(G.sph(0.024, 8, 6), M.skin, 0.108, 0, 0, head);   // ears
     // ---- arms: shoulder -> elbow -> hand
@@ -14250,6 +14277,8 @@ Object.assign(EN, {
       mesh(G.cyl(0.05, 0.04, 0.24), M.skin, 0, 0, 0, el);
       mesh(G.cylc(0.053, 0.053, 0.05, 8), M.shirtD, 0, -0.03, 0, el);       // rolled sleeve
       var hand = mesh(G.sph(0.046, 8, 6), M.glove, 0, -0.27, 0.01, el); hand.scale.set(0.85, 1.15, 0.95);
+      var thumb = mesh(G.sph(0.02, 6, 5), M.glove, -s * 0.03, -0.255, 0.045, el); thumb.scale.set(1, 1.5, 1);   // update 148: thumb
+      mesh(G.cylc(0.05, 0.05, 0.03, 8), M.glove, 0, -0.23, 0.01, el);      // glove cuff
       arms.push({ sh: sh, el: el, hand: hand });
     });
     // ---- what they hold
@@ -18238,11 +18267,24 @@ Object.assign(EN, {
   }
   var resolveCircleS = resolveCircle;
   resolveCircle = function (q, r, y) {
-    if (!(RW.on && q === P && !CAR.mine && stNear())) return resolveCircleS(q, r, y);
-    resolveCircleS(q, r, y + 0.45);
-    var up = groundAt(P.x, P.z, P.y + 1.1);
-    if (up > P.y + 0.01 && up <= P.y + 1.1 && P.vy <= 0.5) { P.y = up; P.vy = 0; P.ground = true; }
+    if (!(RW.on && q === P && !CAR.mine && P.vy <= 0.5 && stNear())) return resolveCircleS(q, r, y);
+    // update 150: lift onto a stair step you are walking into (up to 1.1 m) BEFORE the normal push-out, which keeps its
+    // own head clearance. (143 widened the whole check instead, and then a doorway's lintel next to stairs blocked you.)
+    var lift = -1e9;
+    for (var i = 0; i < boxes.length; i++) {
+      var o = boxes[i]; if (!o.pc || (o.pc.k !== 'st' && o.pc.k !== 'ss')) continue;
+      if (o.h <= P.y + 0.6 || o.h > P.y + 1.1) continue;
+      if (P.x < o.minX - r || P.x > o.maxX + r || P.z < o.minZ - r || P.z > o.maxZ + r) continue;
+      var cx = Math.max(o.minX, Math.min(P.x, o.maxX)), cz = Math.max(o.minZ, Math.min(P.z, o.maxZ));
+      if ((P.x - cx) * (P.x - cx) + (P.z - cz) * (P.z - cz) < r * r * 0.8 && !ceilBlocked(o.h)) lift = Math.max(lift, o.h);
+    }
+    if (lift > P.y) { P.y = lift; P.vy = 0; P.ground = true; y = P.y + 0.65; }
+    return resolveCircleS(q, r, y);
   };
+  function ceilBlocked(h) {   // room for your head on that step
+    for (var i = 0; i < boxes.length; i++) { var o = boxes[i]; if (o.y0 > h + 0.05 && o.y0 < h + 1.75 && P.x > o.minX && P.x < o.maxX && P.z > o.minZ && P.z < o.maxZ) return true; }
+    return false;
+  }
 
   // ---------- 3. standing on boats ----------
   var BOAT_DECK = { b: { h: 0.02, w: 0.62, l: 1.75 }, r: { h: 0.05, w: 0.95, l: 2.7 } };
@@ -18517,6 +18559,375 @@ Object.assign(EN, {
     try { var p = RW.pieces[id]; if (p && p.vc) bdApply(p); } catch (e) {}
     return r;
   };
+  /* ---- update 146: environment models, part 1 - animals ----
+     Deer, boars and wolves were built from boxes. Now they are made of rounded shapes: a body with chest, rump and a
+     lighter belly, a proper neck, a head with snout or muzzle, eyes, ears, jointed legs (thigh, shin, hoof or paw),
+     deer antlers with tines and a white tail, a boar's bristly ridge and curved tusks, a wolf's ruff and bushy tail.
+     Same sizes, same hit areas (body and head), same leg animation. */
+  var AN_UP = new THREE.Vector3(0, 1, 0);
+  rwAnimalBuild = function (type, rig, A) {
+    var T = ETYPES[type];
+    var fur = new THREE.MeshStandardMaterial({ color: T.body, roughness: 0.92 });
+    var dark = new THREE.MeshStandardMaterial({ color: new THREE.Color(T.body).multiplyScalar(0.55), roughness: 0.9 });
+    var lite = new THREE.MeshStandardMaterial({ color: new THREE.Color(T.body).lerp(new THREE.Color(0xeee2c8), 0.5), roughness: 0.95 });
+    var horn = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.6 });
+    var black = new THREE.MeshStandardMaterial({ color: 0x141210, roughness: 0.45 });
+    var eye = new THREE.MeshBasicMaterial({ color: T.eye });
+    function el(rx, ry, rz, mat, x, y, z, par, rotX) {   // an ellipsoid
+      var m = new THREE.Mesh(gSph(1, 14), mat); m.scale.set(rx, ry, rz); m.position.set(x, y, z); if (rotX) m.rotation.x = rotX; (par || rig).add(m); return m;
+    }
+    function lb(a, b, r0, r1, mat, par, sg) {   // a tapered limb from point a (radius r0) to point b (radius r1)
+      var va = new THREE.Vector3(a[0], a[1], a[2]), vb = new THREE.Vector3(b[0], b[1], b[2]), d = vb.clone().sub(va), L = d.length();
+      var m = new THREE.Mesh(gCyl(r1, r0, 1, sg || 8), mat); m.scale.y = L;
+      m.position.copy(va).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(AN_UP, d.normalize()); (par || rig).add(m); return m;
+    }
+    function cone(r, h, mat, x, y, z, rx, rz, par) { var m = new THREE.Mesh(gCone(r, h, 7), mat); m.position.set(x, y, z); m.rotation.x = rx || 0; m.rotation.z = rz || 0; (par || rig).add(m); return m; }
+    function leg(x, y, z, len, th, front, paw) {   // hip pivot; thigh, shin, hoof or paw
+      var p = new THREE.Group(); p.position.set(x, y, z); rig.add(p);
+      var k = front ? 0.04 : -0.06;   // knees bend the natural way
+      lb([0, 0.06, 0], [0, -len * 0.4, k * 0.3], th * 1.7, th * 0.78, fur, p, 9);   // thigh: wide where it meets the body, narrow at the knee
+      lb([0, -len * 0.38, k * 0.3], [0, -len * 0.62, k], th * 0.75, th * 0.6, front ? fur : dark, p);
+      lb([0, -len * 0.62, k], [0, -len + 0.06, 0.01], th * 0.6, th * 0.5, dark, p);
+      if (paw) el(th * 0.85, 0.045, th * 1.2, dark, 0, -len + 0.04, th * 0.4, p);
+      else lb([0, -len + 0.07, 0.01], [0, -len, 0.03], th * 0.55, th * 0.62, black, p, 6);
+      return p;
+    }
+    var body, head, Lh, Lz, th, paws = false, i;
+    if (type === 'deer') {
+      Lh = 0.8; Lz = 0.4; th = 0.065;
+      body = el(0.24, 0.27, 0.58, fur, 0, 1.06, 0);
+      el(0.22, 0.26, 0.32, fur, 0, 1.08, 0.3);                     // chest
+      el(0.225, 0.255, 0.3, fur, 0, 1.08, -0.32);                   // rump
+      el(0.19, 0.15, 0.46, lite, 0, 0.9, 0.04);                   // pale belly
+      el(0.1, 0.12, 0.05, lite, 0, 1.16, -0.62); el(0.05, 0.08, 0.04, fur, 0, 1.2, -0.65);   // white tail with a brown top
+      lb([0, 1.18, 0.42], [0, 1.62, 0.64], 0.13, 0.085, fur);       // neck
+      el(0.09, 0.14, 0.1, lite, 0, 1.3, 0.52);                     // throat patch
+      head = el(0.11, 0.12, 0.17, fur, 0, 1.74, 0.74);
+      el(0.075, 0.075, 0.12, fur, 0, 1.68, 0.9);                    // snout
+      el(0.04, 0.03, 0.03, black, 0, 1.68, 1.01);                   // nose
+      [-1, 1].forEach(function (s) {
+        el(0.025, 0.025, 0.02, eye, s * 0.095, 1.78, 0.82);
+        var ear = el(0.035, 0.1, 0.055, fur, s * 0.12, 1.86, 0.68); ear.rotation.z = -s * 0.7; ear.rotation.x = 0.2;
+        var b0 = [s * 0.05, 1.86, 0.74], b1 = [s * 0.17, 2.08, 0.66], b2 = [s * 0.26, 2.3, 0.6], b3 = [s * 0.28, 2.48, 0.5];   // antler beam
+        lb(b0, b1, 0.022, 0.018, horn); lb(b1, b2, 0.018, 0.015, horn); lb(b2, b3, 0.015, 0.01, horn);
+        lb(b1, [s * 0.14, 2.2, 0.8], 0.014, 0.008, horn); lb(b2, [s * 0.2, 2.44, 0.72], 0.013, 0.007, horn); lb(b2, [s * 0.36, 2.4, 0.66], 0.012, 0.006, horn);   // tines
+      });
+    } else if (type === 'boar') {
+      Lh = 0.42; Lz = 0.34; th = 0.085;
+      body = el(0.29, 0.31, 0.55, fur, 0, 0.72, -0.04);
+      el(0.3, 0.34, 0.3, fur, 0, 0.8, 0.24);                       // heavy shoulders
+      el(0.22, 0.13, 0.42, dark, 0, 0.55, 0);                      // dark underside
+      for (i = 0; i < 8; i++) { var bz = 0.42 - i * 0.12; cone(0.05, 0.16, dark, 0, 1.08 - Math.abs(bz - 0.2) * 0.25, bz, -0.35); }   // bristly ridge along the back
+      head = el(0.19, 0.19, 0.24, fur, 0, 0.66, 0.6);
+      lb([0, 0.6, 0.72], [0, 0.57, 0.95], 0.12, 0.09, fur);        // snout
+      el(0.085, 0.07, 0.025, lite, 0, 0.57, 0.96);                 // the flat pink end
+      [-1, 1].forEach(function (s) {
+        el(0.012, 0.012, 0.01, black, s * 0.035, 0.57, 0.985);     // nostrils
+        el(0.028, 0.028, 0.02, eye, s * 0.12, 0.76, 0.74);
+        cone(0.05, 0.13, dark, s * 0.13, 0.86, 0.56, -0.3, -s * 0.3);   // ears
+        lb([s * 0.08, 0.54, 0.86], [s * 0.12, 0.6, 0.95], 0.02, 0.016, horn); lb([s * 0.12, 0.6, 0.95], [s * 0.13, 0.7, 0.93], 0.016, 0.006, horn);   // curved tusks
+      });
+      lb([0, 0.8, -0.56], [0, 0.66, -0.66], 0.025, 0.012, dark); el(0.03, 0.05, 0.03, dark, 0, 0.62, -0.67);   // thin tail with a tuft
+    } else {   // wolf
+      Lh = 0.6; Lz = 0.36; th = 0.06; paws = true;
+      body = el(0.19, 0.22, 0.48, fur, 0, 0.84, -0.06);
+      el(0.215, 0.25, 0.27, fur, 0, 0.88, 0.26);                     // shoulders and ruff
+      el(0.2, 0.22, 0.12, lite, 0, 0.8, 0.44);                     // pale chest
+      el(0.14, 0.1, 0.36, lite, 0, 0.7, 0.02);                     // belly
+      lb([0, 0.95, 0.38], [0, 1.02, 0.56], 0.15, 0.12, fur);        // neck
+      head = el(0.13, 0.13, 0.15, fur, 0, 1.04, 0.62);
+      lb([0, 1.0, 0.7], [0, 0.97, 0.9], 0.075, 0.045, fur, null, 8);   // muzzle
+      el(0.06, 0.03, 0.09, lite, 0, 0.94, 0.82);                    // pale jaw
+      el(0.025, 0.022, 0.02, black, 0, 0.98, 0.915);                // nose
+      [-1, 1].forEach(function (s) {
+        el(0.024, 0.02, 0.018, eye, s * 0.075, 1.08, 0.73);
+        cone(0.045, 0.14, fur, s * 0.075, 1.2, 0.58, -0.15, -s * 0.2);   // pointed ears
+        el(0.06, 0.09, 0.05, lite, s * 0.12, 0.98, 0.62);         // cheek fur
+      });
+      el(0.07, 0.07, 0.17, fur, 0, 0.9, -0.6, null, 0.6);          // bushy tail, dark tip
+      el(0.065, 0.065, 0.15, fur, 0, 0.78, -0.72, null, 0.9);
+      el(0.05, 0.05, 0.08, dark, 0, 0.68, -0.79, null, 1.1);
+    }
+    A.quad = [leg(-0.14, Lh, Lz, Lh, th, true, paws), leg(0.14, Lh, Lz, Lh, th, true, paws), leg(-0.14, Lh, -Lz, Lh, th, false, paws), leg(0.14, Lh, -Lz, Lh, th, false, paws)];
+    A.lean = 0; A.mats = [fur, dark, lite];
+    return { body: body, head: head, mats: [fur, dark, lite] };
+  };
+  /* ---- update 146: environment models, part 2 - trees ----
+     Conifers: six or seven overlapping, drooping layers that narrow smoothly to a pointed top (instead of four
+     stacked cones), a taller trunk with roots spreading into the ground. Broadleaf trees: roots, a slightly
+     leaning trunk, more branches that split into twigs under the crown. Bark gets lighter and darker stripes.
+     Cacti, dead trees, stumps, rocks and the rest are unchanged. Same trunk positions and sizes, so chopping and
+     collisions do not change. */
+  function trRoots(B, n, sc, bark, k, rg) {   // roots spreading from the trunk into the ground
+    for (var i = 0; i < k; i++) {
+      var a = i / k * 6.283 + rg() * 0.5, L = (0.55 + rg() * 0.35) * sc;
+      rwLimbB(B, [n.x, n.y + 0.32 * sc, n.z], [n.x + Math.cos(a) * L, n.y - 0.12, n.z + Math.sin(a) * L], 0.085 * sc, [bark[0] * 0.9, bark[1] * 0.9, bark[2] * 0.9]);
+    }
+  }
+  function trTrunk(B, x, y, z, r0, r1, h, bark, rg) {   // a trunk in three stacked parts with bark stripes of different shades
+    var parts = 3, y0 = y;
+    for (var i = 0; i < parts; i++) {
+      var f0 = i / parts, f1 = (i + 1) / parts, a = r0 + (r1 - r0) * f0, b = r0 + (r1 - r0) * f1, sh = 0.9 + rg() * 0.2;
+      rwFrustumB(B, x, y0, z, a, b, h / parts + 0.02, 9, [bark[0] * sh, bark[1] * sh, bark[2] * sh]);
+      y0 += h / parts;
+    }
+  }
+  var rwBuildNodeT = rwBuildNode;
+  rwBuildNode = function (B, n, dead) {
+    if (n.kind !== 'tree' || dead || n.bio === 'd') return rwBuildNodeT(B, n, dead);
+    var rg = seeded(hashStr(n.id) + 77), sc = n.sc, i;
+    var th = (2.3 + rg() * 1.1) * sc, bark = [0.3 + rg() * 0.05, 0.21, 0.13];
+    if (n.v < 0.7 || n.bio === 's') {   // conifer
+      var sn = n.bio === 's', gc = sn ? [0.1, 0.25 + n.v * 0.06, 0.16] : rwGreen(n.v * 0.8);
+      var Ht = (5.4 + rg() * 0.8) * sc, base = n.y + th * 0.42, tiers = 6 + (rg() < 0.5 ? 1 : 0);
+      trTrunk(B, n.x, n.y - 0.3, n.z, 0.32 * sc, 0.07 * sc, th * 0.42 + Ht * 0.8 + 0.9 * sc, bark, rg);   // up to the top layer, hidden inside it
+      trRoots(B, n, sc, bark, 5, rg);
+      for (i = 0; i < tiers; i++) {
+        var f = i / (tiers - 1), rad = (2.45 - f * 2.0) * sc * (0.9 + rg() * 0.2), hh = (1.6 - f * 0.65) * sc;
+        var tx = n.x + (rg() - 0.5) * 0.18 * sc, tz = n.z + (rg() - 0.5) * 0.18 * sc, ty = base + f * Ht * 0.8;
+        var lcol = [gc[0] * (0.74 + f * 0.42), gc[1] * (0.78 + f * 0.36), gc[2] * (0.8 + f * 0.3)];
+        rwConeB2(B, tx, ty, tz, rad * (RW.curL ? 0.82 : 1), hh * (RW.curL ? 0.92 : 1), 11, RW.curL ? [lcol[0] * 0.75, lcol[1] * 0.75, lcol[2] * 0.75] : lcol, rg);
+        if (RW.curL) rwNeedleCards(RW.curL, tx, ty, tz, rad * 1.02, hh, sn ? [lcol[0] * 1.3 + 0.25, lcol[1] * 1.2 + 0.25, lcol[2] * 1.3 + 0.3] : [lcol[0] * 1.2, lcol[1] * 1.15, lcol[2] * 1.2], rg, rwLeafN(Math.max(4, Math.round(9 - i * 0.9))));
+        if (sn) rwConeB2(B, tx, ty + hh * 0.45, tz, rad * 0.62, hh * 0.58, 11, [0.88, 0.91, 0.95], rg);
+      }
+      rwConeB2(B, n.x, base + Ht * 0.8 + 0.5 * sc, n.z, 0.32 * sc, 0.9 * sc, 7, [gc[0] * 1.2, gc[1] * 1.15, gc[2] * 1.1], rg);   // the pointed top
+    } else {   // broadleaf
+      var lean = (rg() - 0.5) * 0.35 * sc, la0 = rg() * 6.283, tx2 = n.x + Math.cos(la0) * lean, tz2 = n.z + Math.sin(la0) * lean;
+      rwLimbB(B, [n.x, n.y - 0.3, n.z], [tx2, n.y + th + 0.4, tz2], 0.3 * sc, bark);   // the trunk, leaning a little
+      rwFrustumB(B, n.x, n.y - 0.3, n.z, 0.42 * sc, 0.3 * sc, 0.7 * sc, 9, [bark[0] * 0.92, bark[1] * 0.92, bark[2] * 0.92]);   // flared foot
+      trRoots(B, n, sc, bark, 6, rg);
+      var top = n.y + th + 0.2, lc = [0.2 + n.v * 0.12, 0.42 + n.v * 0.1, 0.14], nl = 4 + (rg() < 0.5 ? 1 : 0);
+      for (i = 0; i < nl; i++) {   // branches, each splitting into two twigs
+        var a2 = i / nl * 6.283 + rg() * 0.6, L2 = (1.0 + rg() * 0.6) * sc, y0 = n.y + th * (0.6 + rg() * 0.25);
+        var mid = [tx2 + Math.cos(a2) * L2 * 0.6, y0 + 0.7 * sc, tz2 + Math.sin(a2) * L2 * 0.6];
+        rwLimbB(B, [tx2, y0, tz2], mid, 0.1 * sc, bark);
+        for (var t = -1; t <= 1; t += 2) { var a3 = a2 + t * 0.45; rwLimbB(B, mid, [tx2 + Math.cos(a3) * L2, top + (0.4 + rg() * 0.5) * sc, tz2 + Math.sin(a3) * L2], 0.055 * sc, bark); }
+      }
+      var nb = 6 + Math.floor(rg() * 3);
+      for (i = 0; i < nb; i++) {
+        var ba = rg() * 6.283, bd = (i === 0 ? 0 : 0.75 + rg() * 0.85) * sc, bs = (1.2 + rg() * 0.6) * sc, cv = 0.82 + rg() * 0.32;
+        var bx2 = tx2 + Math.cos(ba) * bd, by2 = top + (0.65 + rg() * 1.1) * sc + (i === 0 ? 0.6 * sc : 0), bz2 = tz2 + Math.sin(ba) * bd;
+        if (RW.curL) {
+          rwBlobB(B, bx2, by2, bz2, bs * 0.66, bs * 0.55, bs * 0.66, [lc[0] * cv * 0.55, lc[1] * cv * 0.55, lc[2] * cv * 0.55], rg, 0.2);
+          rwLeafCards(RW.curL, bx2, by2, bz2, bs * 1.05, [lc[0] * cv * 1.1, lc[1] * cv * 1.08, lc[2] * cv * 1.1], rg, rwLeafN(10));
+        } else rwBlobB(B, bx2, by2, bz2, bs, bs * 0.8, bs, [lc[0] * cv, lc[1] * cv, lc[2] * cv], rg, 0.2);
+      }
+    }
+  };
+
+  /* ---- update 146: the sea gets moving ripples (a tiled wave normal map that drifts), a deeper colour and sharper
+     reflections of the sky. Same height and same transparency. ---- */
+  function seaNormalTex() {
+    var N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N;
+    var x = cv.getContext('2d'), img = x.createImageData(N, N), H = new Float32Array(N * N), i, j, k;
+    var W = []; for (k = 0; k < 9; k++) { var a = k * 2.4 + 0.3, f = 1 + (k % 4) + Math.floor(k / 3); W.push([Math.cos(a) * f, Math.sin(a) * f, 1 / (1 + k * 0.6), k * 1.7]); }   // whole numbers of waves: it tiles
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) { var h = 0; for (k = 0; k < W.length; k++) h += Math.sin((i * W[k][0] + j * W[k][1]) / N * 6.2832 + W[k][3]) * W[k][2]; H[j * N + i] = h; }
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+      var dx = H[j * N + (i + 1) % N] - H[j * N + (i + N - 1) % N], dy = H[((j + 1) % N) * N + i] - H[((j + N - 1) % N) * N + i];
+      var nx = -dx * 2.2, ny = -dy * 2.2, nz = 1, l = Math.hypot(nx, ny, nz), o = (j * N + i) * 4;
+      img.data[o] = (nx / l * 0.5 + 0.5) * 255; img.data[o + 1] = (ny / l * 0.5 + 0.5) * 255; img.data[o + 2] = (nz / l * 0.5 + 0.5) * 255; img.data[o + 3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    var t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t;
+  }
+  var SEA = { tex: null };
+  function seaTick(dt) {
+    var w = RW.on && RW.water; if (!w) return;
+    var m = w.material;
+    if (!m.userData.sea) {
+      SEA.tex = SEA.tex || seaNormalTex();
+      var rep = (RW.half * 4) / 14;
+      SEA.tex.repeat.set(rep, rep);
+      m.normalMap = SEA.tex; m.normalScale = new THREE.Vector2(0.55, 0.55);
+      m.color.setHex(0x26677f); m.roughness = 0.1; m.metalness = 0.28; m.needsUpdate = true; m.userData.sea = 1;
+    }
+    SEA.tex.offset.x = (SEA.tex.offset.x + dt * 0.012) % 1; SEA.tex.offset.y = (SEA.tex.offset.y + dt * 0.007) % 1;
+  }
+  var renderFrameS2 = renderFrame;
+  renderFrame = function () { try { seaTick(RDT); } catch (e) {} return renderFrameS2(); };
+  /* ---- update 147: day and night with a real sky ----
+     One full day lasts 40 minutes (28 min of daylight, a sunrise and a sunset, 12 min of night) and runs on the
+     server's clock, so every player has the same time of day. The sun crosses the sky (shadows turn with it),
+     goes orange and low at sunset and sunrise, and at night a moon lights the island in a cool blue.
+     The sky is drawn by a small shader: deep blue at the top fading to a pale horizon by day, orange and pink
+     around the sun at dusk and dawn, dark blue at night with stars and the moon. Fog, clouds, the overcast dome,
+     the sea's reflections and the lights all follow. Bad weather still greys everything out on top. */
+  var DN = { len: 2400, day: 0.7, mat: null, sunCol0: null };
+  function dnPhase() {   // 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset; daylight is stretched to 70% of the day
+    if (window.RR_TIME !== undefined) return window.RR_TIME;
+    var f = ((wxTime() / DN.len) % 1 + 1) % 1;
+    return f < DN.day ? 0.25 + f / DN.day * 0.5 : 0.75 + (f - DN.day) / (1 - DN.day) * 0.5;
+  }
+  function dnSunDir(out) {
+    var th = (dnPhase() - 0.25) * Math.PI * 2;   // 0 at sunrise (east), PI/2 at noon, PI at sunset (west)
+    return out.set(Math.cos(th), Math.sin(th) * 0.92, 0.38).normalize();
+  }
+  function sm(a, b, x) { var t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+  function dnSkyMat() {
+    var m = new THREE.ShaderMaterial({
+      uniforms: {
+        uSun: { value: new THREE.Vector3(0, 1, 0) }, uZen: { value: new THREE.Color() }, uHor: { value: new THREE.Color() },
+        uGlow: { value: new THREE.Color() }, uNight: { value: 0 }, uDay: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) }, uStarsOn: { value: 1 }
+      },
+      vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: [
+        'uniform vec3 uSun, uZen, uHor, uGlow, uTint; uniform float uNight, uDay, uStarsOn; varying vec3 vP;',
+        'float h3(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }',
+        'void main(){',
+        '  vec3 d = normalize(vP); float y = d.y;',
+        '  vec3 col = mix(uHor, uZen, pow(max(y, 0.0), 0.5));',
+        '  if (y < 0.0) col = mix(uHor, uHor * 0.55, min(1.0, -y * 4.0));',
+        '  float c = dot(d, uSun);',
+        '  col += uGlow * (pow(max(c, 0.0), 6.0) * 0.55 + pow(max(c, 0.0), 60.0) * 0.6) * (1.0 - smoothstep(0.0, 0.5, y) * 0.5);',
+        '  col += vec3(1.0, 0.95, 0.82) * smoothstep(0.99955, 0.9998, c) * uDay * 2.0;',          // the sun disc
+        '  float mc = dot(d, -uSun);',
+        '  col += vec3(0.85, 0.88, 0.95) * (smoothstep(0.99925, 0.9996, mc) * 0.95 + pow(max(mc, 0.0), 80.0) * 0.12) * uNight;',   // the moon
+        '  if (uNight > 0.01 && y > 0.0) {',                                                         // stars
+        '    vec3 q = d * 160.0, cell = floor(q); float hv = h3(cell);',
+        '    if (hv > 0.985) { float r = length(fract(q) - 0.5); float b = smoothstep(0.16, 0.0, r) * (0.5 + 0.5 * h3(cell + 7.0)); col += vec3(0.85, 0.9, 1.0) * b * uNight * uStarsOn * smoothstep(0.0, 0.25, y); }',
+        '  }',
+        '  gl_FragColor = vec4(col * uTint, 1.0);',
+        '}'].join('\n'),
+      side: THREE.BackSide, depthWrite: false, fog: false
+    });
+    m.color = m.uniforms.uTint.value;   // the weather code tints "material.color": that is our tint
+    return m;
+  }
+  var C_ZD = new THREE.Color(0.2, 0.44, 0.86), C_HD = new THREE.Color(0.7, 0.83, 0.95), C_ZS = new THREE.Color(0.22, 0.27, 0.55), C_HS = new THREE.Color(1.0, 0.56, 0.32);
+  var C_ZN = new THREE.Color(0.012, 0.022, 0.06), C_HN = new THREE.Color(0.05, 0.075, 0.13), C_GS = new THREE.Color(1.0, 0.5, 0.22), C_GD = new THREE.Color(1.0, 0.92, 0.75);
+  var C_FN = new THREE.Color(0.05, 0.07, 0.12), C_FS = new THREE.Color(0.95, 0.62, 0.45), C_SUN = new THREE.Color(1.0, 0.96, 0.88), C_SUNL = new THREE.Color(1.0, 0.55, 0.3), C_MOON = new THREE.Color(0.55, 0.66, 0.95);
+  var DNV = new THREE.Vector3(), DNT = new THREE.Color(), DNT2 = new THREE.Color();
+  function dnTick() {
+    if (!RW.on || !RW.sky) { if (DN.sunCol0 && !RW.on) { sun.color.copy(DN.sunCol0); DN.sunCol0 = null; } return; }
+    if (!DN.sunCol0) DN.sunCol0 = sun.color.clone();
+    if (!RW.sky.userData.dn) { DN.mat = DN.mat || dnSkyMat(); RW.sky.material = DN.mat; RW.sky.userData.dn = 1; }
+    var s = dnSunDir(DNV), el = s.y, w = WX.cur || { cover: 0, dark: 0, light: 1 };
+    var day = sm(-0.14, 0.22, el), night = 1 - sm(-0.2, 0.02, el), dusk = Math.exp(-Math.pow(el / 0.16, 2));
+    // the sky
+    var U = DN.mat.uniforms;
+    U.uSun.value.copy(s); U.uDay.value = sm(-0.03, 0.05, el) * (1 - w.cover * 0.8); U.uNight.value = night; U.uStarsOn.value = Math.max(0, 1 - w.cover * 1.3);
+    U.uZen.value.copy(C_ZN).lerp(C_ZD, day).lerp(C_ZS, dusk * 0.55);
+    U.uHor.value.copy(C_HN).lerp(C_HD, day).lerp(C_HS, dusk * 0.85);
+    U.uGlow.value.copy(C_GD).lerp(C_GS, Math.min(1, dusk * 1.3)).multiplyScalar(0.25 + 0.75 * sm(-0.2, 0.05, el));
+    // the light: the sun by day, the moon by night (from the other side), shadows turn with whichever is up
+    var sunUp = sm(-0.03, 0.12, el);
+    if (el > -0.05) {
+      sun.intensity *= sunUp * (0.6 + 0.4 * sm(0.1, 0.6, el));
+      sun.color.copy(C_SUNL).lerp(C_SUN, sm(0.02, 0.4, el));
+      GQ.dir.copy(s); if (el < 0.06) GQ.dir.setY(0.06).normalize();   // shadows never come from below the horizon
+    } else {
+      sun.intensity *= 0.28 * night;
+      sun.color.copy(C_MOON);
+      GQ.dir.copy(s).negate().setY(Math.max(0.25, -el)).normalize();
+    }
+    GQ.rt = null; GQ.up = null;
+    if (!GQ.on) { var lx = GQ.dir; sun.position.set(P.x + lx.x * 160, P.y + lx.y * 160, P.z + lx.z * 160); sun.target.position.set(P.x, P.y, P.z); sun.target.updateMatrixWorld(); }
+    hemi.intensity *= 0.3 + 0.7 * day;
+    if (hemi.color) { hemi.color.setRGB(1, 1, 1).lerp(DNT.setRGB(0.55, 0.65, 1.0), night * 0.8).lerp(DNT2.setRGB(1.0, 0.75, 0.6), dusk * 0.4 * day); }
+    // fog and background follow the sky near the horizon
+    if (!underwaterNow()) {
+      DNT.copy(scene.fog.color);
+      DNT.lerp(C_FS, dusk * 0.45 * (1 - w.dark));
+      DNT.multiplyScalar(0.2 + 0.8 * day).lerp(C_FN, night * 0.85);
+      scene.fog.color.copy(DNT); if (scene.background && scene.background.isColor) scene.background.copy(DNT);
+    }
+    // clouds: lit from below at dusk, dark at night; the overcast dome too
+    var cl = 0.18 + 0.82 * day;
+    DNT2.setRGB(1, 1, 1).lerp(DNT.setRGB(1.0, 0.72, 0.6), dusk * 0.7);
+    if (WX.puffs) for (var i = 0; i < WX.puffs.length; i++) { var g = WX.puffs[i]; if (!g.visible) continue; for (var j = 0; j < g.children.length; j++) { var mc = g.children[j].material.color; mc.r *= cl * DNT2.r; mc.g *= cl * DNT2.g; mc.b *= cl * DNT2.b; } }
+    if (WX.dome) WX.dome.material.color.multiplyScalar(0.15 + 0.85 * day);
+  }
+  function dnName() { var p = dnPhase(); return p < 0.22 || p > 0.8 ? zt('夜晚', 'Night') : p < 0.3 ? zt('日出', 'Sunrise') : p > 0.72 ? zt('日落', 'Sunset') : zt('白天', 'Day'); }
+  var wxTickDN = wxTick;   // right after the weather has set the lights, fog and clouds for this frame
+  wxTick = function (dt) { wxTickDN(dt); try { dnTick(); } catch (e) {} };
+  var renderFrameDN = renderFrame;
+  renderFrame = function () { if (!RW.on && DN.sunCol0) { sun.color.copy(DN.sunCol0); DN.sunCol0 = null; } return renderFrameDN(); };
+  /* ---- update 149: weapons and tools, part of the model upgrade ----
+     Guns: the metal parts get a brushed-steel surface with fine scratches, polymer parts a stippled grip texture,
+     wooden stocks and grips real wood grain (the colours, upgrades and skins still go on top).
+     Tools in your hands: leather-wrapped grips with a pommel; the hatchet a bearded blade with a sharpened edge,
+     rivets and a steel wedge; the pickaxe tapered points and steel bands round the head; the hammer a round striking
+     face and a split claw; the spear a lashed blade and a better tip. Level looks and skins still work on them. */
+  function wpTex(kind) {
+    var N = 128, cv = document.createElement('canvas'); cv.width = cv.height = N; var x = cv.getContext('2d'), i, rg = seeded(kind.length * 977 + 13);
+    if (kind === 'metal') {
+      x.fillStyle = '#e6e6e6'; x.fillRect(0, 0, N, N);
+      for (i = 0; i < 320; i++) { var y = rg() * N, l = 10 + rg() * 60, xx = rg() * N, v = 140 + rg() * 115 | 0; x.fillStyle = 'rgba(' + v + ',' + v + ',' + v + ',0.6)'; x.fillRect(xx, y, l, 1); }   // brushed streaks
+      for (i = 0; i < 26; i++) { x.strokeStyle = 'rgba(255,255,255,' + (0.25 + rg() * 0.3) + ')'; x.lineWidth = 0.6; x.beginPath(); var a = rg() * N, b = rg() * N; x.moveTo(a, b); x.lineTo(a + (rg() - 0.5) * 30, b + (rg() - 0.5) * 8); x.stroke(); }   // scratches
+      for (i = 0; i < 40; i++) { x.fillStyle = 'rgba(120,120,120,' + rg() * 0.25 + ')'; x.fillRect(rg() * N, rg() * N, 1 + rg() * 2, 1 + rg() * 2); }
+    } else if (kind === 'poly') {
+      x.fillStyle = '#dcdcdc'; x.fillRect(0, 0, N, N);
+      for (i = 0; i < 2200; i++) { var v2 = 180 + rg() * 75 | 0; x.fillStyle = 'rgb(' + v2 + ',' + v2 + ',' + v2 + ')'; x.fillRect(rg() * N, rg() * N, 1.5, 1.5); }   // stippling
+    } else {   // wood grain along the long side
+      x.fillStyle = '#f0e8dc'; x.fillRect(0, 0, N, N);
+      for (i = 0; i < 46; i++) {
+        var yy = rg() * N, amp = 1 + rg() * 3, ph = rg() * 6, w2 = 0.6 + rg() * 1.6, d = 150 + rg() * 70 | 0;
+        x.strokeStyle = 'rgba(' + d + ',' + (d * 0.82 | 0) + ',' + (d * 0.62 | 0) + ',0.7)'; x.lineWidth = w2; x.beginPath();
+        for (var px = 0; px <= N; px += 4) { var py = yy + Math.sin(px / N * 6.283 * (1 + (i % 3)) + ph) * amp; if (px === 0) x.moveTo(px, py); else x.lineTo(px, py); }
+        x.stroke();
+      }
+      for (i = 0; i < 4; i++) { var kx = rg() * N, ky = rg() * N, g = x.createRadialGradient(kx, ky, 0, kx, ky, 4 + rg() * 4); g.addColorStop(0, 'rgba(110,70,40,0.7)'); g.addColorStop(1, 'rgba(110,70,40,0)'); x.fillStyle = g; x.fillRect(kx - 9, ky - 9, 18, 18); }   // knots
+    }
+    var t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t;
+  }
+  var WPT = { metal: wpTex('metal'), poly: wpTex('poly'), wood: wpTex('wood') };
+  function wpSkin(m, t, bump) { if (!m || m.map) return; m.map = t; m.bumpMap = t; m.bumpScale = bump; m.needsUpdate = true; }
+  wpSkin(GM, WPT.metal, 0.003); wpSkin(GL, WPT.metal, 0.003); wpSkin(GP, WPT.poly, 0.002); wpSkin(GW, WPT.wood, 0.002);
+  wpSkin(VMM.steel, WPT.metal, 0.001); wpSkin(VMM.steelL, WPT.metal, 0.001); wpSkin(VMM.wood, WPT.wood, 0.0015); wpSkin(VMM.woodD, WPT.wood, 0.0015);
+
+  // ---- tools in your hands ----
+  var VMM_LEATHER = gmat(0x3b2717, 0, 0.9), VMM_CORD = gmat(0x8a7a5a, 0, 0.95);
+  function wpMesh(par, geo, mat, x, y, z, rx, ry, rz) { var m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0); m.renderOrder = 22; m.frustumCulled = false; par.add(m); return m; }
+  function wpGrip(g, y0, y1, w, d) {   // leather bands wound round the handle, a knob at the end
+    for (var y = y0; y < y1; y += 0.022) vmBox(g, w + 0.008, 0.016, d + 0.008, VMM_LEATHER, 0, y, 0, 22, 0, 0, ((y * 100) % 2 < 1 ? 0.12 : -0.12));
+    wpMesh(g, gSph(0.024, 8), VMM.woodD, 0, y0 - 0.02, 0).scale.set(1, 0.7, 1.1);
+  }
+  (function () {
+    var h = VM.tools.hatchet, p = VM.tools.pickaxe, m = VM.tools.hammer, s = VM.tools.spear;
+    if (h) {
+      wpGrip(h, -0.09, 0.07, 0.026, 0.032);
+      vmBox(h, 0.02, 0.05, 0.05, VMM.steel, 0, 0.392, -0.1, 22, -0.55, 0, 0);    // the blade's beard flaring down and up
+      vmBox(h, 0.02, 0.05, 0.05, VMM.steel, 0, 0.308, -0.1, 22, 0.55, 0, 0);
+      vmBox(h, 0.012, 0.15, 0.012, VMM.steelL, 0, 0.35, -0.133, 22);              // the sharpened edge
+      [0.33, 0.37].forEach(function (y) { wpMesh(h, gCyl(0.007, 0.007, 0.03, 6), VMM.dark, 0, y, 0.012, 0, 0, Math.PI / 2); });   // rivets
+      vmBox(h, 0.03, 0.012, 0.03, VMM.steel, 0, 0.395, 0.0, 22);                  // wedge on top of the handle
+    }
+    if (p) {
+      wpGrip(p, -0.06, 0.1, 0.028, 0.034);
+      [0.42, 0.48].forEach(function (y) { vmBox(p, 0.046, 0.012, 0.066, VMM.steel, 0, y, 0, 22); });   // steel bands round the head
+      var t1 = wpMesh(p, gCone(0.018, 0.07, 6), VMM.steelL, 0, 0.398, -0.245, -Math.PI / 2 - 0.5, 0, 0);   // tapered points
+      var t2 = wpMesh(p, gCone(0.016, 0.06, 6), VMM.steelL, 0, 0.41, 0.215, Math.PI / 2 + 0.28, 0, 0);
+    }
+    if (m) {
+      wpGrip(m, -0.08, 0.06, 0.024, 0.03);
+      wpMesh(m, gCyl(0.03, 0.03, 0.03, 12), VMM.steel, 0, 0.32, -0.1, Math.PI / 2, 0, 0);   // round striking face
+      vmBox(m, 0.016, 0.02, 0.07, VMM.steel, -0.012, 0.335, 0.08, 22, 0.5, 0, 0); vmBox(m, 0.016, 0.02, 0.07, VMM.steel, 0.012, 0.335, 0.08, 22, 0.5, 0, 0);   // split claw
+    }
+    if (s) {
+      for (var i = 0; i < 5; i++) vmBox(s, 0.04, 0.04, 0.008, VMM_CORD, 0, 0, -1.3 - i * 0.014, 22, 0, 0, i * 0.4);   // lashing under the tip
+      wpMesh(s, gCone(0.04, 0.05, 5), VMM.stone, 0, 0, -1.37, -Math.PI / 2, 0, 0);   // the tip's broad base
+    }
+  })();
+
+  // ---- round barrels: every long thin metal box on a gun becomes a tube, and the front one gets a muzzle ----
+  gunObjs.forEach(function (G) {
+    if (!G || !G.g) return;
+    var tubes = [];
+    G.g.children.forEach(function (o) {
+      if (!o.isMesh || !o.geometry || o.geometry.type !== 'BoxGeometry' || (o.material !== GM && o.material !== GL)) return;
+      var P2 = o.geometry.parameters; if (!P2 || P2.depth < 0.2 || P2.width > 0.046 || P2.height > 0.046) return;
+      if (Math.abs(o.rotation.y) > 0.01 || Math.abs(o.rotation.z) > 0.01) return;
+      var r = Math.min(P2.width, P2.height) / 2, key = 'wpT' + r.toFixed(4) + '_' + P2.depth.toFixed(3);
+      o.geometry = gm(key, function () { var c = new THREE.CylinderGeometry(r, r, P2.depth, 10); c.rotateX(Math.PI / 2); return c; });
+      tubes.push(o);
+    });
+    if (!tubes.length) return;
+    var f = tubes.reduce(function (a, b) { return a.position.z - a.geometry.parameters.height / 2 < b.position.z - b.geometry.parameters.height / 2 ? a : b; });
+    var rr = f.geometry.parameters.radiusTop, fz = f.position.z - f.geometry.parameters.height / 2;
+    var mz = new THREE.Mesh(gCyl(rr * 1.55, rr * 1.55, 0.05, 10), f.material); mz.rotation.copy(f.rotation); mz.rotation.x += Math.PI / 2;   // a muzzle device at the front
+    mz.position.set(f.position.x, f.position.y, fz + 0.022); mz.renderOrder = f.renderOrder; mz.frustumCulled = false; G.g.add(mz);
+    for (var k = 0; k < 3; k++) { var sl = new THREE.Mesh(gBox(rr * 3.2, rr * 0.5, 0.008), GP); sl.position.set(f.position.x, f.position.y + rr * 1.2, fz + 0.008 + k * 0.014); sl.renderOrder = f.renderOrder + 1; sl.frustumCulled = false; G.g.add(sl); }   // its vent slots
+  });
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
      (AK selector lever and slant brake, MP5 cocking tube and sight ring, Python vent rib, 870 corn-cob pump,
