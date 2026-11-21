@@ -12300,7 +12300,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 164;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 165;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -19049,7 +19049,7 @@ Object.assign(EN, {
      - At night the street lamps at monuments switch on and light the roads below them.
      A fixed pool of point lights is handed to the nearest light sources a few times a second (a fixed count, so the
      shaders never rebuild); each light fades in and out instead of popping. */
-  var LT = { pool: [], N: 6, t: 0, lamps: [], on: false, fl: 0 };
+  var LT = { pool: [], N: 8, t: 0, lamps: [], on: false, fl: 0 };   // (update 165: 8 real lights)
   LT.pool = [];
   for (var lti = 0; lti < LT.N; lti++) {
     var ltl = new THREE.PointLight(0xffb060, 0, 12, 2);
@@ -19068,7 +19068,7 @@ Object.assign(EN, {
   }
   function ltHeldLantern(hk) { return typeof hk === 'string' && hk.indexOf('lantern') === 0; }
   function ltGather() {
-    var L = [], px = P.x, pz = P.z, R = 70, nt = ltNight(), dk = 0.45 + 0.55 * nt;
+    var L = [], px = P.x, pz = P.z, R = 1e9, nt = ltNight(), dk = 1;   // update 165: lights are always at full strength, day and night
     function add(id, x, y, z, col, I, dist, kind) {
       var d = Math.hypot(x - px, z - pz); if (d > R) return;
       L.push({ id: id, x: x, y: y, z: z, col: col, I: I, dist: dist, kind: kind, d: d });
@@ -19084,15 +19084,17 @@ Object.assign(EN, {
     var myHk = 'hands'; try { myHk = rwHkSend(); } catch (e) {}
     if (ltHeldLantern(myHk) && !RW.dead && !CAR.mine) add('me', P.x, P.y + 1.3, P.z, 0xffb35a, 2.2 * dk, 13, 'ln');
     try { (CO.list || []).forEach(function (q) { if (q.rt && ltHeldLantern(q.rt.hk) && q.hp > 0) add('h' + q.id, q.rt.x, q.rt.y + 1.3, q.rt.z, 0xffb35a, 2.2 * dk, 13, 'ln'); }); } catch (e) {}
-    // street lamps, only after dark
-    if (nt > 0.25) {
-      var mg = new THREE.Vector3();
-      LT.lamps.forEach(function (s, j) {
-        if (Math.abs(s.x - px) > R || Math.abs(s.z - pz) > R) return;
-        mg.set(s.x, s.y, s.z); if (mapGroup.parent) mapGroup.localToWorld(mg);
-        add('s' + j, mg.x, mg.y, mg.z, 0xffe0b0, 2.6 * nt, 20, 'st');
-      });
-    }
+    // street lamps (update 165: always on) and the ceiling lights in monument buildings
+    var mg = new THREE.Vector3();
+    LT.lamps.forEach(function (s, j) {
+      if (Math.abs(s.x - px) > R || Math.abs(s.z - pz) > R) return;
+      mg.set(s.x, s.y, s.z); if (mapGroup.parent) mapGroup.localToWorld(mg);
+      add('s' + j, mg.x, mg.y, mg.z, 0xffe0b0, 2.6, 20, 'st');
+    });
+    (RW.ceilLamps || []).forEach(function (s, j) {
+      if (Math.abs(s.y - P.y) > 6) return;
+      add('c' + j, s.x, s.y - 0.15, s.z, 0xfff0d0, 1.7, 9, 'ce');
+    });
     L.sort(function (a, b) { return a.d - b.d; });
     return L.slice(0, LT.N);
   }
@@ -19302,7 +19304,7 @@ Object.assign(EN, {
   };
   var rwBuildMonumentsFN = rwBuildMonuments;
   rwBuildMonuments = function () {
-    RW.fspots = []; RW.streetCars = []; FN.rec = true;
+    RW.fspots = []; RW.streetCars = []; RW.ceilLamps = []; FN.rec = true;
     try { return rwBuildMonumentsFN.apply(this, arguments); } finally { FN.rec = false; }
   };
 
@@ -19479,7 +19481,8 @@ Object.assign(EN, {
       var y0f = f * FHk;
       if (house) {
         // ceiling light and a rug
-        ld(rg() < 0.5 ? -w / 6 : w / 6, y0f + WH - 0.05, d / 6, 0.5, 0.08, 0.5, 0xfff1c8, { basic: true });
+        var clu = rg() < 0.5 ? -w / 6 : w / 6; ld(clu, y0f + WH - 0.05, d / 6, 0.5, 0.08, 0.5, 0xfff1c8, { basic: true });
+        var clp = L(clu, d / 6); RW.ceilLamps.push({ x: clp[0], y: y0f + WH - 0.05, z: clp[1], fy: y0f + (f ? 0 : 0.06) });   // update 165: it lights the room
         ld(rg() * 1 - 0.5, y0f + (f ? 0.016 : 0.076), 0.2, Math.min(3.2, w - 3), 0.03, 2.0, [0x7a3b3b, 0x35527a, 0x6a5a3a, 0x4a5a3a][Math.floor(rg() * 4)]);
         var list = [['wd', 1.1, 0.6, 2.0], ['dr', 1.0, 0.5, 0.86], ['dr', 1.0, 0.5, 0.86]];
         if (rg() < 0.6) list.push(['bx', 0.7, 0.6, 0.55]);
@@ -19487,7 +19490,7 @@ Object.assign(EN, {
         place(list, f);
         floorLoot(f, rg() < 0.7 ? 1 : 2);
       } else if (kind === 'warehouse') {
-        [-1, 1].forEach(function (s) { ld(s * w / 4, y0f + WH - 0.4, 0, 0.8, 0.12, 0.4, 0xfff1c8, { basic: true }); ld(s * w / 4, y0f + WH - 0.2, 0, 0.04, 0.3, 0.04, 0x2a2a2a); });
+        [-1, 1].forEach(function (s) { ld(s * w / 4, y0f + WH - 0.4, 0, 0.8, 0.12, 0.4, 0xfff1c8, { basic: true }); var wl = L(s * w / 4, 0); RW.ceilLamps.push({ x: wl[0], y: y0f + WH - 0.4, z: wl[1], fy: y0f + 0.06 }); ld(s * w / 4, y0f + WH - 0.2, 0, 0.04, 0.3, 0.04, 0x2a2a2a); });
         place([['cb', 0.8, 0.6, 1.3], ['cb', 0.8, 0.6, 1.3], ['bx', 0.8, 0.7, 0.6], ['bx', 0.8, 0.7, 0.6], ['bx', 0.8, 0.7, 0.6]], f);
         floorLoot(f, 2);
       } else if (kind === 'garage') {
@@ -19964,7 +19967,7 @@ Object.assign(EN, {
         if (L2.sign) L2.sign.emissiveIntensity = lon ? 1.4 : 0.1;
       }
       if (L2.red) { L2.red.emissiveIntensity = lon ? (flash ? 3 : 0.2) : 0.1; L2.blue.emissiveIntensity = lon ? (flash ? 0.2 : 3) : 0.1; }
-      if (lon) { var d = Math.hypot(c.x - P.x, c.z - P.z); if (d < 160) lit.push({ c: c, d: d }); }
+      if (lon) { var d = Math.hypot(c.x - P.x, c.z - P.z); lit.push({ c: c, d: d }); }
     }
     lit.sort(function (a, b) { return a.d - b.d; });
     VKL.pool.forEach(function (l, i) {
@@ -20006,12 +20009,12 @@ Object.assign(EN, {
     });
     return r;
   };
-  /* ---- update 161: every light within 50 m shows it is on ----
+  /* ---- update 161 (165: no distance limit at all, every light on the island): every light shows it is on ----
      Only the nearest few lights (6 lamps, 3 cars) can be real lights, so the others looked dark. Now every lit
      lantern, campfire, furnace, lantern in a hand, street lamp after dark and car with its lights on within 50 m gets
      a glow round the bulb, and the ones that have no real light also throw a patch of light on the ground under them
      (cars: a beam on the road ahead). Cheap: a few flat glowing sprites, no extra real lights. */
-  var GL = { t: 0, spr: [], spl: [], tex: null, v: new THREE.Vector3(), R: 50 };
+  var GL = { t: 0, spl: null, tex: null, v: new THREE.Vector3(), R: 1e9 };   // update 165: no distance limit
   function glTex() {
     var cv = document.createElement('canvas'); cv.width = cv.height = 64; var x = cv.getContext('2d');
     var gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -20019,37 +20022,47 @@ Object.assign(EN, {
     x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
     var t = new THREE.CanvasTexture(cv); return t;
   }
-  function glSprite() {
-    var m = new THREE.SpriteMaterial({ map: GL.tex, color: 0xffc070, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
-    var s = new THREE.Sprite(m); s.visible = false; s.renderOrder = 5; scene.add(s); return s;
-  }
-  function glSplash() {
-    var m = new THREE.MeshBasicMaterial({ map: GL.tex, color: 0xffb060, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
-    var pl = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), m); pl.rotation.order = 'YXZ'; pl.visible = false; pl.renderOrder = 4; scene.add(pl); return pl;
-  }
+  // update 165: all glows are one draw (a point cloud) and all light patches are one draw (instanced), so there can
+  // be thousands of them: every light on the island, at any distance
+  var GL_NP = 6000, GL_NS = 3000;
   function glInit() {
     GL.tex = glTex();
-    for (var i = 0; i < 90; i++) GL.spr.push(glSprite());
-    for (var j = 0; j < 40; j++) GL.spl.push(glSplash());
+    var geo = new THREE.BufferGeometry();
+    GL.pPos = new Float32Array(GL_NP * 3); GL.pCol = new Float32Array(GL_NP * 3); GL.pSz = new Float32Array(GL_NP);
+    geo.setAttribute('position', new THREE.BufferAttribute(GL.pPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('color', new THREE.BufferAttribute(GL.pCol, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('size', new THREE.BufferAttribute(GL.pSz, 1).setUsage(THREE.DynamicDrawUsage));
+    var mat = new THREE.ShaderMaterial({
+      uniforms: { uScale: { value: 400 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: 'attribute float size; attribute vec3 color; varying vec3 vC; uniform float uScale; void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = max(3.0, size * uScale / max(0.1, -mv.z)); }',
+      fragmentShader: 'varying vec3 vC; void main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d) * 2.0; if (r > 1.0) discard; float a = pow(1.0 - r, 2.2) + 0.5 * pow(max(0.0, 1.0 - r * 3.0), 2.0); gl_FragColor = vec4(vC * a, 1.0); }'
+    });
+    GL.pts = new THREE.Points(geo, mat); GL.pts.frustumCulled = false; GL.pts.renderOrder = 5; scene.add(GL.pts);
+    var smat = new THREE.MeshBasicMaterial({ map: GL.tex, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+    var pg = new THREE.PlaneGeometry(1, 1); pg.rotateX(-Math.PI / 2);
+    GL.spl = new THREE.InstancedMesh(pg, smat, GL_NS); GL.spl.instanceMatrix.setUsage(THREE.DynamicDrawUsage); GL.spl.frustumCulled = false; GL.spl.renderOrder = 4;
+    GL.spl.setColorAt(0, new THREE.Color(0, 0, 0)); scene.add(GL.spl);
+    GL.m4 = new THREE.Matrix4(); GL.q = new THREE.Quaternion(); GL.sc = new THREE.Vector3(); GL.ps = new THREE.Vector3(); GL.c = new THREE.Color(); GL.ax = new THREE.Vector3(0, 1, 0);
   }
   function glTick(dt) {
     if (!GL.tex) glInit();
     var on = RW.on && state !== 'menu', si = 0, pi = 0;
     if (on) {
       var nt = 0; try { nt = ltNight(); } catch (e) {}
-      var day = 0.25 + 0.75 * nt, px = P.x, pz = P.z, R = GL.R;
+      var day = 0.55 + 0.45 * nt, dayS = 0.45 + 0.55 * nt, px = P.x, pz = P.z, R = GL.R;   // (update 165: lights always on; the patches only look softer in daylight)
       var real = {};   // sources that already have a real light
       LT.pool.forEach(function (s) { if (s.src && !s.src.gone && s.cur > 0.3) real[s.src.id] = 1; });
       VKL.pool.forEach(function (l) { if (l.userData.car && l.intensity > 0) real['car' + l.userData.car.id] = 1; });
-      function fade(d) { return d < R - 8 ? 1 : Math.max(0, (R + 4 - d) / 12); }
+      function fade(d) { return 1; }
       function glow(x, y, z, sz, col, op) {
-        var s = GL.spr[si++]; if (!s) return;
-        s.position.set(x, y, z); s.scale.set(sz, sz, 1); s.material.color.setHex(col); s.material.opacity = op; s.visible = op > 0.01;
+        if (si >= GL_NP || op <= 0.01) return;
+        GL.pPos[si * 3] = x; GL.pPos[si * 3 + 1] = y; GL.pPos[si * 3 + 2] = z; GL.pSz[si] = sz;
+        GL.c.setHex(col); GL.pCol[si * 3] = GL.c.r * op; GL.pCol[si * 3 + 1] = GL.c.g * op; GL.pCol[si * 3 + 2] = GL.c.b * op; si++;
       }
       function splash(x, y, z, w, l, yaw, col, op) {
-        var p = GL.spl[pi++]; if (!p) return;
-        p.position.set(x, y + 0.06, z); p.rotation.set(-Math.PI / 2, yaw, 0, 'YXZ');
-        p.scale.set(w, l, 1); p.material.color.setHex(col); p.material.opacity = op; p.visible = op > 0.01;
+        if (pi >= GL_NS || op <= 0.01) return;
+        GL.q.setFromAxisAngle(GL.ax, yaw); GL.m4.compose(GL.ps.set(x, y + 0.06, z), GL.q, GL.sc.set(w, 1, l));
+        GL.spl.setMatrixAt(pi, GL.m4); GL.c.setHex(col).multiplyScalar(op); GL.spl.setColorAt(pi, GL.c); pi++;
       }
       var fl = performance.now() / 1000;
       // lanterns, campfires, furnaces
@@ -20058,7 +20071,7 @@ Object.assign(EN, {
         var d = Math.hypot(q.x - px, q.z - pz); if (d > R + 4) continue;
         var f = fade(d), fire = q.k !== 'ln', fk = fire ? 0.85 + 0.15 * Math.sin(fl * 13 + i) : 1;
         glow(q.x, q.y + (q.k === 'ln' ? 0.3 : q.k === 'cf' ? 0.55 : 0.7), q.z, fire ? 2.2 : 1.4, fire ? 0xff8a30 : 0xffc070, 0.75 * f * fk * (0.5 + 0.5 * day));
-        if (!real['p' + q.id] && nt > 0.15) splash(q.x, q.y, q.z, fire ? 9 : 8, fire ? 9 : 8, 0, fire ? 0xff8030 : 0xffb060, 0.5 * f * nt * fk);
+        if (!real['p' + q.id]) splash(q.x, q.y, q.z, fire ? 9 : 8, fire ? 9 : 8, 0, fire ? 0xff8030 : 0xffb060, 0.5 * f * dayS * fk);
       }
       // lanterns in hands
       var myHk = 'hands'; try { myHk = rwHkSend(); } catch (e) {}
@@ -20068,17 +20081,22 @@ Object.assign(EN, {
       held.forEach(function (h) {
         var d = Math.hypot(h[1] - px, h[3] - pz); if (d > R + 4) return; var f = fade(d);
         if (h[0] !== 'me') glow(h[1], h[2] + 1.3, h[3], 1.3, 0xffc070, 0.75 * f * (0.5 + 0.5 * day));
-        if (!real[h[0]] && nt > 0.15) splash(h[1], h[2], h[3], 8, 8, 0, 0xffb060, 0.5 * f * nt);
+        if (!real[h[0]]) splash(h[1], h[2], h[3], 8, 8, 0, 0xffb060, 0.5 * f * dayS);
       });
-      // street lamps after dark
-      if (nt > 0.25) {
+      // street lamps (always on) and ceiling lights in monument buildings
+      (RW.ceilLamps || []).forEach(function (s, j) {
+        var f = 1;
+        glow(s.x, s.y - 0.06, s.z, 0.9, 0xfff0d0, 0.55 * f);
+        if (!real['c' + j]) splash(s.x, s.fy, s.z, 6, 6, 0, 0xffe8c0, 0.38 * f * dayS);
+      });
+      if (true) {
         var mg = GL.v;
         (LT.lamps || []).forEach(function (s, j) {
           if (Math.abs(s.x - px) > R + 4 || Math.abs(s.z - pz) > R + 4) return;
           mg.set(s.x, s.y, s.z); if (mapGroup.parent) mapGroup.localToWorld(mg);
           var d = Math.hypot(mg.x - px, mg.z - pz); if (d > R + 4) return; var f = fade(d);
-          glow(mg.x, mg.y + 0.05, mg.z, 2.6, 0xffe2b0, 0.8 * f * nt);
-          if (!real['s' + j]) splash(mg.x, mg.y - 4.35, mg.z, 11, 11, 0, 0xffd8a0, 0.42 * f * nt);
+          glow(mg.x, mg.y + 0.05, mg.z, 2.6, 0xffe2b0, 0.8 * f * (0.5 + 0.5 * day));
+          if (true) splash(mg.x, mg.y - 4.35, mg.z, 11, 11, 0, 0xffd8a0, 0.42 * f * dayS);
         });
       }
       // cars with their lights on: two headlights, two tail lights, the beam on the road
@@ -20092,14 +20110,17 @@ Object.assign(EN, {
           GL.v.set(s * hw, U.front.y, zf - 0.05).applyMatrix4(c.g.matrixWorld); glow(GL.v.x, GL.v.y, GL.v.z, 1.1, 0xfff4dc, 0.9 * f2 * (0.45 + 0.55 * day));
           GL.v.set(s * (hw + 0.1), U.front.y + 0.05, zb + 0.05).applyMatrix4(c.g.matrixWorld); glow(GL.v.x, GL.v.y, GL.v.z, 0.6, 0xff2a18, 0.8 * f2 * (0.45 + 0.55 * day));
         });
-        if (!real['car' + c.id] && nt > 0.15) {
+        if (!real['car' + c.id]) {
           GL.v.set(0, 0, zf - 7).applyMatrix4(c.g.matrixWorld);
-          splash(GL.v.x, groundAt(GL.v.x, GL.v.z, c.y + 2), GL.v.z, 5, 12, c.yaw, 0xfff0d0, 0.55 * f2 * nt);
+          splash(GL.v.x, groundAt(GL.v.x, GL.v.z, c.y + 2), GL.v.z, 5, 12, c.yaw, 0xfff0d0, 0.55 * f2 * dayS);
         }
       }
     }
-    for (; si < GL.spr.length; si++) GL.spr[si].visible = false;
-    for (; pi < GL.spl.length; pi++) GL.spl[pi].visible = false;
+    var g2 = GL.pts.geometry; g2.setDrawRange(0, si);
+    if (si) { g2.attributes.position.needsUpdate = true; g2.attributes.color.needsUpdate = true; g2.attributes.size.needsUpdate = true; }
+    GL.pts.material.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
+    GL.spl.count = pi; if (pi) { GL.spl.instanceMatrix.needsUpdate = true; if (GL.spl.instanceColor) GL.spl.instanceColor.needsUpdate = true; }
+    GL.pts.visible = GL.spl.visible = on;
   }
   var renderFrameGL = renderFrame;
   renderFrame = function () { try { glTick(RDT); } catch (e) {} return renderFrameGL(); };
