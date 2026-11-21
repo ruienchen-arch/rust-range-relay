@@ -12300,7 +12300,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 161;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 164;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -16302,8 +16302,22 @@ Object.assign(EN, {
     }
     var HW = 0.86;   // half width of the cabin
     // ---- lower hull up to the window line, the cabin behind the cockpit, the nose
-    ext([[-1.72, 0.98], [-1.5, 0.74], [1.95, 0.74], [2.2, 1.0], [2.2, 1.28], [-1.86, 1.28]], HW * 2, od, 0);
-    ext([[0.22, 1.24], [2.2, 1.24], [2.2, 2.08], [1.85, 2.34], [0.22, 2.34]], HW * 2, od, 0);
+    // update 163: the hull is hollow where people sit (side skins, belly under the floor, roof, tail end)
+    var hullA = [[-1.72, 0.98], [-1.5, 0.74], [1.95, 0.74], [2.2, 1.0], [2.2, 1.28], [-1.86, 1.28]], hullB = [[0.22, 1.24], [2.2, 1.24], [2.2, 2.08], [1.85, 2.34], [0.22, 2.34]];
+    function hclip(pts, ax, c, less) {
+      var out = [];
+      for (var i = 0; i < pts.length; i++) {
+        var a = pts[i], b = pts[(i + 1) % pts.length], ia = less ? a[ax] <= c : a[ax] >= c, ib = less ? b[ax] <= c : b[ax] >= c;
+        if (ia) out.push(a);
+        if (ia !== ib) { var t = (c - a[ax]) / (b[ax] - a[ax]); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+      }
+      return out;
+    }
+    [-1, 1].forEach(function (s) { ext(hullA, 0.14, od, s * (HW - 0.07), 0.04); ext(hullB, 0.14, od, s * (HW - 0.07), 0.04); });
+    ext(hclip(hullA, 1, 1.0, true), HW * 2 - 0.1, od, 0, 0.04);              // belly under the cockpit floor
+    ext(hclip(hullA, 0, 0.22, false), HW * 2 - 0.1, od, 0, 0.04);            // under the cabin floor
+    ext(hclip(hullB, 1, 2.26, false), HW * 2 - 0.1, od, 0, 0.04);            // cabin roof
+    ext(hclip(hullB, 0, 1.97, false), HW * 2 - 0.1, od, 0, 0.04);            // the back of the cabin
     ext([[-1.86, 1.0], [-2.02, 1.12], [-2.02, 1.26], [-1.86, 1.3]], HW * 1.7, odD, 0, 0.04);   // nose cap
     box(HW * 2 + 0.02, 0.06, 0.26, odD, 0, 2.31, -0.12);   // roof over the cockpit
     box(HW * 2 - 0.1, 0.05, 0.6, od, 0, 2.31, -0.45, -0.12);   // its front lip
@@ -16394,20 +16408,8 @@ Object.assign(EN, {
     var nr = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), green); nr.position.set(HW + 0.94, 2.0, 1.05); g.add(nr);
     var st = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), strobeM); st.position.set(0, 3.12, 5.9); g.add(st); U.strobe = st;
     cyl(0.09, 0.09, 0.04, strobeM, 0, 0.72, -1.2, 0, 0, 12);   // landing light
-    // ---- inside: floor, seats, instrument panel with screens, sticks
-    box(HW * 2 - 0.1, 0.04, 2.0, blk, 0, 1.0, -0.8);
-    HELI_SEATS.forEach(function (s) {
-      box(0.5, 0.12, 0.48, seatM, s[0], 1.08, s[2] + 0.02);
-      box(0.5, 0.66, 0.1, seatM, s[0], 1.44, s[2] + 0.3, -0.1);
-      box(0.28, 0.16, 0.08, seatM, s[0], 1.84, s[2] + 0.35, -0.1);
-      box(0.05, 0.6, 0.02, blk, s[0] - 0.12, 1.45, s[2] + 0.24, -0.1); box(0.05, 0.6, 0.02, blk, s[0] + 0.12, 1.45, s[2] + 0.24, -0.1);   // harness
-      tube([s[0], 1.02, s[2] - 0.32], [s[0], 1.3, s[2] - 0.4], 0.018, blk);
-      var kn = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), blk); kn.position.set(s[0], 1.32, s[2] - 0.41); g.add(kn);
-    });
-    var dash = box(1.5, 0.2, 0.14, blk, 0, 1.33, -1.55, -0.5);
-    box(1.52, 0.06, 0.3, odD, 0, 1.44, -1.5, -0.2);   // glare shield
-    [-0.52, -0.2, 0.2, 0.52].forEach(function (x, i) { var sc = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.15), i % 2 ? mfd2 : mfd); sc.position.set(x, 1.36, -1.47); sc.rotation.x = -0.5; g.add(sc); });   // screens
-    box(0.2, 0.06, 0.5, blk, 0, 1.08, -1.0);   // centre console
+    // ---- inside (update 163): a real cockpit and cabin ----
+    heliInterior(g, { box: box, cyl: cyl, tube: tube, M: M, HW: HW, blk: blk, steel: steel, od: od, odD: odD, seatM: seatM, glass: glass });
     g.traverse(function (o) { if (o.isMesh) o.castShadow = false; });
     return g;
   }
@@ -18332,7 +18334,7 @@ Object.assign(EN, {
     // own head clearance. (143 widened the whole check instead, and then a doorway's lintel next to stairs blocked you.)
     var lift = -1e9;
     for (var i = 0; i < boxes.length; i++) {
-      var o = boxes[i]; if (!o.pc || (o.pc.k !== 'st' && o.pc.k !== 'ss')) continue;
+      var o = boxes[i]; if (!o.pc || o.pc.k !== 'st') continue;   // (update 164: not the spiral stairs, their steps are low)
       if (o.h <= P.y + 0.6 || o.h > P.y + 1.1) continue;
       if (P.x < o.minX - r || P.x > o.maxX + r || P.z < o.minZ - r || P.z > o.maxZ + r) continue;
       var cx = Math.max(o.minX, Math.min(P.x, o.maxX)), cz = Math.max(o.minZ, Math.min(P.z, o.maxZ));
@@ -19140,7 +19142,7 @@ Object.assign(EN, {
        cabinets give metal and gun parts; boxes give resources; loose loot is a little of anything.
        They are shared crates: once someone searched one it is empty for everybody and refills after 15 minutes. */
   var FN = { rec: false };
-  RW.fspots = RW.fspots || [];
+  RW.fspots = RW.fspots || []; RW.streetCars = RW.streetCars || [];
   var FN_EXTRA = {
     town: [12, ['cottage', 'bungalow', 'townhouse', 'villa', 'apartment', 'cottage', 'bungalow', 'townhouse']],
     village: [8, ['cottage', 'bungalow', 'cottage', 'barn', 'bungalow']],
@@ -19279,6 +19281,18 @@ Object.assign(EN, {
       built++;
     }
     streets.forEach(function (r) { placed.push(r); });
+    // update 162: cars parked along the kerb (up to 5 per monument, real cars you can drive, ids m<mi>_2..7)
+    var mi = RW.mons.indexOf(m), slots = [2, 3, 4, 6, 7], sc = 0;
+    if (mi >= 0) {
+      for (var ci = 0; ci < 60 && sc < slots.length; ci++) {
+        var sg2 = segs[Math.floor(rg() * segs.length)], s2 = rg() < 0.5 ? -1 : 1, a2 = sg2.a0 + 6 + rg() * Math.max(0, sg2.a1 - sg2.a0 - 12);
+        var cuts2 = crossings(sg2); if (cuts2.some(function (c) { return a2 > c[0] - 4 && a2 < c[1] + 4; })) continue;
+        var ac2 = s2 * (W / 2 - 1.15), cx2 = sg2.ax === 'x' ? m.x + a2 : m.x + sg2.off + ac2, cz2 = sg2.ax === 'x' ? m.z + sg2.off + ac2 : m.z + a2;
+        if (RW.streetCars.some(function (q) { return Math.hypot(q.x - cx2, q.z - cz2) < 7; })) continue;
+        var yaw2 = sg2.ax === 'x' ? (s2 > 0 ? -Math.PI / 2 : Math.PI / 2) : (s2 > 0 ? Math.PI : 0);   // parked with the traffic on that side
+        RW.streetCars.push({ id: 'm' + mi + '_' + slots[sc], x: cx2, z: cz2, yaw: yaw2 }); sc++;
+      }
+    }
   }
   var rwBuildMonumentFN = rwBuildMonument;
   rwBuildMonument = function (m) {
@@ -19288,7 +19302,7 @@ Object.assign(EN, {
   };
   var rwBuildMonumentsFN = rwBuildMonuments;
   rwBuildMonuments = function () {
-    RW.fspots = []; FN.rec = true;
+    RW.fspots = []; RW.streetCars = []; FN.rec = true;
     try { return rwBuildMonumentsFN.apply(this, arguments); } finally { FN.rec = false; }
   };
 
@@ -19660,7 +19674,9 @@ Object.assign(EN, {
     var s1 = v.sy - 0.63;   // the game's seat height: your eye is 1.35 above it
     v.seats = [[-0.4, s1, v.sf], [0.4, s1, v.sf], [-0.42, s1 + 0.02, v.sr], [0.42, s1 + 0.02, v.sr]];
   });
-  function vkFromId(id) { if (!id || id[0] !== 'm') return 0; var h = 0; for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; h = (h ^ (h >>> 7)) * 2654435761 >>> 0; return h % VK.length; }
+  function vkHash(id, salt) { var t = String(RW.seed || '') + salt + id, h = 2166136261; for (var i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995) >>> 0; h ^= h >>> 15; return h >>> 0; }
+  function vkFromId(id) { if (!id || id[0] !== 'm') return 0; return vkHash(id, 'vk') % VK.length; }   // update 162: a new mix on every new island
+  var VK_COLS = [0x8a1a14, 0x2f4a6e, 0x3a5a3a, 0x6a6a6a, 0x1a1a1a, 0xd8d8d4, 0x2a4a8a, 0x7a2a5a, 0x8a6a2a, 0x5a3a24, 0x4a6a7a, 0xb8a888, 0x2a5a5a, 0x9a4a1a, 0x3a3a5a, 0xa8a8a8];
   function carVk(c) { return c && !c.ty ? (c.vk | 0) : 0; }
   function carSpd(c) { return (VK[carVk(c)] || VK[0]).spd; }
   function carAcc(c) { return (VK[carVk(c)] || VK[0]).acc; }
@@ -19893,9 +19909,10 @@ Object.assign(EN, {
     if (c && !c.ty && !c.vkSet) {
       c.vkSet = 1;
       c.vk = d && d.vk !== undefined ? (d.vk | 0) % VK.length : vkFromId(c.id);
-      if (c.vk > 0) {
+      var recol = false; if (c.id[0] === 'm') { var nc = VK_COLS[vkHash(c.id, 'col') % VK_COLS.length]; recol = nc !== c.col; c.col = nc; }   // monument cars: many colours
+      if (c.vk > 0 || recol) {
         var par = c.g.parent; if (par) par.remove(c.g);
-        c.g = vkModel(c.vk, c.col); (par || RW.group).add(c.g); carPlace(c);
+        c.g = c.vk ? vkModel(c.vk, c.col) : carModel(c.col); (par || RW.group).add(c.g); carPlace(c);
       }
     } else if (c && !c.ty && d && d.vk !== undefined && (d.vk | 0) !== c.vk) {   // the server knows better (an old copy said otherwise)
       var par2 = c.g.parent; if (par2) par2.remove(c.g);
@@ -19978,6 +19995,17 @@ Object.assign(EN, {
   }
   if (RWI.car) RWI.car.d = ['四座汽车，有 9 种：吉普、轿车、两厢小车、SUV、皮卡、面包车、警车、跑车、出租车。在背包里选好车型，再拿在手上按左键（或点“使用”）放在你面前。开车时按 H 开关车灯。',
     'A four-seat car in 9 kinds: jeep, saloon, hatchback, SUV, pickup, van, police car, sports car, taxi. Pick the kind in the backpack, then hold it and left click (or Use) to park it in front of you. H switches the lights while you drive.'];
+
+  // update 162: the cars parked along the streets
+  var rwCarsLoadVK = rwCarsLoad;
+  rwCarsLoad = function (list) {
+    var r = rwCarsLoadVK.apply(this, arguments);
+    (RW.streetCars || []).forEach(function (q) {
+      if (CAR.list[q.id]) return;
+      carAdd({ id: q.id, x: q.x, y: groundAt(q.x, q.z, 3), z: q.z, yaw: q.yaw });
+    });
+    return r;
+  };
   /* ---- update 161: every light within 50 m shows it is on ----
      Only the nearest few lights (6 lamps, 3 cars) can be real lights, so the others looked dark. Now every lit
      lantern, campfire, furnace, lantern in a hand, street lamp after dark and car with its lights on within 50 m gets
@@ -20075,6 +20103,272 @@ Object.assign(EN, {
   }
   var renderFrameGL = renderFrame;
   renderFrame = function () { try { glTick(RDT); } catch (e) {} return renderFrameGL(); };
+  /* ---- update 163: the helicopter inside looks real ----
+     Cockpit: a shaped instrument panel with four lit multi-function displays (flight display with horizon and
+     tapes, moving map, engine page, radar), bezel buttons, three standby gauges, a warning light strip, the glare
+     shield, a centre pedestal with radios, knobs and two power levers, an overhead console full of switches and
+     breakers, a wet compass on the windscreen post. Each crew seat is an armoured bucket with side armour,
+     headrest, five-point harness and rails; each has a cyclic stick with a grip and buttons, a collective lever with
+     a throttle twist grip, and two pedals. The cyclic leans the way you fly and the collective rises with the climb.
+     Cabin: padded wall lining, two troop benches with canvas seats and straps, a cargo net, grab handles, red dome
+     lights, a fire extinguisher, a first-aid kit and headsets hanging on hooks. */
+  function heliScreenTex(kind) {
+    var cv = document.createElement('canvas'); cv.width = 128; cv.height = 96; var x = cv.getContext('2d');
+    x.fillStyle = '#05080a'; x.fillRect(0, 0, 128, 96);
+    if (kind === 0) {   // primary flight display
+      x.fillStyle = '#2a6ac8'; x.fillRect(24, 8, 80, 40); x.fillStyle = '#7a4a22'; x.fillRect(24, 48, 80, 40);
+      x.strokeStyle = '#fff'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(24, 48); x.lineTo(104, 48); x.stroke();
+      for (var i = -2; i <= 2; i++) if (i) { x.beginPath(); x.moveTo(52, 48 + i * 9); x.lineTo(76, 48 + i * 9); x.stroke(); }
+      x.strokeStyle = '#ffd030'; x.lineWidth = 3; x.beginPath(); x.moveTo(44, 48); x.lineTo(58, 48); x.lineTo(64, 54); x.lineTo(70, 48); x.lineTo(84, 48); x.stroke();
+      x.fillStyle = '#1a1a1a'; x.fillRect(2, 8, 20, 80); x.fillRect(106, 8, 20, 80);
+      x.fillStyle = '#e8e8e8'; x.font = '9px monospace'; x.fillText('120', 4, 51); x.fillText('850', 107, 51); x.fillText('HDG 274', 44, 94);
+      x.strokeStyle = '#e8e8e8'; x.lineWidth = 1; for (var k = 0; k < 8; k++) { x.beginPath(); x.moveTo(18, 12 + k * 10); x.lineTo(22, 12 + k * 10); x.stroke(); x.beginPath(); x.moveTo(106, 12 + k * 10); x.lineTo(110, 12 + k * 10); x.stroke(); }
+    } else if (kind === 1) {   // moving map
+      x.fillStyle = '#0c2a14'; x.fillRect(0, 0, 128, 96);
+      x.strokeStyle = '#2a8a3a'; x.lineWidth = 1; for (var r = 1; r < 4; r++) { x.beginPath(); x.arc(64, 70, r * 20, 0, Math.PI * 2); x.stroke(); }
+      x.strokeStyle = '#3aa0e0'; x.lineWidth = 2; x.beginPath(); x.moveTo(0, 30); x.bezierCurveTo(40, 10, 70, 50, 128, 20); x.stroke();
+      x.strokeStyle = '#d8d070'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(64, 70); x.lineTo(90, 20); x.lineTo(110, 12); x.stroke();
+      x.fillStyle = '#ffffff'; x.beginPath(); x.moveTo(64, 62); x.lineTo(59, 74); x.lineTo(64, 71); x.lineTo(69, 74); x.fill();
+      x.fillStyle = '#e04040'; x.fillRect(30, 40, 4, 4); x.fillRect(96, 54, 4, 4);
+    } else if (kind === 2) {   // engine page
+      x.fillStyle = '#d8d8d8'; x.font = '8px monospace'; x.fillText('ENG 1   ENG 2', 22, 12);
+      [[20, 0.72], [40, 0.7], [76, 0.88], [96, 0.86]].forEach(function (b) { x.strokeStyle = '#888'; x.strokeRect(b[0], 18, 12, 60); x.fillStyle = b[1] > 0.85 ? '#e0a030' : '#3ad86a'; x.fillRect(b[0] + 1, 18 + 60 * (1 - b[1]), 10, 60 * b[1]); });
+      x.fillStyle = '#3ad86a'; x.fillText('TQ  98%', 20, 90); x.fillText('NR 101', 76, 90);
+    } else {   // radar / threat display
+      x.strokeStyle = '#3ad86a'; x.lineWidth = 1; for (var q = 1; q < 4; q++) { x.beginPath(); x.arc(64, 48, q * 14, 0, Math.PI * 2); x.stroke(); }
+      x.beginPath(); x.moveTo(64, 4); x.lineTo(64, 92); x.moveTo(20, 48); x.lineTo(108, 48); x.stroke();
+      var gr = x.createLinearGradient(64, 48, 100, 20); gr.addColorStop(0, 'rgba(58,216,106,0.7)'); gr.addColorStop(1, 'rgba(58,216,106,0)');
+      x.fillStyle = gr; x.beginPath(); x.moveTo(64, 48); x.arc(64, 48, 42, -1.2, -0.6); x.fill();
+      x.fillStyle = '#ffd030'; x.fillRect(84, 30, 3, 3); x.fillStyle = '#e04040'; x.fillRect(40, 62, 3, 3);
+    }
+    var t = new THREE.CanvasTexture(cv); return t;
+  }
+  var HELI_SCR = null;
+  function heliInterior(g, K) {
+    var box = K.box, cyl = K.cyl, tube = K.tube, M = K.M, HW = K.HW, blk = K.blk, steel = K.steel, U = g.userData;
+    if (!HELI_SCR) HELI_SCR = [0, 1, 2, 3].map(function (k) { return new THREE.MeshBasicMaterial({ map: heliScreenTex(k) }); });
+    var panelM = M(0x232527, { roughness: 0.8, metalness: 0.1 }), panelL = M(0x34373a, { roughness: 0.75 }), lining = M(0x5e5f52, { roughness: 1, metalness: 0 }), liningD = M(0x4a4b40, { roughness: 1 }),
+      floorM = M(0x2c2e2c, { roughness: 0.95 }), tread = M(0x3a3c3a, { roughness: 1 }), armor = M(0x3c4024, { roughness: 0.7, metalness: 0.3 }), cushion = M(0x2e2a22, { roughness: 1, metalness: 0 }),
+      harness = M(0x6a6248, { roughness: 1 }), buckle = M(0xb8bcc0, { metalness: 0.9, roughness: 0.25 }), canvas = M(0x6a6a48, { roughness: 1, side: THREE.DoubleSide }), redM = M(0xa01c14, { roughness: 0.5 }),
+      white = M(0xd8d8cc, { roughness: 0.6 }), knobM = M(0x111111, { roughness: 0.5 }),
+      sw = new THREE.MeshBasicMaterial({ color: 0xd8d8d8 }), amberL = new THREE.MeshBasicMaterial({ color: 0xffa020 }), greenL = new THREE.MeshBasicMaterial({ color: 0x3ad86a }), redL = new THREE.MeshBasicMaterial({ color: 0xff3020 }),
+      dome = new THREE.MeshBasicMaterial({ color: 0xff3a2a }), gaugeF = new THREE.MeshBasicMaterial({ color: 0x0a0c0e }), needle = new THREE.MeshBasicMaterial({ color: 0xf0f0f0 });
+    // floor: tread plates in the cockpit, a ribbed floor in the cabin
+    box(HW * 2 - 0.08, 0.04, 2.1, floorM, 0, 1.0, -0.82);
+    [-0.36, 0.36].forEach(function (x) { box(0.5, 0.012, 0.8, tread, x, 1.026, -1.15); });
+    box(HW * 2 - 0.08, 0.04, 1.72, floorM, 0, 1.24, 1.08);
+    for (var r = 0; r < 9; r++) box(HW * 2 - 0.2, 0.012, 0.03, tread, 0, 1.265, 0.32 + r * 0.19);
+    // lining on the walls behind the cockpit doors and in the cabin, quilted
+    [-1, 1].forEach(function (s) {
+      box(0.03, 0.28, 2.0, liningD, s * (HW - 0.05), 1.15, -0.85);                         // under the cockpit windows
+      box(0.03, 1.0, 1.66, lining, s * (HW - 0.05), 1.77, 1.08);                           // cabin walls
+      for (var qz = 0; qz < 5; qz++) for (var qy = 0; qy < 3; qy++) box(0.012, 0.012, 0.3, liningD, s * (HW - 0.066), 1.42 + qy * 0.32, 0.4 + qz * 0.34);
+    });
+    box(HW * 2 - 0.1, 0.03, 1.7, lining, 0, 2.27, 1.08);                                    // cabin roof
+    box(HW * 2 - 0.1, 1.0, 0.04, liningD, 0, 1.76, 1.95);                                   // rear bulkhead
+    // ---- instrument panel ----
+    var IPZ = -1.32, IPY = 1.36;
+    var ip = box(1.56, 0.36, 0.06, panelM, 0, IPY, IPZ, -0.28);
+    box(1.6, 0.05, 0.36, M(0x1a1c1a, { roughness: 1 }), 0, IPY + 0.2, IPZ - 0.08, -0.12);    // glare shield with a soft lip
+    box(1.6, 0.03, 0.03, blk, 0, IPY + 0.18, IPZ + 0.1);
+    [-0.56, -0.19, 0.19, 0.56].forEach(function (x, i) {
+      var bz = box(0.3, 0.25, 0.03, panelL, x, IPY + 0.01, IPZ + 0.025, -0.28);             // bezel
+      var sc = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.165), HELI_SCR[i]); sc.position.set(x, IPY + 0.012, IPZ + 0.043); sc.rotation.x = -0.28; g.add(sc);
+      for (var b = 0; b < 5; b++) {   // bezel buttons along the sides and the bottom
+        [-1, 1].forEach(function (s) { var bt = box(0.022, 0.02, 0.012, knobM, x + s * 0.132, IPY - 0.09 + b * 0.045, IPZ + 0.05 - (b * 0.045 - 0.09) * 0.28, -0.28); });
+        box(0.03, 0.016, 0.012, knobM, x - 0.08 + b * 0.04, IPY - 0.112, IPZ + 0.075, -0.28);
+      }
+    });
+    // standby gauges and the warning strip between the middle screens, above
+    [-0.08, 0, 0.08].forEach(function (x, i) {
+      var gg = cyl(0.034, 0.034, 0.02, gaugeF, x, IPY + 0.155, IPZ + 0.01, Math.PI / 2 - 0.28, 0, 16);
+      cyl(0.038, 0.038, 0.016, steel, x, IPY + 0.155, IPZ + 0.002, Math.PI / 2 - 0.28, 0, 16);
+      var nd = box(0.004, 0.028, 0.004, needle, x, IPY + 0.16, IPZ + 0.025); nd.rotation.z = 0.6 - i * 0.7;
+    });
+    for (var w = 0; w < 10; w++) box(0.05, 0.022, 0.01, w === 3 ? amberL : w === 7 ? redL : M(0x2a2a20, { roughness: 0.5 }), -0.27 + w * 0.06, IPY + 0.2, IPZ + 0.05 - 0.04);
+    // ---- centre pedestal: radios, knobs, two power levers ----
+    var ped = box(0.3, 0.3, 0.5, panelM, 0, 1.15, -1.0);
+    var pTop = box(0.3, 0.03, 0.52, panelL, 0, 1.31, -1.0, 0.12);
+    for (var rr = 0; rr < 4; rr++) {
+      var rz = -1.2 + rr * 0.11, ry = 1.33 - (rr * 0.11 - 0.17) * 0.12;
+      box(0.24, 0.012, 0.09, blk, 0, ry, rz);
+      box(0.1, 0.004, 0.03, rr % 2 ? amberL : greenL, -0.04, ry + 0.008, rz);
+      [0.07, 0.1].forEach(function (kx) { cyl(0.012, 0.012, 0.022, knobM, kx, ry + 0.014, rz, 0, 0, 10); });
+    }
+    [-0.1, -0.04].forEach(function (x) {   // power levers in their quadrant
+      box(0.02, 0.012, 0.16, blk, x, 1.32, -0.8);
+      var lv = tube([x, 1.32, -0.8], [x, 1.4, -0.84], 0.008, steel); var kb = box(0.026, 0.026, 0.04, white, x, 1.41, -0.845);
+    });
+    // ---- overhead console between the crew ----
+    box(0.42, 0.06, 0.62, panelM, 0, 2.24, -0.5);
+    for (var orow = 0; orow < 4; orow++) for (var oc = 0; oc < 6; oc++) {
+      var ox = -0.15 + oc * 0.06, oz = -0.72 + orow * 0.14;
+      box(0.012, 0.03, 0.012, sw, ox, 2.195, oz);                                             // toggle switch
+      if (orow === 3) box(0.022, 0.012, 0.022, oc % 3 ? knobM : white, ox, 2.204, oz + 0.06);  // breakers
+    }
+    box(0.3, 0.012, 0.01, white, 0, 2.208, -0.79);   // labels
+    // wet compass on the windscreen post, a grab handle over each door
+    box(0.06, 0.05, 0.06, blk, 0, 2.08, -0.86); var cp = cyl(0.022, 0.022, 0.012, M(0xe8e0c0), 0, 2.08, -0.892, Math.PI / 2, 0, 12);
+    [-1, 1].forEach(function (s) { tube([s * (HW - 0.12), 2.22, -0.2], [s * (HW - 0.12), 2.22, 0.12], 0.014, blk); });
+    // ---- crew seats with armour, harness; cyclic, collective, pedals ----
+    U.cyc = []; U.col = [];
+    HELI_SEATS.forEach(function (st) {
+      var x = st[0], z = st[2];
+      box(0.5, 0.1, 0.48, cushion, x, 1.12, z + 0.02);
+      [-1, 1].forEach(function (s) { box(0.06, 0.12, 0.46, cushion, x + s * 0.23, 1.19, z + 0.02); });
+      var bk = box(0.5, 0.7, 0.1, cushion, x, 1.5, z + 0.3); bk.rotation.x = -0.1;
+      var hr = box(0.3, 0.2, 0.1, cushion, x, 1.96, z + 0.36); hr.rotation.x = -0.1;
+      [-1, 1].forEach(function (s) {
+        var ar = box(0.04, 0.34, 0.5, armor, x + s * 0.29, 1.3, z + 0.14); ar.rotation.x = -0.05;   // side armour
+        box(0.04, 0.4, 0.04, steel, x + s * 0.22, 1.2, z + 0.42);                                    // frame
+        box(0.03, 0.02, 0.8, steel, x + s * 0.18, 1.03, z);                                          // rails on the floor
+        var sh = box(0.05, 0.62, 0.012, harness, x + s * 0.1, 1.55, z + 0.24); sh.rotation.x = -0.1; sh.rotation.z = s * 0.06;   // shoulder straps
+        var lp = box(0.012, 0.06, 0.3, harness, x + s * 0.2, 1.2, z - 0.06); lp.rotation.y = s * 0.3;                            // lap belt
+      });
+      box(0.09, 0.09, 0.02, buckle, x, 1.24, z - 0.18);                                              // quick release
+      box(0.04, 0.12, 0.012, harness, x, 1.17, z - 0.2);
+      // cyclic between the knees
+      var cg = new THREE.Group(); cg.position.set(x, 1.04, z - 0.36); g.add(cg);
+      box(0.08, 0.04, 0.08, blk, 0, 0, 0, 0, 0, 0, cg); cyl(0.07, 0.07, 0.02, M(0x1a1a1a, { roughness: 1 }), 0, 0.02, 0, 0, 0, 10, cg);   // boot
+      cyl(0.014, 0.016, 0.42, steel, 0, 0.23, 0, 0, 0, 8, cg);
+      var gr = box(0.045, 0.13, 0.05, knobM, 0, 0.5, -0.01, 0.15, 0, 0, cg);
+      box(0.02, 0.015, 0.02, redM, 0, 0.57, -0.03, 0, 0, 0, cg); box(0.016, 0.016, 0.016, sw, 0.02, 0.55, -0.035, 0, 0, 0, cg);   // trigger and hat switch
+      U.cyc.push(cg);
+      // collective at the left side of the seat
+      var cl = new THREE.Group(); cl.position.set(x - 0.3, 1.1, z + 0.1); g.add(cl);
+      var arm = new THREE.Group(); cl.add(arm);
+      box(0.035, 0.035, 0.55, steel, 0, 0, -0.27, 0, 0, 0, arm);
+      cyl(0.026, 0.026, 0.12, knobM, 0, 0, -0.56, Math.PI / 2, 0, 10, arm);                       // throttle grip
+      box(0.06, 0.05, 0.08, blk, 0, 0.03, -0.62, 0, 0, 0, arm);                                  // switch box
+      arm.rotation.x = 0.28; U.col.push(arm);
+      // pedals
+      [-0.11, 0.11].forEach(function (o) { var pd = box(0.08, 0.13, 0.025, blk, x + o, 1.11, -1.14); pd.rotation.x = -0.35; box(0.02, 0.02, 0.16, steel, x + o, 1.06, -1.06); });
+    });
+    // ---- the cabin: troop benches, cargo net, extinguisher, first aid, headsets, dome lights ----
+    [-1, 1].forEach(function (s) {
+      var bx = s * (HW - 0.3);
+      box(0.4, 0.02, 1.4, steel, bx, 1.68, 1.1);                     // bench frame
+      box(0.38, 0.03, 1.36, canvas, bx, 1.71, 1.1);                  // canvas seat
+      box(0.03, 0.42, 1.36, canvas, s * (HW - 0.09), 1.95, 1.1);     // canvas back
+      for (var k = 0; k < 4; k++) {
+        var lz = 0.55 + k * 0.36;
+        tube([bx, 1.68, lz], [bx - s * 0.1, 1.26, lz], 0.012, steel);  // legs
+        box(0.04, 0.4, 0.012, harness, s * (HW - 0.11), 1.92, lz);     // straps
+      }
+      tube([s * (HW - 0.15), 2.22, 0.4], [s * (HW - 0.15), 2.22, 1.8], 0.012, steel);   // grab rail
+    });
+    for (var nx = 0; nx < 6; nx++) { box(0.008, 0.9, 0.008, harness, -0.6 + nx * 0.24, 1.75, 1.9); }
+    for (var ny = 0; ny < 4; ny++) { box(1.25, 0.008, 0.008, harness, 0, 1.38 + ny * 0.25, 1.9); }   // cargo net on the bulkhead
+    cyl(0.06, 0.06, 0.4, redM, 0.62, 1.55, 1.88, 0, 0, 12); cyl(0.03, 0.03, 0.06, blk, 0.62, 1.78, 1.88, 0, 0, 8);   // extinguisher
+    box(0.26, 0.18, 0.08, white, -0.6, 1.95, 1.89); box(0.08, 0.025, 0.01, redM, -0.6, 1.95, 1.85); box(0.025, 0.08, 0.01, redM, -0.6, 1.95, 1.85);   // first aid
+    [-0.25, 0.25].forEach(function (x) {   // headsets on hooks
+      box(0.02, 0.06, 0.02, steel, x, 2.12, 1.9);
+      var hb = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.012, 6, 14, Math.PI), blk); hb.position.set(x, 2.03, 1.88); g.add(hb);
+      [-1, 1].forEach(function (s) { cyl(0.04, 0.04, 0.04, blk, x + s * 0.08, 2.0, 1.88, Math.PI / 2, 0, 12); });
+    });
+    [[0, 2.24, 0.6], [0, 2.24, 1.5], [0, 2.17, -0.15]].forEach(function (p) { cyl(0.04, 0.04, 0.02, dome, p[0], p[1], p[2], 0, 0, 10); });
+  }
+  // the cyclic leans with the controls, the collective follows the climb
+  function heliCtlTick(dt) {
+    for (var k in CAR.list) {
+      var c = CAR.list[k]; if (c.ty !== 'h' || !c.g) continue;
+      var U = c.g.userData; if (!U.cyc) continue;
+      var mine = CAR.mine === c && CAR.seat === 0, fw = 0, sd = 0, up = 0;
+      if (mine) {
+        fw = (keys[KB.forward] ? 1 : 0) - (keys[KB.back] ? 1 : 0); sd = (keys[KB.right] ? 1 : 0) - (keys[KB.left] ? 1 : 0);
+        up = (keys[KB.jump] ? 1 : 0) - (keys[KB.sprint] ? 1 : 0);
+      } else up = Math.max(-1, Math.min(1, (c.vy || 0) / 8));
+      U.cf = (U.cf || 0) + (fw - (U.cf || 0)) * Math.min(1, dt * 6); U.cs = (U.cs || 0) + (sd - (U.cs || 0)) * Math.min(1, dt * 6); U.cu = (U.cu || 0) + (up - (U.cu || 0)) * Math.min(1, dt * 4);
+      U.cyc.forEach(function (cg) { cg.rotation.x = -U.cf * 0.22; cg.rotation.z = -U.cs * 0.2; });
+      U.col.forEach(function (a) { a.rotation.x = 0.28 + U.cu * 0.18; });
+    }
+  }
+  var renderFrameHI = renderFrame;
+  renderFrame = function () { try { heliCtlTick(RDT); } catch (e) {} return renderFrameHI(); };
+  /* ---- update 164: round spiral stairs that hold you ----
+     - Collision: each step is now a thin wedge-shaped tread (made of small blocks that follow the circle) instead of
+       a big square column from the ground up. You can walk under the high steps, nothing sticks out past the treads,
+       and there are no gaps between steps to slip through.
+     - A railing of posts runs round the outside edge of every step, so you no longer fall off the side.
+     - Looks: real wedge treads that meet edge to edge into a full circle, a round centre pole, round posts and a
+       smooth handrail that spirals up with the steps. */
+  var SS_R0 = 0.14, SS_R1 = 1.36, SS_RAIL = 1.32;
+  var rwPieceParts2SS = rwPieceParts2;
+  rwPieceParts2 = function (k, r, dep) {
+    if (k !== 'ss') return rwPieceParts2SS.apply(this, arguments);
+    var L = [], step = Math.PI / 6;
+    for (var i = 0; i < 12; i++) {
+      var a = r * Math.PI / 2 + i * step, top = (i + 1) * 0.25, y0 = Math.max(0, top - 0.25);
+      // tread: rings of small blocks across the wedge (from the pole out to the edge)
+      [[0.32, [0], 0.36], [0.66, [-0.3, 0.3], 0.34], [1.0, [-0.36, 0, 0.36], 0.34], [1.24, [-0.4, -0.13, 0.13, 0.4], 0.27]].forEach(function (ring) {
+        ring[1].forEach(function (f) {
+          var aa = a + f * step, s = ring[2];
+          L.push([Math.cos(aa) * ring[0], (y0 + top) / 2, Math.sin(aa) * ring[0], s, top - y0, s, 1, 1]);
+        });
+      });
+      // railing posts on the outside edge, from the tread up 1 m (only where you could fall off)
+      if (i >= 2 && i <= 10) [-0.33, 0, 0.33].forEach(function (f) {   // (open at the bottom two steps and the top one, to get on and off)
+        var aa = a + f * step;
+        L.push([Math.cos(aa) * (SS_R1 + 0.03), top + 0.5, Math.sin(aa) * (SS_R1 + 0.03), 0.13, 1.0, 0.13, 1, 1]);
+      });
+    }
+    L.push([0, 1.55, 0, 0.26, 3.1, 0.26, 1, 1]);   // the pole
+    return L;
+  };
+  rwSpiralGeo = function (r, seed) {
+    var pos = [], nor = [], uvs = [];
+    function addGeo(g, M4) {
+      if (M4) g.applyMatrix4(M4);
+      var ng = g.index ? g.toNonIndexed() : g, pa = ng.attributes.position.array, na = ng.attributes.normal.array, ua = ng.attributes.uv.array, i;
+      for (i = 0; i < pa.length; i++) { pos.push(pa[i]); nor.push(na[i]); }
+      for (i = 0; i < ua.length; i++) uvs.push(ua[i]);
+      if (ng !== g) ng.dispose(); g.dispose();
+    }
+    function tri(a, b, c, uva, uvb, uvc) {   // one triangle with a flat normal
+      var ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      var n = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]], l = Math.hypot(n[0], n[1], n[2]) || 1;
+      [a, b, c].forEach(function (p) { pos.push(p[0], p[1], p[2]); nor.push(n[0] / l, n[1] / l, n[2] / l); });
+      uvs.push(uva[0], uva[1], uvb[0], uvb[1], uvc[0], uvc[1]);
+    }
+    function quad(a, b, c, d, ua, ub, uc, ud) { tri(a, b, c, ua, ub, uc); tri(a, c, d, ua, uc, ud); }
+    function wedge(a0, a1, r0, r1, y0, y1, segs) {   // a curved slab between two angles
+      for (var s = 0; s < segs; s++) {
+        var t0 = a0 + (a1 - a0) * s / segs, t1 = a0 + (a1 - a0) * (s + 1) / segs, c0 = Math.cos(t0), s0 = Math.sin(t0), c1 = Math.cos(t1), s1 = Math.sin(t1);
+        var i0t = [c0 * r0, y1, s0 * r0], o0t = [c0 * r1, y1, s0 * r1], o1t = [c1 * r1, y1, s1 * r1], i1t = [c1 * r0, y1, s1 * r0];
+        var i0b = [c0 * r0, y0, s0 * r0], o0b = [c0 * r1, y0, s0 * r1], o1b = [c1 * r1, y0, s1 * r1], i1b = [c1 * r0, y0, s1 * r0];
+        var u0 = t0 * r1 * 0.5, u1 = t1 * r1 * 0.5;
+        quad(i0t, i1t, o1t, o0t, [r0 * 0.5, u0], [r0 * 0.5, u1], [r1 * 0.5, u1], [r1 * 0.5, u0]);   // top
+        quad(i0b, o0b, o1b, i1b, [r0 * 0.5, u0], [r1 * 0.5, u0], [r1 * 0.5, u1], [r0 * 0.5, u1]);   // bottom
+        quad(o0b, o0t, o1t, o1b, [u0, y0 * 0.5], [u0, y1 * 0.5], [u1, y1 * 0.5], [u1, y0 * 0.5]);   // outer edge
+        if (s === 0) quad(i0b, i0t, o0t, o0b, [r0 * 0.5, y0 * 0.5], [r0 * 0.5, y1 * 0.5], [r1 * 0.5, y1 * 0.5], [r1 * 0.5, y0 * 0.5]);
+        if (s === segs - 1) quad(i1b, o1b, o1t, i1t, [r0 * 0.5, y0 * 0.5], [r1 * 0.5, y0 * 0.5], [r1 * 0.5, y1 * 0.5], [r0 * 0.5, y1 * 0.5]);
+      }
+    }
+    var M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), S1 = new THREE.Vector3(1, 1, 1), Y = new THREE.Vector3(0, 1, 0);
+    addGeo(new THREE.CylinderGeometry(0.13, 0.13, 3.1, 16), M4.makeTranslation(0, 1.55, 0));        // the round centre pole
+    addGeo(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 16), M4.makeTranslation(0, 0.03, 0));         // its foot
+    var a0 = r * Math.PI / 2, step = Math.PI / 6;
+    for (var i = 0; i < 12; i++) {
+      var a = a0 + i * step, top = (i + 1) * 0.25;
+      wedge(a - step / 2, a + step / 2, SS_R0, SS_R1, top - 0.08, top, 4);                       // the tread, edge to edge with its neighbours
+      wedge(a - step / 2 + 0.02, a + step / 2 - 0.02, SS_R0, SS_R1 - 0.06, top - 0.11, top - 0.08, 3);   // a lip under the nose
+      Q.setFromAxisAngle(Y, -a); M4.compose(V.set(Math.cos(a) * 0.72, top - 0.17, Math.sin(a) * 0.72), Q, S1);
+      addGeo(new THREE.BoxGeometry(1.1, 0.12, 0.08), M4);                                         // a bearer under it
+      if (i >= 2 && i <= 10) [-0.33, 0.33].forEach(function (f) {   // round posts along the railing
+        var aa = a + f * step; addGeo(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 8), M4.makeTranslation(Math.cos(aa) * SS_RAIL, top + 0.5, Math.sin(aa) * SS_RAIL));
+      });
+    }
+    // the handrail: one smooth helix from the first post to the last
+    var pts = [];
+    for (var k = 0; k <= 96; k++) { var t = k / 96, aa2 = a0 + step * 1.67 + t * (8.66 * step), hy = 1.75 + t * 2.0; pts.push(new THREE.Vector3(Math.cos(aa2) * SS_RAIL, hy, Math.sin(aa2) * SS_RAIL)); }
+    addGeo(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 120, 0.035, 6, false));
+    var G = new THREE.BufferGeometry();
+    G.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    G.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    G.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    G.computeBoundingSphere();
+    return G;
+  };
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
      (AK selector lever and slant brake, MP5 cocking tube and sight ring, Python vent rib, 870 corn-cob pump,
