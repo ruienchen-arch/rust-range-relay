@@ -708,16 +708,16 @@ const VTY = (t) => (t === 'h' || t === 'b' || t === 'r' || t === 't') ? t : ''; 
 const carSeats = (ty) => ty === 'h' || ty === 'b' || ty === 't' ? [0, 0] : [0, 0, 0, 0];
 const TANK_CAP = 8, TANK_HP = 1200, TANK_BACK = (+process.env.TANK_BACK_MIN || 20) * 60000;   // update 113: tank armour; a blown-up monument tank comes back after TANK_BACK
 const carGone = new Set();   // ids of built tanks that were blown up: a whole-island backup must not bring them back   // shells a tank holds; players load them from their backpacks   // a helicopter seats a pilot and one passenger
-try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)), hp: q.hp === undefined ? undefined : Math.max(1, Math.min(TANK_HP, +q.hp || TANK_HP)), dead: +q.dead || 0 }); }); (w.g || []).forEach((id) => carGone.add(String(id))); } catch (e) {}
+try { const w = JSON.parse(fs.readFileSync(CAR_FILE, 'utf8')); carSeed = String(w.seed || ''); carSeq = (w.seq | 0) || 1; (w.c || []).forEach((q) => { if (q && typeof q.id === 'string') cars.set(q.id, { id: q.id, x: +q.x || 0, y: +q.y || 0, z: +q.z || 0, yaw: +q.yaw || 0, col: q.col | 0, by: String(q.by || ''), ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)), hp: q.hp === undefined ? undefined : Math.max(1, Math.min(TANK_HP, +q.hp || TANK_HP)), dead: +q.dead || 0, vk: Math.max(0, Math.min(15, q.vk | 0)) || undefined }); }); (w.g || []).forEach((id) => carGone.add(String(id))); } catch (e) {}
 function saveCars() {
   if (carT) return;
-  carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '', am: q.am | 0, hp: q.hp, dead: q.dead || undefined })), g: [...carGone].slice(-2000) })); } catch (e) {} }, 3000);
+  carT = setTimeout(() => { carT = null; try { fs.writeFileSync(CAR_FILE, JSON.stringify({ seed: carSeed, seq: carSeq, c: [...cars.values()].map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, by: q.by, ty: q.ty || '', am: q.am | 0, hp: q.hp, dead: q.dead || undefined, vk: q.vk || undefined })), g: [...carGone].slice(-2000) })); } catch (e) {} }, 3000);
 }
 // update 119: a server that lost its disk numbers new vehicles from the clock, so they can never take the id of a vehicle
 // that a player's island copy is about to bring back (that one used to be dropped - a vehicle gone after a restart)
 if (!fs.existsSync(CAR_FILE)) carSeq = 100000 + Math.floor(Date.now() / 1000) % 9000000;
 function checkCarSeed() { const s = worldSeed(); if (carSeed !== s) { cars.clear(); carSeq = 100000 + Math.floor(Date.now() / 1000) % 9000000; carSeed = s; saveCars(); } }
-const carPub = (q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, seats: q.seats, by: q.by, ty: q.ty || '', am: q.am | 0, hp: q.hp === undefined ? (q.ty === 't' ? TANK_HP : undefined) : Math.round(q.hp), dead: q.dead ? 1 : undefined });
+const carPub = (q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, yaw: q.yaw, col: q.col, seats: q.seats, by: q.by, ty: q.ty || '', vk: q.vk || undefined, am: q.am | 0, hp: q.hp === undefined ? (q.ty === 't' ? TANK_HP : undefined) : Math.round(q.hp), dead: q.dead ? 1 : undefined });
 function carSeatOf(cid) { for (const q of cars.values()) { const i = q.seats.indexOf(cid); if (i >= 0) return [q, i]; } return null; }
 function carFree(cid) { const s = carSeatOf(cid); if (!s) return; s[0].seats[s[1]] = 0; if (s[1] === 0) s[0].sp = 0; worldAll(J({ t: 'RVs', car: carPub(s[0]) })); }
 function carXYZ(m) { const x = num(m.x, WORLD_SIZE + 60), y = num(m.y, 500), z = num(m.z, WORLD_SIZE + 60); return x === null || y === null || z === null ? null : [x, y, z]; }
@@ -789,6 +789,7 @@ function worldCarMake(c, m) {
   let id; do { id = 'p' + (carSeq++); if (carSeq > 9999999) carSeq = 1; } while (cars.has(id) || wbCarKnown.has(id) || carGone.has(id));   // update 119: never an id a backup still has
   const ty = VTY(m.ty);
   const q = { id, x: p[0], y: p[1], z: p[2], yaw: +m.yaw || 0, col: int(m.col, 0, 0xffffff), by: c.owner || '', ty, seats: carSeats(ty) };
+  if (!ty && m.vk) q.vk = Math.max(0, Math.min(15, m.vk | 0)) || undefined;   // update 160: which kind of car
   cars.set(id, q); saveCars(); worldAll(J({ t: 'RVc', car: carPub(q) }));
 }
 
@@ -947,7 +948,7 @@ function wbRestore(c, str, ct) {
       if (e && nid[0] === 'p' && (e.by || '') !== qby && !wbCarKnown.has(nid + '>')) {   // update 119: the id was taken by a vehicle built after the restart: this one gets a new id instead of being dropped
         do { nid = 'p' + (carSeq++); } while (cars.has(nid)); wbCarKnown.add(q.id + '>');
       } else if (e || wbCarKnown.has(q.id)) continue;
-      const car = { id: nid, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)), wbT: wt };
+      const car = { id: nid, x: p[0], y: p[1], z: p[2], yaw: +q.yaw || 0, col: int(q.col, 0, 0xffffff), by: typeof q.by === 'string' ? q.by.slice(0, 80) : '', ty: VTY(q.ty), seats: carSeats(q.ty), am: Math.max(0, Math.min(TANK_CAP, q.am | 0)), wbT: wt, vk: Math.max(0, Math.min(15, q.vk | 0)) || undefined };
       cars.set(nid, car); wbCarKnown.add(nid); nc++; worldAll(J({ t: 'RVc', car: carPub(car) }));
     }
     if ((+w.cs | 0) > carSeq) carSeq = +w.cs | 0;
