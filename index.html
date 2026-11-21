@@ -3343,7 +3343,7 @@ Object.assign(EN, {
       seg('fps', zt('帧率上限', 'FPS limit'), [[30, '30'], [60, '60'], [90, '90'], [120, '120'], [144, '144'], [0, zt('不限制', 'Unlimited')]], SET.fps) +
       seg('res', zt('分辨率', 'Resolution'), [[0, zt('低（最流畅）', 'Low')], [1, zt('中', 'Medium')], [2, zt('高（原生）', 'High')]], SET.res) +
       seg('showFps', zt('显示帧率', 'Show FPS'), [[0, zt('关', 'Off')], [1, zt('开', 'On')]], SET.showFps ? 1 : 0) +
-      seg('gq', zt('画质', 'Graphics'), [[0, zt('标准（最流畅）', 'Standard')], [1, zt('高（阴影）', 'High (shadows)')], [2, zt('极高', 'Ultra')]], gqLv()) +
+      seg('gq', zt('画质', 'Graphics'), [[0, zt('标准（最流畅）', 'Standard')], [1, zt('高（阴影）', 'High (shadows)')], [2, zt('极高（默认）', 'Ultra (default)')]], gqLv()) +
       seg('skfx', zt('皮肤特效', 'Skin effects'), [[0, zt('关（最流畅）', 'Off (smoothest)')], [1, zt('开', 'On')]], SET.skfx === undefined || SET.skfx ? 1 : 0) + '</div>';   // update 131
     if (!isTouch) {
       h += '<div class="sgroup"><h2>' + zt('按键设置', 'KEY BINDINGS') + '</h2><div class="keygrid">' + KB_ACTIONS.map(function (a) {
@@ -12294,7 +12294,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 150;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 155;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -18019,7 +18019,7 @@ Object.assign(EN, {
      标准 Standard: as before.  高 High (default): real sun shadows from trees, rocks, houses, players and vehicles
      (2048 shadow map, 40 m round you) and a little further to see.  极高 Ultra: sharper shadows over 60 m, hills cast
      shadows too, and even further to see. The resolution setting stays separate. */
-  function gqLv() { return SET.gq === undefined ? 1 : SET.gq | 0; }
+  function gqLv() { return SET.gq === undefined ? 2 : SET.gq | 0; }   // update 152: Ultra is the default
   function gqView(l) { return l >= 2 ? 9 : l >= 1 ? 7 : 6; }
   RW_VIEW = gqView(gqLv());
   var GQ = { on: false, size: 0, t: 0, half: 40, dir: new THREE.Vector3(60, 100, 40).normalize(), leafD: null };
@@ -18718,13 +18718,15 @@ Object.assign(EN, {
   /* ---- update 146: the sea gets moving ripples (a tiled wave normal map that drifts), a deeper colour and sharper
      reflections of the sky. Same height and same transparency. ---- */
   function seaNormalTex() {
-    var N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N;
+    var N = 512, cv = document.createElement('canvas'); cv.width = cv.height = N;
     var x = cv.getContext('2d'), img = x.createImageData(N, N), H = new Float32Array(N * N), i, j, k;
-    var W = []; for (k = 0; k < 9; k++) { var a = k * 2.4 + 0.3, f = 1 + (k % 4) + Math.floor(k / 3); W.push([Math.cos(a) * f, Math.sin(a) * f, 1 / (1 + k * 0.6), k * 1.7]); }   // whole numbers of waves: it tiles
+    // update 151: every wave fits a whole number of times across the tile (integer kx, ky), so the edges meet with no seam
+    var K = [[1, 0], [0, 1], [1, 1], [2, -1], [-1, 2], [3, 1], [1, -3], [-2, -3], [4, 2], [2, 5], [5, -2], [-4, 5], [6, 3], [-3, 7], [7, -4], [9, 2]], W = [];
+    for (k = 0; k < K.length; k++) W.push([K[k][0], K[k][1], 1 / (1 + k * 0.45), k * 1.7 + 0.3]);
     for (j = 0; j < N; j++) for (i = 0; i < N; i++) { var h = 0; for (k = 0; k < W.length; k++) h += Math.sin((i * W[k][0] + j * W[k][1]) / N * 6.2832 + W[k][3]) * W[k][2]; H[j * N + i] = h; }
     for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
       var dx = H[j * N + (i + 1) % N] - H[j * N + (i + N - 1) % N], dy = H[((j + 1) % N) * N + i] - H[((j + N - 1) % N) * N + i];
-      var nx = -dx * 2.2, ny = -dy * 2.2, nz = 1, l = Math.hypot(nx, ny, nz), o = (j * N + i) * 4;
+      var nx = -dx * 1.6, ny = -dy * 1.6, nz = 1, l = Math.hypot(nx, ny, nz), o = (j * N + i) * 4;
       img.data[o] = (nx / l * 0.5 + 0.5) * 255; img.data[o + 1] = (ny / l * 0.5 + 0.5) * 255; img.data[o + 2] = (nz / l * 0.5 + 0.5) * 255; img.data[o + 3] = 255;
     }
     x.putImageData(img, 0, 0);
@@ -18736,7 +18738,7 @@ Object.assign(EN, {
     var m = w.material;
     if (!m.userData.sea) {
       SEA.tex = SEA.tex || seaNormalTex();
-      var rep = (RW.half * 4) / 14;
+      var rep = Math.round((RW.half * 4) / 30);   // one tile = 30 m
       SEA.tex.repeat.set(rep, rep);
       m.normalMap = SEA.tex; m.normalScale = new THREE.Vector2(0.55, 0.55);
       m.color.setHex(0x26677f); m.roughness = 0.1; m.metalness = 0.28; m.needsUpdate = true; m.userData.sea = 1;
@@ -18760,7 +18762,7 @@ Object.assign(EN, {
   }
   function dnSunDir(out) {
     var th = (dnPhase() - 0.25) * Math.PI * 2;   // 0 at sunrise (east), PI/2 at noon, PI at sunset (west)
-    return out.set(Math.cos(th), Math.sin(th) * 0.92, 0.38).normalize();
+    return out.set(Math.cos(th), Math.sin(th) * 0.55, 0.5).normalize();   // update 154: lower sun (about 48 deg at noon) so bodies throw shadows you can see
   }
   function sm(a, b, x) { var t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
   function dnSkyMat() {
@@ -18816,13 +18818,13 @@ Object.assign(EN, {
       sun.color.copy(C_SUNL).lerp(C_SUN, sm(0.02, 0.4, el));
       GQ.dir.copy(s); if (el < 0.06) GQ.dir.setY(0.06).normalize();   // shadows never come from below the horizon
     } else {
-      sun.intensity *= 0.28 * night;
+      sun.intensity *= 0.42 * night;
       sun.color.copy(C_MOON);
       GQ.dir.copy(s).negate().setY(Math.max(0.25, -el)).normalize();
     }
     GQ.rt = null; GQ.up = null;
     if (!GQ.on) { var lx = GQ.dir; sun.position.set(P.x + lx.x * 160, P.y + lx.y * 160, P.z + lx.z * 160); sun.target.position.set(P.x, P.y, P.z); sun.target.updateMatrixWorld(); }
-    hemi.intensity *= 0.3 + 0.7 * day;
+    hemi.intensity *= 0.22 + 0.78 * day;
     if (hemi.color) { hemi.color.setRGB(1, 1, 1).lerp(DNT.setRGB(0.55, 0.65, 1.0), night * 0.8).lerp(DNT2.setRGB(1.0, 0.75, 0.6), dusk * 0.4 * day); }
     // fog and background follow the sky near the horizon
     if (!underwaterNow()) {
@@ -18928,6 +18930,145 @@ Object.assign(EN, {
     mz.position.set(f.position.x, f.position.y, fz + 0.022); mz.renderOrder = f.renderOrder; mz.frustumCulled = false; G.g.add(mz);
     for (var k = 0; k < 3; k++) { var sl = new THREE.Mesh(gBox(rr * 3.2, rr * 0.5, 0.008), GP); sl.position.set(f.position.x, f.position.y + rr * 1.2, fz + 0.008 + k * 0.014); sl.renderOrder = f.renderOrder + 1; sl.frustumCulled = false; G.g.add(sl); }   // its vent slots
   });
+  /* ---- update 153: players cast shadows ----
+     - Your own body now throws a shadow on the ground, walls and floors: a full body that walks, aims and holds what
+       you hold, drawn only into the shadow map (it writes nothing to your view, so you only see its shadow). Hidden while you
+       are dead or sitting in a vehicle.
+     - Other players' shadows: their new bodies are marked as shadow casters the moment they appear (before, it could
+       take up to 1.5 s). Shadows need the graphics setting High or Ultra. */
+  var SHB = { g: null, on: false };
+  var SHM = {};
+  function shInv(o) {   // drawn into the shadow map only: in your view it writes no colour and no depth
+    if (!o.isMesh || o.userData.shOnly) return;
+    var m = o.material; if (!m || m.visible === false) return;
+    var k = m.uuid; o.material = SHM[k] || (SHM[k] = (function () { var c = m.clone(); c.colorWrite = false; c.depthWrite = false; return c; })());
+    o.userData.shOnly = 1; o.castShadow = true; o.receiveShadow = false;
+  }
+  function shbMake() {
+    var keepL = DU.lbl, keepH = DU.lblHp;
+    var g = duMakeRemote((CHARS[charId] || CHARS[0]).color);
+    DU.lbl = keepL; DU.lblHp = keepH;
+    if (g.userData.lbl) { g.remove(g.userData.lbl); }
+    (g.userData.hit || []).forEach(function (o) { o.visible = false; });
+    g.traverse(function (o) { if (o.visible !== false) shInv(o); });
+    scene.add(g);
+    return g;
+  }
+  function shbTick(dt) {
+    var want = RW.on && GQ.on && !RW.dead && !CAR.mine && !KC.on && state !== 'menu';
+    if (!want) { if (SHB.g) SHB.g.visible = false; return; }
+    if (!SHB.g || SHB.g.parent !== scene) SHB.g = shbMake();
+    var g = SHB.g; g.visible = true;
+    g.position.set(P.x, P.y, P.z);
+    var ta = P.yaw + Math.PI, da = Math.atan2(Math.sin(ta - g.rotation.y), Math.cos(ta - g.rotation.y)); g.rotation.y += da * Math.min(1, dt * 20);
+    var hk = 'hands'; try { hk = rwHkSend() || 'hands'; } catch (e) {}
+    if (g.userData.anim) g.userData.anim(dt, false, { pi: P.pitch, hk: hk });
+    // new held items are built inside anim: put them on the shadow layer too
+    if (SHB.hk !== hk) { SHB.hk = hk; g.traverse(function (o) { if (o.visible !== false) shInv(o); }); }
+  }
+  // gqMark (update 139) re-marks every mesh every 1.5 s; keep ours as shadow-only casters, and mark new players at once
+  var gqMarkS = gqMark;
+  gqMark = function () {
+    gqMarkS();
+    if (SHB.g) SHB.g.traverse(function (o) { if (o.isMesh && o.userData.shOnly) { o.castShadow = true; o.receiveShadow = false; } });
+  };
+  var duMakeRemoteS = duMakeRemote;
+  duMakeRemote = function (col) {
+    var g = duMakeRemoteS(col);
+    try { if (GQ.on) g.traverse(function (o) { if (o.isMesh && o.material && !o.material.transparent && o.material.visible !== false) { o.castShadow = true; o.receiveShadow = true; } }); } catch (e) {}
+    return g;
+  };
+  var renderFrameSH = renderFrame;
+  renderFrame = function () { try { shbTick(RDT); } catch (e) {} return renderFrameSH(); };
+  /* ---- update 155: lights really light things up ----
+     - A lit lantern now casts warm light on the floor, walls, players and everything within about 12 m.
+     - Lit campfires (flickering orange) and furnaces glow onto their surroundings too.
+     - Holding a lantern in your hand lights the area around you (other players see your light as well).
+     - At night the street lamps at monuments switch on and light the roads below them.
+     A fixed pool of point lights is handed to the nearest light sources a few times a second (a fixed count, so the
+     shaders never rebuild); each light fades in and out instead of popping. */
+  var LT = { pool: [], N: 6, t: 0, lamps: [], on: false, fl: 0 };
+  LT.pool = [];
+  for (var lti = 0; lti < LT.N; lti++) {
+    var ltl = new THREE.PointLight(0xffb060, 0, 12, 2);
+    ltl.visible = false; ltl.layers.enable(1); scene.add(ltl);
+    LT.pool.push({ l: ltl, src: null, cur: 0 });
+  }
+  // street lamps built at monuments: remember where their bulbs are
+  var lampLT = lamp;
+  lamp = function (x, z) { lampLT(x, z); if (LT.rec) LT.lamps.push({ x: x, y: 4.35, z: z }); };
+  var rwBuildMonumentsLT = rwBuildMonuments;
+  rwBuildMonuments = function () { LT.lamps = []; LT.rec = true; try { return rwBuildMonumentsLT.apply(this, arguments); } finally { LT.rec = false; } };
+  if (RWI.lantern) RWI.lantern.d = ['按交互键点亮或熄灭。点亮后照亮周围约 12 米，拿在手里也能照路。', 'Light it or put it out with Use. A lit lantern lights up about 12 m around it; hold one to light your way.'];
+
+  function ltNight() {   // 0 by day, 1 at night (dusk in between)
+    try { var s = dnSunDir(new THREE.Vector3()); return 1 - sm(-0.2, 0.08, s.y); } catch (e) { return 0; }
+  }
+  function ltHeldLantern(hk) { return typeof hk === 'string' && hk.indexOf('lantern') === 0; }
+  function ltGather() {
+    var L = [], px = P.x, pz = P.z, R = 70, nt = ltNight(), dk = 0.45 + 0.55 * nt;
+    function add(id, x, y, z, col, I, dist, kind) {
+      var d = Math.hypot(x - px, z - pz); if (d > R) return;
+      L.push({ id: id, x: x, y: y, z: z, col: col, I: I, dist: dist, kind: kind, d: d });
+    }
+    for (var i = 0; i < RW.plist.length; i++) {
+      var p = RW.plist[i]; if (!p.op) continue;
+      if (Math.abs(p.x - px) > R || Math.abs(p.z - pz) > R) continue;
+      if (p.k === 'ln') add('p' + p.id, p.x, p.y + 0.3, p.z, 0xffb35a, 2.4 * dk, 13, 'ln');
+      else if (p.k === 'cf') add('p' + p.id, p.x, p.y + 0.55, p.z, 0xff8a30, 2.6 * dk, 14, 'fire');
+      else if (p.k === 'fu') add('p' + p.id, p.x, p.y + 0.7, p.z, 0xff7a28, 1.5 * dk, 9, 'fire');
+    }
+    // a lantern in someone's hand
+    var myHk = 'hands'; try { myHk = rwHkSend(); } catch (e) {}
+    if (ltHeldLantern(myHk) && !RW.dead && !CAR.mine) add('me', P.x, P.y + 1.3, P.z, 0xffb35a, 2.2 * dk, 13, 'ln');
+    try { (CO.list || []).forEach(function (q) { if (q.rt && ltHeldLantern(q.rt.hk) && q.hp > 0) add('h' + q.id, q.rt.x, q.rt.y + 1.3, q.rt.z, 0xffb35a, 2.2 * dk, 13, 'ln'); }); } catch (e) {}
+    // street lamps, only after dark
+    if (nt > 0.25) {
+      var mg = new THREE.Vector3();
+      LT.lamps.forEach(function (s, j) {
+        if (Math.abs(s.x - px) > R || Math.abs(s.z - pz) > R) return;
+        mg.set(s.x, s.y, s.z); if (mapGroup.parent) mapGroup.localToWorld(mg);
+        add('s' + j, mg.x, mg.y, mg.z, 0xffe0b0, 2.6 * nt, 20, 'st');
+      });
+    }
+    L.sort(function (a, b) { return a.d - b.d; });
+    return L.slice(0, LT.N);
+  }
+  function ltTick(dt) {
+    var on = RW.on && state !== 'menu';
+    if (on !== LT.on) { LT.on = on; LT.pool.forEach(function (s) { s.l.visible = on; s.l.intensity = 0; s.cur = 0; s.src = null; }); }   // visibility only flips here, so shaders rebuild once
+    if (!on) return;
+    LT.t -= dt;
+    if (LT.t <= 0) {
+      LT.t = 0.25;
+      var want = ltGather(), ids = {};
+      want.forEach(function (w) { ids[w.id] = w; });
+      LT.pool.forEach(function (s) {
+        if (s.src && !s.src.gone && ids[s.src.id]) { s.src = ids[s.src.id]; ids[s.src.id] = null; }
+        else if (s.src) s.src.gone = true;
+      });
+      want.forEach(function (w) {   // nearest first: a new light takes a slot that is empty or has faded out, so nothing pops
+        if (!ids[w.id]) return;
+        var s = LT.pool.find(function (q) { return !q.src || (q.src.gone && q.cur < 0.05); });
+        if (s) { s.src = w; s.cur = 0; ids[w.id] = null; }
+      });
+    }
+    LT.fl += dt;
+    for (var i = 0; i < LT.pool.length; i++) {
+      var s = LT.pool[i], src = s.src, target = 0;
+      if (src && !src.gone) target = src.I;
+      s.cur += (target - s.cur) * Math.min(1, dt * 6);
+      if (src && !src.gone) { s.l.position.set(src.x, src.y, src.z); s.l.color.setHex(src.col); s.l.distance = src.dist; }
+      if (src && src.id === 'me') s.l.position.set(P.x, P.y + 1.3, P.z);   // follows you every frame
+      var f = 1;
+      if (src && src.kind === 'fire') f = 0.85 + 0.1 * Math.sin(LT.fl * 13 + i) + 0.06 * Math.sin(LT.fl * 31 + i * 2);
+      else if (src && src.kind === 'ln') f = 0.96 + 0.04 * Math.sin(LT.fl * 9 + i);
+      s.l.intensity = Math.max(0, s.cur * f);
+      if (s.cur < 0.01 && src && src.gone) s.src = null;
+    }
+  }
+  var renderFrameLT = renderFrame;
+  renderFrame = function () { try { ltTick(RDT); } catch (e) {} return renderFrameLT(); };
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
      (AK selector lever and slant brake, MP5 cocking tube and sight ring, Python vent rib, 870 corn-cob pump,
