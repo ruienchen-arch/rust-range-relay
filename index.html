@@ -12300,7 +12300,7 @@ Object.assign(EN, {
     var d = document.createElement('div'); d.className = 'cm s'; d.textContent = txt; rwChatAppend(d);
     setTimeout(function () { d.classList.add('old'); }, 20000);
   }
-  var RR_VER = 165;   // shown in the corner so everybody can check they have the newest version
+  var RR_VER = 167;   // shown in the corner so everybody can check they have the newest version
   (function () { var d = document.createElement('div'); d.id = 'rwVer'; d.textContent = 'v' + RR_VER; document.body.appendChild(d); })();
   /* ================= UPDATE 51: NATURE =================
      Trees get real leaves: leaf cards with a drawn leaf texture around each broadleaf crown, needle branches on
@@ -19163,7 +19163,7 @@ Object.assign(EN, {
     dome: [3, ['bungalow', 'garage', 'bunker']], bandit: [5, ['cottage', 'bungalow', 'barn', 'garage']]
   };
   var FN_SIZE = { cottage: [10, 8], villa: [13, 11], townhouse: [9, 11], bungalow: [12, 9], garage: [10, 8], apartment: [15, 11], warehouse: [20, 12], barn: [14, 10], bunker: [9, 7] };
-  var FN_HOUSE = { cottage: 1, bungalow: 1, townhouse: 1, villa: 1, apartment: 1 };
+  var FN_HOUSE = { cottage: 1, bungalow: 1, townhouse: 1, villa: 1, apartment: 1, tower: 1 };
 
   // ---------- more buildings in every monument ----------
   function fnRectHit(x0, x1, z0, z1, list, pad) {
@@ -19440,6 +19440,13 @@ Object.assign(EN, {
       if (rg() < 0.5) { FB(q, -q.wa / 4, 0, q.h + 0.01, 0.14, 0.14, 0.3, 0x4a4a4a); FB(q, -q.wa / 4, 0, q.h + 0.31, 0.26, 0.26, 0.16, 0xe8dcb0); }   // a little lamp
       else { FB(q, q.wa / 5, 0, q.h + 0.01, 0.3, 0.2, 0.06, 0x7a3b2a); FB(q, q.wa / 5, 0, q.h + 0.07, 0.28, 0.19, 0.05, 0x35527a); }   // books
     }
+    function safeBox(q) {   // a heavy steel safe with a dial and a handle
+      FB(q, 0, 0, 0, q.wa, q.wb, q.h, 0x2e3236, true);
+      FB(q, 0, q.wb / 2 + 0.01, 0.08, q.wa - 0.1, 0.02, q.h - 0.16, 0x3a3f44);
+      FB(q, -0.1, q.wb / 2 + 0.035, q.h * 0.6, 0.12, 0.03, 0.12, 0xb8bcc0); FB(q, -0.1, q.wb / 2 + 0.05, q.h * 0.6 + 0.04, 0.02, 0.02, 0.04, 0x1a1a1a);
+      FB(q, 0.18, q.wb / 2 + 0.04, q.h * 0.45, 0.04, 0.04, 0.22, 0xb8bcc0);
+      FB(q, 0, 0, -0.0, q.wa + 0.04, q.wb + 0.04, 0.06, 0x1a1a1a);
+    }
     function cabinet(q) {   // a red tool chest or a grey filing cabinet
       var col = rg() < 0.5 ? 0x9a2e26 : 0x6a6e72;
       FB(q, 0, 0, 0, q.wa, q.wb, q.h, col, true);
@@ -19459,7 +19466,7 @@ Object.assign(EN, {
             var c = (rg() * 2 - 1) * (Wl.len / 2 - it[1] / 2 - 0.5);
             var q = tryPlace(Wl, f, c, it[1], it[2], it[3]);
             if (!q) continue;
-            if (it[0] === 'wd') wardrobe(q); else if (it[0] === 'dr') drawers(q); else if (it[0] === 'cb') cabinet(q);
+            if (it[0] === 'wd') wardrobe(q); else if (it[0] === 'dr') drawers(q); else if (it[0] === 'cb') cabinet(q); else if (it[0] === 'sf') safeBox(q);
             else { spot(q, it[0]); return; }                       // boxes: only the shared crate is drawn
             var p = L(q.u, q.v); RW.fspots.push({ x: p[0], z: p[1], y: q.y, tier: it[0], mil: kind === 'bunker' || kind === 'warehouse', b: qBox(q) });
             return;
@@ -19467,14 +19474,14 @@ Object.assign(EN, {
         }
       });
     }
-    function floorLoot(f, n) {   // loose loot on the open floor
+    function floorLoot(f, n, tier) {   // loose loot on the open floor (update 167: or cash bags in the downtown towers)
       var y0 = f * FHk + (f ? 0 : 0.06);
       for (var i = 0, k = 0; i < n && k < 30; k++) {
         var u = (rg() * 2 - 1) * (w / 2 - 1.2), v = (rg() * 2 - 1) * (d / 2 - 1.2);
         if (f === 0 && Math.abs(u - du) < dw / 2 + 0.6 && v > d / 2 - 2.6) continue;
         if (inHole(f, u - 0.6, u + 0.6, v - 0.6, v + 0.6)) continue;
         if (!boxFree(u - 0.5, u + 0.5, v - 0.5, v + 0.5, y0, y0 + 1.2)) continue;
-        var p = L(u, v); RW.fspots.push({ x: p[0], z: p[1], y: y0, tier: 'pl', mil: kind === 'bunker', b: [p[0] - 0.55, p[0] + 0.55, y0, y0 + 0.5, p[1] - 0.5, p[1] + 0.5] }); i++;
+        var p = L(u, v); RW.fspots.push({ x: p[0], z: p[1], y: y0, tier: tier || 'pl', mil: kind === 'bunker', b: [p[0] - 0.55, p[0] + 0.55, y0, y0 + 0.5, p[1] - 0.5, p[1] + 0.5] }); i++;
       }
     }
     for (f = 0; f < floors; f++) {
@@ -19487,8 +19494,10 @@ Object.assign(EN, {
         var list = [['wd', 1.1, 0.6, 2.0], ['dr', 1.0, 0.5, 0.86], ['dr', 1.0, 0.5, 0.86]];
         if (rg() < 0.6) list.push(['bx', 0.7, 0.6, 0.55]);
         if (kind === 'apartment' && f === 2) list.push(['cb', 0.6, 0.6, 1.3]);
+        if (kind === 'tower' && (f === floors - 1 || sp.bank || rg() < 0.25)) list.unshift(['sf', 0.8, 0.7, 1.05]);   // safes: always on the top floor
         place(list, f);
         floorLoot(f, rg() < 0.7 ? 1 : 2);
+        if (kind === 'tower') floorLoot(f, rg() < 0.6 ? 2 : 1, 'cs');   // cash bags on every floor of a downtown tower
       } else if (kind === 'warehouse') {
         [-1, 1].forEach(function (s) { ld(s * w / 4, y0f + WH - 0.4, 0, 0.8, 0.12, 0.4, 0xfff1c8, { basic: true }); var wl = L(s * w / 4, 0); RW.ceilLamps.push({ x: wl[0], y: y0f + WH - 0.4, z: wl[1], fy: y0f + 0.06 }); ld(s * w / 4, y0f + WH - 0.2, 0, 0.04, 0.3, 0.04, 0x2a2a2a); });
         place([['cb', 0.8, 0.6, 1.3], ['cb', 0.8, 0.6, 1.3], ['bx', 0.8, 0.7, 0.6], ['bx', 0.8, 0.7, 0.6], ['bx', 0.8, 0.7, 0.6]], f);
@@ -19511,7 +19520,7 @@ Object.assign(EN, {
       var S = RW_CH;
       (RW.fspots || []).forEach(function (s, i) {
         if (Math.floor(s.x / S) !== cx || Math.floor(s.z / S) !== cz) return;
-        var big = s.tier === 'wd' || s.tier === 'dr' || s.tier === 'cb';
+        var big = s.tier === 'wd' || s.tier === 'dr' || s.tier === 'cb' || s.tier === 'sf';
         out.push({ id: cx + '_' + cz + '_' + (2000 + i), kind: 'crate', tier: s.tier, fn: 1, mil: s.mil, b: s.b, x: s.x, z: s.z, y: s.y, r: big ? 0.45 : 0.35, max: 1, sc: 1, v: (i * 0.618) % 1 });
       });
     } catch (e) {}
@@ -19523,6 +19532,7 @@ Object.assign(EN, {
     if (dead) return;
     if (n.tier === 'bx') { fnBoxB(B, n); return; }
     if (n.tier === 'pl') { fnPileB(B, n); return; }
+    if (n.tier === 'cs') { fnCashB(B, n); return; }
     // wardrobes, drawers and cabinets are part of the house; a faint mark says it has not been searched yet
   };
   function fnBoxB(B, n) {   // a taped cardboard box, sometimes with a second one on top
@@ -19532,6 +19542,15 @@ Object.assign(EN, {
     rwBoxB(B, x - 0.2, y + 0.32, z + 0.281, 0.2, 0.1, 0.004, [0.2, 0.18, 0.15]);
     if (n.v > 0.45) { rwBoxB(B, x + 0.05, y + 0.51, z - 0.03, 0.5, 0.36, 0.42, rwSh(cb, 0.9)); rwBoxB(B, x + 0.05, y + 0.875, z - 0.03, 0.51, 0.012, 0.1, tp); }
   }
+  function fnCashB(B, n) {   // a black duffel bag, open, with bundles of green notes and a few on the floor
+    var x = n.x, y = n.y, z = n.z;
+    rwBoxB(B, x, y, z, 0.62, 0.3, 0.32, [0.08, 0.08, 0.09]);
+    rwBoxB(B, x, y + 0.3, z, 0.5, 0.06, 0.22, [0.26, 0.48, 0.24]);
+    for (var i = 0; i < 4; i++) rwBoxB(B, x - 0.18 + i * 0.12, y + 0.36, z - 0.02 + (i % 2) * 0.04, 0.1, 0.05, 0.16, [0.36, 0.6, 0.32]);
+    rwBoxB(B, x + 0.45, y, z + 0.15, 0.16, 0.04, 0.08, [0.36, 0.6, 0.32]); rwBoxB(B, x + 0.4, y + 0.04, z + 0.12, 0.16, 0.04, 0.08, [0.36, 0.6, 0.32]);
+    rwBoxB(B, x - 0.42, y, z - 0.12, 0.16, 0.04, 0.08, [0.36, 0.6, 0.32]);
+    rwBoxB(B, x - 0.05, y + 0.3, z - 0.165, 0.4, 0.02, 0.01, [0.6, 0.6, 0.62]);
+  }
   function fnPileB(B, n) {   // a sack, a tin or two and some rags lying on the floor
     var x = n.x, y = n.y, z = n.z, rg = seeded(hashStr(n.id));
     rwBlobB(B, x, y + 0.2, z, 0.32, 0.22, 0.26, [0.48, 0.4, 0.26], rg, 0.25);
@@ -19540,7 +19559,7 @@ Object.assign(EN, {
     if (rg() < 0.6) rwBoxB(B, x - 0.3, y, z + 0.25, 0.11, 0.15, 0.11, [0.72, 0.7, 0.66]);
     rwBoxB(B, x - 0.15, y, z - 0.32, 0.45, 0.03, 0.3, [0.35, 0.38, 0.45]);
   }
-  var FN_NAME = { wd: ['衣柜', 'Wardrobe'], dr: ['抽屉柜', 'Chest of drawers'], cb: ['工具柜', 'Tool cabinet'], bx: ['纸箱', 'Box'], pl: ['地上的东西', 'Loose loot'] };
+  var FN_NAME = { sf: ['保险箱', 'Safe'], cs: ['现金袋', 'Cash bag'], wd: ['衣柜', 'Wardrobe'], dr: ['抽屉柜', 'Chest of drawers'], cb: ['工具柜', 'Tool cabinet'], bx: ['纸箱', 'Box'], pl: ['地上的东西', 'Loose loot'] };
   function rwCrateTxt(n) {
     if (n && n.fn && FN_NAME[n.tier]) return zt('搜索' + FN_NAME[n.tier][0], 'Search the ' + FN_NAME[n.tier][1].toLowerCase());
     return zt('打开补给箱', 'Open the crate');
@@ -19572,6 +19591,15 @@ Object.assign(EN, {
       if (ch(0.08)) items.push({ id: 'kcg', n: 1 });
       if (ch(0.04)) items.push({ id: 'satchel', n: 1 });
       c = rnd(18, 40);
+    } else if (t === 'sf') {   // update 167: downtown safes are worth a lot
+      c = rnd(400, 900);
+      if (ch(0.3)) items.push({ id: 'kcb', n: 1 });
+      if (ch(0.12)) items.push({ id: 'kcr', n: 1 });
+      if (ch(0.25)) items.push({ id: 'parts', n: rnd(1, 3) });
+      if (ch(0.2)) items.push({ id: 'arif', n: rnd(10, 30) });
+    } else if (t === 'cs') {
+      c = rnd(120, 280);
+      if (ch(0.2)) items.push({ id: 'frags', n: rnd(20, 50) });
     } else if (t === 'bx') {
       items.push({ id: Math.random() < 0.5 ? 'wood' : 'stone', n: rnd(30, 80) });
       if (ch(0.5)) items.push({ id: 'cloth', n: rnd(3, 10) });
@@ -20060,6 +20088,7 @@ Object.assign(EN, {
         GL.c.setHex(col); GL.pCol[si * 3] = GL.c.r * op; GL.pCol[si * 3 + 1] = GL.c.g * op; GL.pCol[si * 3 + 2] = GL.c.b * op; si++;
       }
       function splash(x, y, z, w, l, yaw, col, op) {
+        return;   // update 166: the lights really light the ground now (mod64), no fake patches
         if (pi >= GL_NS || op <= 0.01) return;
         GL.q.setFromAxisAngle(GL.ax, yaw); GL.m4.compose(GL.ps.set(x, y + 0.06, z), GL.q, GL.sc.set(w, 1, l));
         GL.spl.setMatrixAt(pi, GL.m4); GL.c.setHex(col).multiplyScalar(op); GL.spl.setColorAt(pi, GL.c); pi++;
@@ -20389,6 +20418,257 @@ Object.assign(EN, {
     G.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     G.computeBoundingSphere();
     return G;
+  };
+  /* ---- update 166: every light really lights its surroundings, however far away ----
+     Real three.js lights cost a lot each, so only the nearest few could light anything. Now the game keeps its own
+     list of every light on the island (lanterns, campfires, furnaces, lanterns in hands, street lamps, ceiling
+     lights in the monument houses, car headlights) and a grid map of which lights reach which 16 m square. Every
+     lit surface (ground, walls, buildings, trees, players, vehicles) looks up its square and adds the light of the
+     lights that reach it - so a lantern 800 m away lights its room exactly like one next to you.
+     Up to 8 lights can overlap in one square; the closest-to-centre ones win there. */
+  var LG = { N: 4096, G: 160, C: 16, K: 8, t: 0, ox: 0, oz: 0, list: [], ok: true, mats: new Set(), tick: 0 };
+  function lgInit() {
+    LG.ld = new Float32Array(LG.N * 2 * 4);
+    LG.ltex = new THREE.DataTexture(LG.ld, LG.N, 2, THREE.RGBAFormat, THREE.FloatType);
+    LG.ltex.minFilter = LG.ltex.magFilter = THREE.NearestFilter; LG.ltex.generateMipmaps = false; LG.ltex.needsUpdate = true;
+    LG.gd = new Float32Array(LG.G * LG.K * LG.G);   // one float per slot (R32F)
+    LG.gtex = new THREE.DataTexture(LG.gd, LG.G * LG.K, LG.G, THREE.RedFormat, THREE.FloatType);
+    LG.gtex.minFilter = LG.gtex.magFilter = THREE.NearestFilter; LG.gtex.generateMipmaps = false; LG.gtex.needsUpdate = true;
+    LG.u = { uLL: { value: LG.ltex }, uLG: { value: LG.gtex }, uLGo: { value: new THREE.Vector2() }, uLGon: { value: 0 } };
+  }
+  // ---- the shader part, added to every lit material ----
+  var LG_OUT = 'gl_FragColor = vec4( outgoingLight, diffuseColor.a );';   // three r128 writes the colour here
+  var LG_VS = '\nvarying vec3 vLgW;\n', LG_FS_HEAD = '\nuniform sampler2D uLL; uniform sampler2D uLG; uniform vec2 uLGo; uniform float uLGon; varying vec3 vLgW;\n';
+  function lgFs(hasN) {
+    return '\n  if (uLGon > 0.5) {\n' +
+      '    vec2 lgc = (vLgW.xz - uLGo) / ' + LG.C.toFixed(1) + ';\n' +
+      '    if (lgc.x >= 0.0 && lgc.y >= 0.0 && lgc.x < ' + LG.G.toFixed(1) + ' && lgc.y < ' + LG.G.toFixed(1) + ') {\n' +
+      '      vec2 lgi = floor(lgc); vec3 lgSum = vec3(0.0);\n' +
+      (hasN ? '      vec3 lgN = normalize((vec4(normal, 0.0) * viewMatrix).xyz);\n' : '') +
+      '      for (int k = 0; k < ' + LG.K + '; k++) {\n' +
+      '        float id = texture2D(uLG, vec2((lgi.x * ' + LG.K.toFixed(1) + ' + float(k) + 0.5) / ' + (LG.G * LG.K).toFixed(1) + ', (lgi.y + 0.5) / ' + LG.G.toFixed(1) + ')).r;\n' +
+      '        if (id < 0.5) break;\n' +
+      '        float lu = (id - 0.5) / ' + LG.N.toFixed(1) + ';\n' +
+      '        vec4 la = texture2D(uLL, vec2(lu, 0.25)); vec4 lc = texture2D(uLL, vec2(lu, 0.75));\n' +
+      '        vec3 ld = la.xyz - vLgW; float dl = length(ld); float at = clamp(1.0 - dl / la.w, 0.0, 1.0); at *= at;\n' +
+      (hasN ? '        float nd = clamp(dot(lgN, ld / max(dl, 0.001)), 0.0, 1.0) * 0.8 + 0.2;\n' : '        float nd = 0.75;\n') +
+      '        lgSum += lc.rgb * at * nd;\n' +
+      '      }\n' +
+      '      outgoingLight += diffuseColor.rgb * lgSum;\n' +
+      '    }\n  }\n';
+  }
+  function lgPatch(m) {
+    if (!m || m.userData.lg || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
+    m.userData.lg = 1;
+    var prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+    m.onBeforeCompile = function (sh, r) {
+      if (prev) prev.call(this, sh, r);
+      if (!LG.u) return;
+      Object.assign(sh.uniforms, LG.u);
+      if (sh.vertexShader.indexOf('#include <project_vertex>') < 0 || sh.fragmentShader.indexOf(LG_OUT) < 0) return;
+      sh.vertexShader = LG_VS + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  { vec4 lgw = vec4(transformed, 1.0);\n  #ifdef USE_INSTANCING\n  lgw = instanceMatrix * lgw;\n  #endif\n  vLgW = (modelMatrix * lgw).xyz; }\n');
+      var hasN = sh.fragmentShader.indexOf('#include <normal_fragment_begin>') >= 0 && !m.isMeshLambertMaterial;
+      sh.fragmentShader = LG_FS_HEAD + sh.fragmentShader.replace(LG_OUT, lgFs(hasN) + LG_OUT);
+    };
+    m.customProgramCacheKey = function () { return (prevKey ? prevKey.call(this) : '') + '|lg1'; };
+    m.needsUpdate = true;
+  }
+  function lgScan() {   // patch every lit material in the scene (new ones keep appearing as chunks load)
+    scene.traverse(function (o) {
+      if (!o.material) return;
+      if (Array.isArray(o.material)) o.material.forEach(lgPatch); else lgPatch(o.material);
+    });
+  }
+  // ---- the lights ----
+  var LG_COL = { ln: [1.0, 0.70, 0.35, 1.7, 13], fire: [1.0, 0.54, 0.19, 2.0, 14], fu: [1.0, 0.48, 0.16, 1.4, 9], st: [1.0, 0.88, 0.69, 1.6, 20], ce: [1.0, 0.94, 0.82, 1.3, 8.5], car: [1.0, 0.95, 0.85, 1.6, 13] };
+  function lgGather() {
+    var L = [], fl = performance.now() / 1000;
+    function add(x, y, z, kind, mul) { if (L.length < LG.N) L.push([x, y, z, kind, mul || 1]); }
+    for (var i = 0; i < RW.plist.length; i++) {
+      var p = RW.plist[i]; if (!p.op) continue;
+      if (p.k === 'ln') add(p.x, p.y + 0.3, p.z, 'ln');
+      else if (p.k === 'cf') add(p.x, p.y + 0.55, p.z, 'fire', 0.85 + 0.15 * Math.sin(fl * 13 + i));
+      else if (p.k === 'fu') add(p.x, p.y + 0.7, p.z, 'fu', 0.9 + 0.1 * Math.sin(fl * 11 + i));
+    }
+    var myHk = 'hands'; try { myHk = rwHkSend(); } catch (e) {}
+    if (ltHeldLantern(myHk) && !RW.dead && !CAR.mine) add(P.x, P.y + 1.3, P.z, 'ln');
+    try { (CO.list || []).forEach(function (q) { if (q.rt && ltHeldLantern(q.rt.hk) && q.hp > 0) add(q.rt.x, q.rt.y + 1.3, q.rt.z, 'ln'); }); } catch (e) {}
+    var mg = new THREE.Vector3();
+    (LT.lamps || []).forEach(function (s) { mg.set(s.x, s.y, s.z); if (mapGroup.parent) mapGroup.localToWorld(mg); add(mg.x, mg.y - 0.2, mg.z, 'st'); });
+    (RW.ceilLamps || []).forEach(function (s) { add(s.x, s.y - 0.2, s.z, 'ce'); });
+    for (var k in CAR.list) {
+      var c = CAR.list[k]; if (c.ty || !c.lt || !c.g || !c.g.userData.front) continue;
+      var U = c.g.userData; c.g.updateMatrixWorld();
+      [4, 10].forEach(function (ahead, j) { mg.set(0, 1.0, U.front.z - ahead).applyMatrix4(c.g.matrixWorld); add(mg.x, mg.y, mg.z, 'car', j ? 0.8 : 1); });   // the beam: two pools ahead
+    }
+    return L;
+  }
+  function lgBuild() {
+    var L = lgGather(), G = LG.G, C = LG.C, K = LG.K, ld = LG.ld, gd = LG.gd;
+    LG.ox = Math.floor(P.x / C - G / 2) * C; LG.oz = Math.floor(P.z / C - G / 2) * C;
+    ld.fill(0); gd.fill(0);
+    var cnt = new Uint8Array(G * G), best = new Float32Array(G * G * K);
+    for (var i = 0; i < L.length; i++) {
+      var q = L[i], col = LG_COL[q[3]], rad = col[4], I = col[3] * q[4];
+      ld[i * 4] = q[0]; ld[i * 4 + 1] = q[1]; ld[i * 4 + 2] = q[2]; ld[i * 4 + 3] = rad;
+      var o = (LG.N + i) * 4; ld[o] = col[0] * I; ld[o + 1] = col[1] * I; ld[o + 2] = col[2] * I;
+      var x0 = Math.floor((q[0] - rad - LG.ox) / C), x1 = Math.floor((q[0] + rad - LG.ox) / C), z0 = Math.floor((q[2] - rad - LG.oz) / C), z1 = Math.floor((q[2] + rad - LG.oz) / C);
+      for (var gz = Math.max(0, z0); gz <= Math.min(G - 1, z1); gz++) for (var gx = Math.max(0, x0); gx <= Math.min(G - 1, x1); gx++) {
+        // does the light's circle touch this square at all?
+        var cx = Math.max(LG.ox + gx * C, Math.min(q[0], LG.ox + (gx + 1) * C)), cz = Math.max(LG.oz + gz * C, Math.min(q[2], LG.oz + (gz + 1) * C));
+        var dd = Math.hypot(cx - q[0], cz - q[2]); if (dd > rad) continue;
+        var cell = gz * G + gx, n = cnt[cell], score = dd / rad;
+        if (n < K) { gd[gz * G * K + gx * K + n] = i + 1; best[cell * K + n] = score; cnt[cell] = n + 1; }
+        else {   // the square is full: replace the light that reaches it least
+          var wi = 0; for (var t = 1; t < K; t++) if (best[cell * K + t] > best[cell * K + wi]) wi = t;
+          if (score < best[cell * K + wi]) { gd[gz * G * K + gx * K + wi] = i + 1; best[cell * K + wi] = score; }
+        }
+      }
+    }
+    LG.ltex.needsUpdate = true; LG.gtex.needsUpdate = true;
+    LG.u.uLGo.value.set(LG.ox, LG.oz); LG.count = L.length;
+  }
+  function lgTick(dt) {
+    if (!LG.u) lgInit();
+    var on = RW.on && state !== 'menu';
+    LG.u.uLGon.value = on ? 1 : 0;
+    if (!on) return;
+    LG.tick -= dt; if (LG.tick <= 0) { LG.tick = 1.5; lgScan(); }
+    LG.t -= dt; if (LG.t <= 0) { LG.t = 0.25; lgBuild(); }
+  }
+  var renderFrameLG = renderFrame;
+  renderFrame = function () { try { lgTick(RDT); } catch (e) { if (!LG.err) { LG.err = 1; console.warn('lg', e); } } return renderFrameLG(); };
+  // the old pool of real point lights is no longer needed (it would light the nearest ones twice)
+  ltTick = function () { LT.pool.forEach(function (s) { if (s.l.visible) { s.l.visible = false; } s.l.intensity = 0; }); };
+  /* ---- update 167: Downtown (市中心), a contested city centre ----
+     A new monument, 125 m across the middle, on a grid of four-lane avenues with zebra crossings, traffic lights and
+     street lamps. Twelve city blocks stand on raised pavements: the four in the middle each hold one skyscraper of
+     12-16 floors, the outer ones two towers of 5-9 floors, one block is the bank. Every tower can be climbed floor by
+     floor; every floor has furniture to search and cash bags lying around, the top floor of every tower (and every
+     floor of the bank) has a safe. Cash bags give 120-280 coins, a safe 400-900 coins plus cards and parts - by far
+     the richest place on the island. So it is guarded (seven armed NPCs), has an elite crate at the centre crossing,
+     shows on the map in red as a contested zone, and tells you when you walk in. */
+  // placed after the other monuments (so none of them moves), on the flattest big piece of land left
+  var rwPlanDT = rwPlan;
+  rwPlan = function () {
+    var r = rwPlanDT.apply(this, arguments);
+    try {
+      var rg = seeded(hashStr('rwdowntown' + RW.seed)), H = RW.half, R = 125, best = null, bestS = 1e9;
+      for (var t = 0; t < 2500; t++) {
+        var x = (rg() * 2 - 1) * H * 0.75, z = (rg() * 2 - 1) * H * 0.75, h = rwBase(x, z);
+        if (h < 1 || h > 34) continue;
+        if (RW.mons.some(function (m) { return Math.hypot(x - m.x, z - m.z) < R + m.r + 30; })) continue;
+        var ok = true, sum = 0;
+        for (var k = 0; k < 16 && ok; k++) { var a = k * Math.PI / 8; for (var rr = 40; rr <= R + 15; rr += 40) { var hh = rwBase(x + Math.cos(a) * rr, z + Math.sin(a) * rr); if (hh < 0.8) ok = false; sum += Math.abs(hh - h); } }
+        if (ok && sum < bestS) { bestS = sum; best = { x: x, z: z }; }
+      }
+      if (best) RW.mons.push({ k: 'downtown', x: best.x, z: best.z, r: R, R: R + 80, R2: (R + 80) * (R + 80), y: 0, camp: [], rs: [], npcs: 0, meshes: [] });
+    } catch (e) { console.warn('downtown plan', e); }
+    return r;
+  };
+  RW_NAMES.downtown = ['市中心', 'Downtown'];
+  RW_CAMPS.downtown = ['gunner', 'gunner', 'gunner', 'sniper', 'sniper', 'rusher', 'rusher', 'bomber'];
+  RW_MONLOOT.downtown = [[0, 0, 'elite'], [52, 0, 'mil'], [-52, 0, 'mil'], [0, 52, 'mil'], [0, -52, '']];
+  BK.tower = { floors: 8, wh: 3.2, roof: 'flat', winW: 2.0, sill: 0.5, head: 2.8, doorW: 2.8, winSpacing: 3.6, cols: [0x5a6a7a, 0x6a7078, 0x8a8f96, 0x46525e, 0x7a6e62, 0x9a9488], rcols: [0x2a2c30] };
+  var DT = { off: [-52, 0, 52], W: 12 };
+  function dtBuild(m) {
+    var cx = m.x, cz = m.z, R = m.r, rg = seeded(hashStr('downtown' + RW.seed)), W = DT.W;
+    m.fx = 1; m.fz = 1; m.camp = (RW_CAMPS.downtown || []).slice();
+    var ROAD = 0x262626, WALK = 0x8f8b84, KERB = 0xb0aca2, LINE = 0xe0dcc8, YEL = 0xd8b030;
+    // ---- avenues ----
+    DT.off.forEach(function (o) {
+      var half = Math.sqrt(R * R - o * o) - 6;
+      road(cx + o, cz, W, half * 2, ROAD); road(cx, cz + o, half * 2, W, ROAD);
+      // centre lines (double yellow) and dashed lane lines, broken at the crossings
+      for (var a = -half + 2; a < half - 2; a += 2) {
+        if (DT.off.some(function (q) { return Math.abs(a - q) < W / 2 + 4; })) continue;
+        [-0.12, 0.12].forEach(function (s) { bb(cx + o + s, 0.046, cz + a + 1, 0.1, 0.012, 2.0, YEL, {}); bb(cx + a + 1, 0.046, cz + o + s, 2.0, 0.012, 0.1, YEL, {}); });
+        if (Math.round(a) % 6 === 0) [-1, 1].forEach(function (s) { bb(cx + o + s * W / 4, 0.046, cz + a + 1, 0.12, 0.012, 2.2, LINE, {}); bb(cx + a + 1, 0.046, cz + o + s * W / 4, 2.2, 0.012, 0.12, LINE, {}); });
+      }
+    });
+    // zebra crossings and traffic lights at each crossing
+    DT.off.forEach(function (ox) { DT.off.forEach(function (oz) {
+      var x = cx + ox, z = cz + oz;
+      [-1, 1].forEach(function (s) {
+        for (var k = 0; k < 6; k++) { var t = -W / 2 + 1 + k * 2; bb(x + t, 0.047, z + s * (W / 2 + 1.6), 1.0, 0.012, 2.6, LINE, {}); bb(x + s * (W / 2 + 1.6), 0.047, z + t, 2.6, 0.012, 1.0, LINE, {}); }
+      });
+      [[-1, -1], [1, 1]].forEach(function (c) {   // two traffic light poles on opposite corners
+        var px = x + c[0] * (W / 2 + 1.2), pz = z + c[1] * (W / 2 + 1.2);
+        solid(px, pz, 0.22, 0.22, 0, 4.2, 0x2a2c2e);
+        bb(px - c[0] * 1.4, 4.1, pz, 2.8, 0.14, 0.14, 0x2a2c2e, {});
+        bb(px - c[0] * 2.6, 3.7, pz, 0.36, 0.95, 0.32, 0x1a1a1a, {});
+        [[0xff3020, 0.3], [0xffb020, 0], [0x30e060, -0.3]].forEach(function (L, i) { bb(px - c[0] * 2.6, 3.7 + L[1], pz + c[1] * 0.17, 0.2, 0.2, 0.02, i === 2 ? L[0] : 0x302a24, { basic: i === 2 }); });
+      });
+    }); });
+    // ---- city blocks: raised pavement, kerb, towers ----
+    var blocks = [];
+    [-78, -26, 26, 78].forEach(function (bx) { [-78, -26, 26, 78].forEach(function (bz) { if (Math.hypot(Math.abs(bx) + 19, Math.abs(bz) + 19) < R - 2) blocks.push([bx, bz]); }); });
+    var bankI = Math.floor(rg() * 4), inner = 0, lampAt = [];
+    blocks.forEach(function (b, bi) {
+      var x = cx + b[0], z = cz + b[1], S = 38;
+      bb(x, 0.03, z, S, 0.03, S, WALK, {});                                           // the pavement (just under the towers' floors)
+      [-1, 1].forEach(function (s) { bb(x + s * S / 2, 0.08, z, 0.2, 0.16, S, KERB, {}); bb(x, 0.08, z + s * S / 2, S, 0.16, 0.2, KERB, {}); });
+      // street lamps round the block edge
+      [-1, 1].forEach(function (s) { [-12, 12].forEach(function (t) { lampAt.push([x + s * (S / 2 - 0.8), z + t]); lampAt.push([x + t, z + s * (S / 2 - 0.8)]); }); });
+      var door = faceCenter(b[0], b[1]), mid = Math.abs(b[0]) === 26 && Math.abs(b[1]) === 26;
+      if (mid) {
+        var isBank = inner++ === bankI;
+        if (isBank) put('tower', x, z, 22, 18, door, { floors: 3, bank: true });
+        else put('tower', x, z, 24, 22, door, { floors: 12 + Math.floor(rg() * 5) });
+        // a planter and benches in front
+        var fd = { s: [0, 1], n: [0, -1], e: [1, 0], w: [-1, 0] }[door];
+        solid(x + fd[0] * 15 + fd[1] * 9, z + fd[1] * 15 + fd[0] * 9, 2.4, 2.4, 0, 0.6, 0x6a645a); bb(x + fd[0] * 15 + fd[1] * 9, 0.75, z + fd[1] * 15 + fd[0] * 9, 2.0, 0.3, 2.0, 0x3a6a2a, {});
+      } else {
+        // two towers side by side, along the side that faces the middle
+        var along = (door === 's' || door === 'n') ? [1, 0] : [0, 1];
+        [-1, 1].forEach(function (s) { put('tower', x + along[0] * s * 9.2, z + along[1] * s * 9.2, 16, 14, door, { floors: 5 + Math.floor(rg() * 5) }); });
+      }
+    });
+    lampAt.forEach(function (l) { lamp(l[0], l[1]); });
+    // ---- cars parked along the avenues (real cars, ids m<mi>_2..7) ----
+    var mi = RW.mons.indexOf(m), slots = [2, 3, 4, 6, 7];
+    if (mi >= 0) slots.forEach(function (sl, i) {
+      var o = DT.off[i % 3], along = (i % 2 ? -1 : 1) * (20 + i * 9), side = i % 2 ? 1 : -1;
+      var horiz = i % 2 === 0, x = horiz ? cx + along : cx + o + side * (W / 2 - 1.3), z = horiz ? cz + o + side * (W / 2 - 1.3) : cz + along;
+      RW.streetCars.push({ id: 'm' + mi + '_' + sl, x: x, z: z, yaw: horiz ? (side > 0 ? -Math.PI / 2 : Math.PI / 2) : (side > 0 ? Math.PI : 0) });
+    });
+    m.dt = true;
+  }
+  var rwBuildMonumentDT = rwBuildMonument;
+  rwBuildMonument = function (m) { if (m.k === 'downtown') { try { dtBuild(m); } catch (e) { console.warn('downtown', e); } return; } return rwBuildMonumentDT.apply(this, arguments); };
+  // ---- a contested zone: say so when you walk in, show it on the map ----
+  var DTZ = { inside: false };
+  function dtTick() {
+    if (!RW.on || state !== 'playing') return;
+    var m = RW.mons.find(function (q) { return q.k === 'downtown'; }); if (!m) return;
+    var inside = Math.hypot(P.x - m.x, P.z - m.z) < m.r;
+    if (inside && !DTZ.inside) banner(zt('进入市中心争夺区：高楼里有大量金币和保险箱，小心守卫和其他玩家！', 'Entering Downtown, a contested zone: the towers are full of cash and safes - watch out for guards and other players!'), 3200);
+    if (!inside && DTZ.inside) banner(zt('离开市中心', 'Leaving Downtown'), 1200);
+    DTZ.inside = inside;
+  }
+  var renderFrameDT = renderFrame;
+  renderFrame = function () { try { dtTick(); } catch (e) {} return renderFrameDT(); };
+  var rwMapExtraDT = rwMapExtra;
+  rwMapExtra = function (ctx, X, Z, big, span) {
+    var r = rwMapExtraDT.apply(this, arguments);
+    try {
+      var m = RW.mons.find(function (q) { return q.k === 'downtown'; });
+      if (m) {
+        var px = X(m.x), pz = Z(m.z), rr = Math.abs(X(m.x + m.r) - px);
+        ctx.save(); ctx.strokeStyle = 'rgba(255,60,40,0.9)'; ctx.lineWidth = big ? 2.5 : 1.5; ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.arc(px, pz, rr, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(255,60,40,0.12)'; ctx.fill();
+        if (big) { ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff6a50'; ctx.fillText(zt('争夺区', 'CONTESTED'), px, pz + rr + 14); }
+        ctx.restore();
+      }
+    } catch (e) {}
+    return r;
+  };
+  var rwMonInfoDT = rwMonInfo;
+  rwMonInfo = function (m) {
+    var f = rwMonInfoDT.apply(this, arguments);
+    if (m && m.k === 'downtown') f.unshift(zt('争夺区：高楼里大量金币、保险箱', 'Contested: towers full of cash and safes'));
+    return f;
   };
   /* ---- update 33: a detail pass on top of every gun model. Fills the gaps between parts (barrels that floated in
      front of shrouds, ribs that hovered over revolver barrels), adds the parts that make each gun recognisable
